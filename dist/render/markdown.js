@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { isProvenFalse, weakestConfidence } from '../model/conditions.js';
+import { activeGaps } from '../model/gaps.js';
 import { displayGroupLabels, displayGroupOf, renderCondition, renderSentence } from './sentences.js';
 import { escapeInline, relativeLinkTarget } from './text.js';
 const number = (index) => String(index + 1).padStart(2, '0');
@@ -274,15 +275,24 @@ export function renderMarkdown(input) {
     for (const reason of report.coverage.reasons)
         out.push(`- 理由: ${escapeInline(reason)}`);
     out.push('');
-    const related = report.coverage.gaps.filter(gap => gap.relation === 'related');
-    const globalUnknown = report.coverage.gaps.filter(gap => gap.relation === 'global-unknown');
+    // §8 a gap ng-wiring filled in keeps its record but leaves the active missing list.
+    const active = activeGaps(report.coverage.gaps);
+    const filled = report.coverage.gaps.filter(gap => gap.resolvedBy);
+    const globalUnknown = report.coverage.gaps.filter(gap => gap.relation === 'global-unknown' && !gap.resolvedBy);
+    const gapLine = (gap) => `- ${escapeInline(gap.code)}: ${escapeInline(gap.message)}` +
+        `${gap.owner ? `（owner ${escapeInline(gap.owner)}）` : ''}`;
     out.push('### 未検出範囲', '');
     out.push('関連する未検出:');
-    if (related.length) {
-        for (const gap of related) {
-            out.push(`- ${escapeInline(gap.code)}: ${escapeInline(gap.message)}` +
-                `${gap.owner ? `（owner ${escapeInline(gap.owner)}）` : ''}` +
-                `${gap.resolvedBy ? ` 補完済み: ${escapeInline(gap.resolvedReason ?? gap.resolvedBy)}` : ''}`);
+    if (active.length)
+        for (const gap of active)
+            out.push(gapLine(gap));
+    else
+        out.push('- なし');
+    out.push('', 'ng-wiring が補完した未検出（原記録を残す。active な欠落には数えない）:');
+    if (filled.length) {
+        for (const gap of filled) {
+            out.push(`${gapLine(gap)} 補完: ${escapeInline(gap.resolvedReason ?? '根拠の記録なし')}` +
+                `（${escapeInline(gap.resolvedBy ?? '')}、関連 ${gap.relation}）`);
         }
     }
     else

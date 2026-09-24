@@ -1,5 +1,6 @@
 import { ConditionTable } from './conditions.js';
 import { type EvidenceTable } from './evidence.js';
+import { type GapScope, type RawGap } from './gaps.js';
 import { type Confidence, type DetailField, type EdgeKind, type EdgeOrigin, type GapRelation, type LimitsReport, type NodeKind, type OccurrenceKey, type PathEnd, type ReportContext, type ReportQuery, type ReportSelection, type Severity, type WiringReport } from './types.js';
 export interface ReportBuilderInput {
     toolVersion: string;
@@ -88,7 +89,7 @@ export declare class ReportBuilder {
         relatedIds?: readonly string[];
         stopReason?: string | null;
     }): string;
-    /** §8 every detection gap is kept with how it relates to the selection; P15 assigns the relation. */
+    /** §8 every detection gap is kept with how it relates to the selection. */
     gap(input: {
         code: string;
         message: string;
@@ -99,6 +100,15 @@ export declare class ReportBuilder {
         resolvedBy?: string | null;
         resolvedReason?: string | null;
     }): string;
+    /**
+     * §8 the association step: place the reported gaps against the selection and record each one with the
+     * relation it earned. The reason behind every decision is returned so the caller can report it.
+     */
+    relateGaps(gaps: readonly RawGap[], scope: GapScope): {
+        id: string;
+        relation: GapRelation;
+        reason: string;
+    }[];
     limits(report: LimitsReport): void;
     select(selection: ReportSelection): void;
     build(): WiringReport;

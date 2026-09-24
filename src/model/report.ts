@@ -1,5 +1,6 @@
 import { ConditionTable, combineCoverage, weakestConfidence } from './conditions.js';
 import { ModelError, type EvidenceTable } from './evidence.js';
+import { activeGaps, placeGaps, strongestRelation, type GapScope, type RawGap } from './gaps.js';
 import { boundaryId, definitionId, diagnosticId, edgeId, gapId, normalizeOccurrence, occurrenceId, operationId, pathId, slash } from './ids.js';
 import { SCHEMA_VERSION, partialPathEnds, type Confidence, type Coverage, type CoverageGap, type DetailField,
   type EdgeKind, type EdgeOrigin, type GapRelation, type LimitsReport, type ModelDiagnostic, type ModelEdge,
@@ -150,18 +151,40 @@ export class ReportBuilder {
     return id;
   }
 
-  /** §8 every detection gap is kept with how it relates to the selection; P15 assigns the relation. */
+  /** §8 every detection gap is kept with how it relates to the selection. */
   gap(input: { code: string; message: string; relation: GapRelation; owner?: string | null;
     candidates?: readonly string[]; evidenceIds?: readonly string[];
     resolvedBy?: string | null; resolvedReason?: string | null }): string {
     const body = { code: input.code, message: input.message, owner: input.owner ?? null,
       evidenceIds: unique([...(input.evidenceIds ?? [])]) };
     const id = gapId(body);
-    if (!this.gaps.has(id)) {
-      this.gaps.set(id, { ...body, id, relation: input.relation, candidates: unique([...(input.candidates ?? [])]),
-        resolvedBy: input.resolvedBy ?? null, resolvedReason: input.resolvedReason ?? null });
+    const existing = this.gaps.get(id);
+    if (existing) {
+      // The same gap can arrive twice; it keeps the closest association and the resolution either showed.
+      existing.relation = strongestRelation([existing.relation, input.relation]);
+      existing.candidates = unique([...existing.candidates, ...(input.candidates ?? [])]);
+      if (!existing.resolvedBy && input.resolvedBy) {
+        existing.resolvedBy = input.resolvedBy;
+        existing.resolvedReason = input.resolvedReason ?? null;
+      }
+      return id;
     }
+    this.gaps.set(id, { ...body, id, relation: input.relation, candidates: unique([...(input.candidates ?? [])]),
+      resolvedBy: input.resolvedBy ?? null, resolvedReason: input.resolvedReason ?? null });
     return id;
+  }
+
+  /**
+   * §8 the association step: place the reported gaps against the selection and record each one with the
+   * relation it earned. The reason behind every decision is returned so the caller can report it.
+   */
+  relateGaps(gaps: readonly RawGap[], scope: GapScope): { id: string; relation: GapRelation; reason: string }[] {
+    return placeGaps(gaps, scope).map(placed => ({
+      id: this.gap({ code: placed.code, message: placed.message, relation: placed.relation,
+        owner: placed.owner ?? null, candidates: placed.candidates, evidenceIds: placed.evidenceIds,
+        resolvedBy: placed.resolvedBy, resolvedReason: placed.resolvedReason }),
+      relation: placed.relation, reason: placed.reason,
+    }));
   }
 
   limits(report: LimitsReport): void {
@@ -191,7 +214,8 @@ export class ReportBuilder {
       coverageReasons: raw.coverageReasons,
     }));
     const gaps = [...this.gaps.values()].sort(byId);
-    const openGaps = gaps.filter(gap => gap.relation === 'related' && !gap.resolvedBy);
+    // §8 a gap ng-wiring filled in keeps its record but leaves the active missing list.
+    const openGaps = activeGaps(gaps);
     const truncations = this.limitsReport.truncations.map(item => `Truncated by ${item.limit}: ${item.reason}`);
     const gapCounts = new Map<string, number>();
     for (const gap of gaps) if (gap.relation === 'unrelated') gapCounts.set(gap.code, (gapCounts.get(gap.code) ?? 0) + 1);

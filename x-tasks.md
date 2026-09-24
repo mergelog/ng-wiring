@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P14 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には、各解析層から中間モデルへの組み立て（P16）が残っている（§1, §2）。
+現状: **実装中**。P0〜P15 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には、各解析層から中間モデルへの組み立て（P16）が残っている（§1, §2）。
 
 ## 進捗サマリ
 
@@ -25,12 +25,12 @@
 | P12 API・HTTP・型 | `src/resolve/operation` | 7 | 7 | P9 |
 | P13 中間モデルと schema | `src/model`, `docs` | 15 | 15 | P5〜P12 |
 | P14 renderer とファイル名 | `src/render` | 22 | 22 | P13 |
-| P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 0 | P13 |
+| P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 6 | P13 |
 | P16 fixture・期待台帳・CI | `test/` | 15 | 0 | 各フェーズ並行 |
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **197** | |
+| **合計** | | **237** | **203** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -264,7 +264,7 @@
 
 実装メモ: §8 の kind 表を `src/model/types.ts` の `edgeContracts`（両端 node kind + 必須 details）として 1 箇所に持ち、`docs/ng-wiring.schema.json` の kind 別 `if/then` はこの表から起こした。P14-04 の定型文も同じ表を参照し、両者の一致は `test/model-p13.test.mjs` の schema 照合試験で固定する。kind を増やす変更は表・schema・定型文・試験を同時に直す。
 
-`coverage.gaps` の `relation` / `resolvedBy` はモデルが保持するだけで、関連付けの判定は P15 で入れる（現状は呼び出し側の指定をそのまま集計する）。インラインテンプレートの evidence は `EvidenceTable.registerInline` に対応表を登録して初めて TS ファイル位置へ解決するため、P16 の組み立てでテンプレート索引から登録すること。
+`coverage.gaps` の `relation` / `resolvedBy` の判定は P15 の `src/model/gaps.ts` に入れた（`ReportBuilder.gap` は判定済みの relation を受け取るままで、`relateGaps` が判定して登録する）。インラインテンプレートの evidence は `EvidenceTable.registerInline` に対応表を登録して初めて TS ファイル位置へ解決するため、P16 の組み立てでテンプレート索引から登録すること。
 
 ## P14 renderer とファイル名（`src/render`, §3.4, §8）
 
@@ -305,12 +305,18 @@ P1-09 はこのフェーズで fixture が揃ったため `[~]` から `[x]` に
 
 ## P15 診断の関連付けと coverage 集計（§8）
 
-- [ ] P15-01 局所診断の判定（owner が選択経路/イベントの探索対象、候補 targets が対象、location が関連 route・directive・service のいずれかに一致）。owner だけでフィルターしない（§8）
-- [ ] P15-02 owner=null も location/candidates で関連付け、関連不明なら末尾の「解析全体の未検出範囲」へ（§8, 指摘 3-6）
-- [ ] P15-03 無関係な owner 付き gap はコード別件数として集計（§8）
-- [ ] P15-04 JSON の coverage に全 gap と `related | global-unknown | unrelated` を保持（§8）
-- [ ] P15-05 未検出カタログやスコープ全体の問題で候補漏れを否定できない gap は関連に昇格（§8）
-- [ ] P15-06 ng-wiring が補完した gap は原記録を消さず `resolvedBy` と補完根拠を添えて active な欠落から除く（§8）
+- [x] P15-01 局所診断の判定（owner が選択経路/イベントの探索対象、候補 targets が対象、location が関連 route・directive・service のいずれかに一致）。owner だけでフィルターしない（§8）
+- [x] P15-02 owner=null も location/candidates で関連付け、関連不明なら末尾の「解析全体の未検出範囲」へ（§8, 指摘 3-6）
+- [x] P15-03 無関係な owner 付き gap はコード別件数として集計（§8）
+- [x] P15-04 JSON の coverage に全 gap と `related | global-unknown | unrelated` を保持（§8）
+- [x] P15-05 未検出カタログやスコープ全体の問題で候補漏れを否定できない gap は関連に昇格（§8）
+- [x] P15-06 ng-wiring が補完した gap は原記録を消さず `resolvedBy` と補完根拠を添えて active な欠落から除く（§8）
+
+実装メモ: 判定は `src/model/gaps.ts` の `placeGap` 1 箇所に置き、`ReportBuilder.relateGaps(gaps, scope)` が判定 → 登録をまとめる。`GapScope` は探索した owner（クラス/メンバー）、選択の候補 targets、関連 route・directive・service のファイル、そして「候補漏れを否定できない」理由（`incomplete`）を持つ。owner は `path#Class` と `path#Class.member` を同一所有者として突き合わせ、`def:` 前置と `\` 区切りも受け付ける。
+
+判定順は owner → candidates → location → 昇格 → 既定で、owner が対象外でも candidates と location を必ず見る（§8「owner だけでフィルターしない」）。`incomplete` の項目は owner/file を持てば該当する gap だけを、どちらも持たなければスコープ全体の問題として全 gap を related に昇格する（P15-05）。関連付けの根拠文は `relateGaps` の戻り値にだけ載せ、schema は変えていない（1.0.0 のまま）。
+
+`validateReport` に 3 分類の不変条件を足した（global-unknown は owner=null、unrelated は owner 必須、`gapCounts` は unrelated の code 別件数と一致、active な related gap は `coverage.reasons` に載る、`resolvedBy` は既知 ID と補完根拠を伴う）。Markdown は「関連する未検出」を active だけにし、補完済みは原記録として別の一覧に出す（P15-06）。
 
 ## P16 fixture・期待台帳・CI（`test/`, §10）
 

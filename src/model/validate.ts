@@ -173,7 +173,30 @@ export function validateReport(report: WiringReport): string[] {
       if (!anyId(id)) problems.push(`Diagnostic ${diagnostic.id} relates to unknown id ${id}`);
     }
   }
-  for (const gap of report.coverage.gaps) knownEvidence(`Gap ${gap.id}`, gap.evidenceIds);
+  // §8 related, global-unknown and unrelated are three separate buckets, and a filled gap keeps its record.
+  const unrelatedCounts = new Map<string, number>();
+  for (const gap of report.coverage.gaps) {
+    knownEvidence(`Gap ${gap.id}`, gap.evidenceIds);
+    if (gap.relation === 'global-unknown') {
+      check(gap.owner === null, `Gap ${gap.id} has owner ${gap.owner} but was filed as global-unknown`);
+    }
+    if (gap.relation === 'unrelated') {
+      check(gap.owner !== null, `Gap ${gap.id} has no owner but was filed as unrelated`);
+      unrelatedCounts.set(gap.code, (unrelatedCounts.get(gap.code) ?? 0) + 1);
+    }
+    if (gap.resolvedBy !== null) {
+      check((gap.resolvedReason ?? '').trim().length > 0, `Gap ${gap.id} was filled in without recording why`);
+      check(anyId(gap.resolvedBy), `Gap ${gap.id} was filled in by unknown id ${gap.resolvedBy}`);
+    } else check(gap.resolvedReason === null, `Gap ${gap.id} carries a fill-in reason without resolvedBy`);
+  }
+  const counted = [...unrelatedCounts].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([code, count]) => ({ code, count }));
+  check(JSON.stringify(report.coverage.gapCounts) === JSON.stringify(counted),
+    'coverage.gapCounts does not count the unrelated gaps by code');
+  for (const gap of report.coverage.gaps.filter(item => item.relation === 'related' && !item.resolvedBy)) {
+    check(report.coverage.reasons.includes(`${gap.code}: ${gap.message}`),
+      `Related gap ${gap.id} is missing from coverage.reasons`);
+  }
   for (const truncation of report.limits.truncations) {
     knownEvidence(`Truncation ${truncation.limit}`, truncation.evidenceIds);
     if (truncation.nodeId !== null && !nodes.has(truncation.nodeId)) {
