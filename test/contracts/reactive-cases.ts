@@ -86,6 +86,7 @@ const signalWrite = (target: string): FixtureRef => ({ id: 'signal-write', targe
 const patchFixture: FixtureRef = { id: 'signal-store-patch', target: 'data-id=filterField' };
 const dispatchFixture: FixtureRef = { id: 'store-dispatch', target: 'data-id=termField' };
 const eventsFixture: FixtureRef = { id: 'events-reducer', target: 'data-id=termField' };
+const unsupported = (target: string): FixtureRef => ({ id: 'unsupported-apis', target });
 
 const ledger: ReactiveCase[] = [
   // ---- R01 Angular Signal state source, read, write, read-only alias ------------------------------
@@ -441,37 +442,37 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R16', kind: 'unsupported', id: 'R16/signals-entities', package: '@ngrx/signals/entities', form: 'module',
     version: NGRX, expectation: 'import と使用箇所を検出して unsupported と根拠を出す',
     expectedDiagnostics: ['unsupported-reactive-api'],
-    missingFixture: 'entities を使う fixture が未作成（P16-08）' }),
+    fixture: unsupported('data-id=entitiesButton') }),
   entry({ contract: 'R16', kind: 'unsupported', id: 'R16/signals-resource', package: '@ngrx/signals/resource', form: 'module',
     version: NGRX, expectation: 'resource 拡張を unsupported として止める',
     expectedDiagnostics: ['unsupported-reactive-api'],
-    missingFixture: 'resource を使う fixture が未作成' }),
+    fixture: unsupported('data-id=resourceExtensionButton') }),
   entry({ contract: 'R16', kind: 'unsupported', id: 'R16/component-store', package: '@ngrx/component-store', form: 'module',
     version: NGRX, expectation: '別の state system として SignalStore と誤認しない',
     expectedDiagnostics: ['unsupported-reactive-api'],
-    missingFixture: 'ComponentStore を使う fixture が未作成' }),
+    fixture: unsupported('data-id=componentStoreButton') }),
   entry({ contract: 'R16', kind: 'unsupported', id: 'R16/angular-resource', package: '@angular/core', export: 'resource', version: ANGULAR,
     expectation: 'resource の読み込み/状態に意味モデルが無いことを診断する',
     expectedDiagnostics: ['unsupported-reactive-api'],
-    missingFixture: 'resource を使う fixture が未作成' }),
+    fixture: unsupported('data-id=angularResourceButton') }),
   entry({ contract: 'R16', kind: 'unsupported', id: 'R16/angular-rxResource', package: '@angular/core/rxjs-interop', export: 'rxResource',
     version: ANGULAR, expectation: 'rxResource を resource と別に診断する',
     expectedDiagnostics: ['unsupported-reactive-api'],
-    missingFixture: 'rxResource を使う fixture が未作成' }),
+    fixture: unsupported('data-id=rxResourceButton') }),
   entry({ contract: 'R16', kind: 'unsupported', id: 'R16/angular-httpResource', package: '@angular/common/http', export: 'httpResource',
     version: ANGULAR, expectation: 'httpResource を通信と状態の双方で unsupported として扱う',
     expectedDiagnostics: ['unsupported-reactive-api'],
-    missingFixture: 'httpResource を使う fixture が未作成' }),
+    fixture: unsupported('data-id=httpResourceButton') }),
   entry({ contract: 'R16', kind: 'unsupported', id: 'R16/signals-events-withEffects', package: '@ngrx/signals/events',
     export: 'withEffects', version: NGRX,
     expectation: '旧名称を公開 API として追加せず、未知の識別子として診断する',
     expectedDiagnostics: ['unsupported-reactive-api'],
-    missingFixture: 'withEffects を書いた fixture が未作成' }),
+    fixture: unsupported('data-id=withEffectsButton') }),
   entry({ contract: 'R16', kind: 'unsupported', id: 'R16/unknown-custom-feature', package: '@ngrx/signals',
     form: 'form', version: NGRX,
     expectation: '既知 state/member を上書きし得る未知 feature は関連範囲を partial とし、透明扱いしない',
-    expectedDiagnostics: ['unsupported-template'],
-    missingFixture: '未知 custom feature の fixture が未作成' }),
+    expectedDiagnostics: ['unsupported-store-feature'],
+    fixture: unsupported('data-id=unknownFeatureButton') }),
 ];
 
 export function reactiveCases(): readonly ReactiveCase[] { return ledger; }

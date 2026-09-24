@@ -132,3 +132,36 @@ test('effect-api: a request feeding a state update leaves the direct write in pl
   assert.equal(report.status, 'partial');
   assert(report.edges.some(edge => edge.kind === 'boundary' && edge.confidence === 'unresolved'));
 });
+
+// P16-08: an unsupported range passes on the boundary, the partial status and the diagnostic — and on
+// nothing else. A word being present in the source, a count matching or a refreshed snapshot is not a pass.
+const unsupportedTargets = [
+  { target: 'data-id=entitiesButton', code: 'unsupported-reactive-api', mentions: '@ngrx/signals/entities' },
+  { target: 'data-id=resourceExtensionButton', code: 'unsupported-reactive-api', mentions: '@ngrx/signals/resource' },
+  { target: 'data-id=componentStoreButton', code: 'unsupported-reactive-api', mentions: '@ngrx/component-store' },
+  { target: 'data-id=angularResourceButton', code: 'unsupported-reactive-api', mentions: 'resource' },
+  { target: 'data-id=rxResourceButton', code: 'unsupported-reactive-api', mentions: 'rxResource' },
+  { target: 'data-id=httpResourceButton', code: 'unsupported-reactive-api', mentions: 'httpResource' },
+  { target: 'data-id=withEffectsButton', code: 'unsupported-reactive-api', mentions: 'withEffects' },
+  { target: 'data-id=unknownFeatureButton', code: 'unsupported-store-feature', mentions: 'ToolkitStore' },
+];
+
+for (const item of unsupportedTargets) {
+  test(`unsupported-apis ${item.target}: boundary, partial and a diagnostic with a stop reason`, async () => {
+    const { report } = await analyzeFixture('unsupported-apis', { target: item.target });
+    const diagnosed = report.diagnostics.filter(entry => entry.code === item.code);
+    assert(diagnosed.length > 0, `no ${item.code} diagnostic`);
+    assert(diagnosed.some(entry => entry.message.includes(item.mentions)),
+      `the diagnostic does not name ${item.mentions}: ${diagnosed.map(entry => entry.message).join(' | ')}`);
+    // The range has to say where the trace stopped; a message alone is not a pass.
+    assert(diagnosed.every(entry => (entry.stopReason ?? '').trim().length > 0),
+      'a diagnostic for an unsupported range records no stop reason');
+    assert.equal(report.status, 'partial');
+    assert(report.nodes.some(node => node.kind === 'boundary'), 'the trace does not end at a boundary node');
+    assert(report.edges.some(edge => edge.kind === 'boundary' && edge.confidence === 'unresolved'),
+      'no unresolved boundary edge marks where the trace stopped');
+    // The unsupported API is never read as a supported one: no state or delivery relation is invented.
+    assert.deepEqual(report.edges.filter(edge => ['state-write', 'action-consume', 'event-consume']
+      .includes(edge.kind)), [], 'an unsupported range produced a state or delivery relation');
+  });
+}

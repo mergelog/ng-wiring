@@ -275,12 +275,13 @@ export function assembleReport(input: AssembleInput): WiringReport {
     index.elements.find(item => item.owner.id === selected.candidate.tuple.ownerId &&
       relative(item.span.file) === selected.candidate.tuple.element.path &&
       item.span.start === selected.candidate.tuple.element.start);
+  const stores = catalogSignalStores(context);
   const operationIds: string[] = [];
   const resolvedGaps: RawGap[] = [];
   if (target && targetElement) {
     addOperations({ analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
       targetElement, targetNodeId: target.id, targetKind: target.placed.kind, placed,
-      viewPath: selected.path, options, operationIds, problems, resolvedGaps });
+      viewPath: selected.path, options, operationIds, problems, resolvedGaps, stores });
   }
 
   // ---- diagnostics, gaps and limits ---------------------------------------------------------------
@@ -297,14 +298,14 @@ export function assembleReport(input: AssembleInput): WiringReport {
     if (occurrence) scopeFiles.add(relative(occurrence.definition.file));
     for (const directiveId of item.element?.directives ?? []) scopeFiles.add(directiveId.slice(0, directiveId.indexOf('#')));
   }
-  addDiagnostics({ analysis, builder, evidence, relative, scopeFiles, problems });
+  addDiagnostics({ analysis, builder, evidence, relative, scopeFiles, problems, stores });
   const incomplete: ScopeIncompleteness[] = [
     ...analysis.mazeProblems.map(reason => ({ reason })),
     ...catalog.gaps.map(reason => ({ reason })),
     ...index.unsupported.map(item => ({ reason: `${item.kind}: ${item.reason}`, owner: item.ownerId,
       file: item.span ? relative(item.span.file) : null })),
   ];
-  const rawGaps = [...collectGaps({ analysis, evidence, relative }), ...resolvedGaps];
+  const rawGaps = [...collectGaps({ analysis, evidence, relative, stores }), ...resolvedGaps];
   const placedGaps = builder.relateGaps(rawGaps, { owners: [...scopeOwners], targets: [selected.candidate.tuple.ownerId],
     files: [...scopeFiles], incomplete });
   for (const gap of placedGaps) {
@@ -366,6 +367,7 @@ interface OperationInput {
   problems: string[];
   /** §8 stops the NgRx or HTTP trace reported that another layer resolved at the same position. */
   resolvedGaps: RawGap[];
+  stores: ReturnType<typeof catalogSignalStores>;
 }
 
 /** A state value the operation touched, together with the member a template would read it through. */
@@ -388,7 +390,7 @@ const sameOwnerId = (reference: string, other: string | null | undefined): boole
 function addOperations(input: OperationInput): void {
   const { analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
     targetElement, targetNodeId, targetKind, placed, viewPath, options, operationIds, problems,
-    resolvedGaps } = input;
+    resolvedGaps, stores } = input;
   const { context, catalog, index, routes } = analysis;
   const t = context.toolchain.typescript;
 
@@ -410,7 +412,6 @@ function addOperations(input: OperationInput): void {
     : [];
   const httpCatalog = analyzeHttp(context);
   const signals: SignalGraph = analyzeSignals(context);
-  const stores = catalogSignalStores(context);
   const methods = analyzeReactiveMethods(context, stores);
   const eventGraph = analyzeEvents(context, stores);
   const patchStates = findPatchStateCalls(context);
@@ -761,6 +762,7 @@ interface DiagnosticsInput {
   relative: (file: string) => string;
   scopeFiles: ReadonlySet<string>;
   problems: string[];
+  stores: ReturnType<typeof catalogSignalStores>;
 }
 
 /**
@@ -768,7 +770,7 @@ interface DiagnosticsInput {
  * the target application is not a pass condition, so these are stated instead of being required to be absent.
  */
 function addDiagnostics(input: DiagnosticsInput): void {
-  const { analysis, builder, evidence, relative, scopeFiles } = input;
+  const { analysis, builder, evidence, relative, scopeFiles, stores } = input;
   const { context, catalog, index } = analysis;
   const t = context.toolchain.typescript;
   const flatten = (message: string | ts.DiagnosticMessageChain): string => t.flattenDiagnosticMessageText(message, ' ');
@@ -809,6 +811,19 @@ function addDiagnostics(input: DiagnosticsInput): void {
   for (const item of analysis.maze?.diagnostics ?? []) {
     builder.diagnostic({ code: item.code, severity: 'warning', message: item.message });
   }
+  // §7.6 R16: a feature this version cannot identify may add or replace members of the Store, so the
+  // range stays partial instead of the feature being passed through as transparent.
+  for (const declaration of stores.declarations.values()) {
+    const file = declaration.source.slice(0, declaration.source.indexOf(':'));
+    if (!scopeFiles.has(file)) continue;
+    const unresolved = declaration.features.filter(item => item.status === 'boundary');
+    if (declaration.status !== 'partial' && !unresolved.length) continue;
+    const reason = unresolved.map(item => `${item.label}: ${item.reason ?? '識別できない feature'}`).join('; ') ||
+      declaration.gaps.join('; ') || '識別できない feature が member/state を上書きし得る';
+    const at = evidence.location(declaration.source);
+    builder.diagnostic({ code: 'unsupported-store-feature', severity: 'warning',
+      message: `${declaration.name}: ${reason}`, evidenceIds: at ? [at] : [], stopReason: reason });
+  }
   // §7.6 R16: a reactive API with no semantic model stops the trace instead of being read as a known one.
   for (const file of context.sourceFiles) {
     const source = context.program.getSourceFile(file);
@@ -825,7 +840,7 @@ function addDiagnostics(input: DiagnosticsInput): void {
 
 /** §8 every detection gap that was reported, before it is placed against the selection. */
 function collectGaps(input: { analysis: ContextAnalysis; evidence: SourceEvidence;
-  relative: (file: string) => string }): RawGap[] {
+  relative: (file: string) => string; stores: ReturnType<typeof catalogSignalStores> }): RawGap[] {
   const { analysis, evidence } = input;
   const gaps: RawGap[] = [];
   for (const gap of analysis.maze?.detectionGaps ?? []) {
@@ -846,5 +861,13 @@ function collectGaps(input: { analysis: ContextAnalysis; evidence: SourceEvidenc
       file: region.span ? input.relative(region.span.file) : null });
   }
   for (const message of analysis.mazeProblems) gaps.push({ code: 'ngmaze-unavailable', message, owner: null, file: null });
+  for (const declaration of input.stores.declarations.values()) {
+    const unresolved = declaration.features.filter(item => item.status === 'boundary');
+    if (declaration.status !== 'partial' && !unresolved.length) continue;
+    gaps.push({ code: 'unsupported-store-feature',
+      message: `${declaration.name}: 識別できない feature が state/member を上書きし得る`,
+      owner: null, file: declaration.source.slice(0, declaration.source.indexOf(':')),
+      evidenceIds: [input.evidence.location(declaration.source)].filter((item): item is string => !!item) });
+  }
   return gaps;
 }

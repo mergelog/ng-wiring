@@ -269,12 +269,13 @@ export function assembleReport(input) {
         index.elements.find(item => item.owner.id === selected.candidate.tuple.ownerId &&
             relative(item.span.file) === selected.candidate.tuple.element.path &&
             item.span.start === selected.candidate.tuple.element.start);
+    const stores = catalogSignalStores(context);
     const operationIds = [];
     const resolvedGaps = [];
     if (target && targetElement) {
         addOperations({ analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
             targetElement, targetNodeId: target.id, targetKind: target.placed.kind, placed,
-            viewPath: selected.path, options, operationIds, problems, resolvedGaps });
+            viewPath: selected.path, options, operationIds, problems, resolvedGaps, stores });
     }
     // ---- diagnostics, gaps and limits ---------------------------------------------------------------
     const scopeOwners = new Set([selected.candidate.tuple.ownerId, ...selected.candidate.parentIds,
@@ -293,14 +294,14 @@ export function assembleReport(input) {
         for (const directiveId of item.element?.directives ?? [])
             scopeFiles.add(directiveId.slice(0, directiveId.indexOf('#')));
     }
-    addDiagnostics({ analysis, builder, evidence, relative, scopeFiles, problems });
+    addDiagnostics({ analysis, builder, evidence, relative, scopeFiles, problems, stores });
     const incomplete = [
         ...analysis.mazeProblems.map(reason => ({ reason })),
         ...catalog.gaps.map(reason => ({ reason })),
         ...index.unsupported.map(item => ({ reason: `${item.kind}: ${item.reason}`, owner: item.ownerId,
             file: item.span ? relative(item.span.file) : null })),
     ];
-    const rawGaps = [...collectGaps({ analysis, evidence, relative }), ...resolvedGaps];
+    const rawGaps = [...collectGaps({ analysis, evidence, relative, stores }), ...resolvedGaps];
     const placedGaps = builder.relateGaps(rawGaps, { owners: [...scopeOwners], targets: [selected.candidate.tuple.ownerId],
         files: [...scopeFiles], incomplete });
     for (const gap of placedGaps) {
@@ -344,7 +345,7 @@ const sameOwnerId = (reference, other) => !!other && (other === reference || sla
  * NgRx, HTTP, Signal and SignalStore layers, and the template reads that put the result back on screen.
  */
 function addOperations(input) {
-    const { analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf, targetElement, targetNodeId, targetKind, placed, viewPath, options, operationIds, problems, resolvedGaps } = input;
+    const { analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf, targetElement, targetNodeId, targetKind, placed, viewPath, options, operationIds, problems, resolvedGaps, stores } = input;
     const { context, catalog, index, routes } = analysis;
     const t = context.toolchain.typescript;
     const owners = placed.map(item => catalog.declarations.get(item.step.ownerId))
@@ -363,7 +364,6 @@ function addOperations(input) {
         : [];
     const httpCatalog = analyzeHttp(context);
     const signals = analyzeSignals(context);
-    const stores = catalogSignalStores(context);
     const methods = analyzeReactiveMethods(context, stores);
     const eventGraph = analyzeEvents(context, stores);
     const patchStates = findPatchStateCalls(context);
@@ -700,7 +700,7 @@ function addDisplayReads(input) {
  * the target application is not a pass condition, so these are stated instead of being required to be absent.
  */
 function addDiagnostics(input) {
-    const { analysis, builder, evidence, relative, scopeFiles } = input;
+    const { analysis, builder, evidence, relative, scopeFiles, stores } = input;
     const { context, catalog, index } = analysis;
     const t = context.toolchain.typescript;
     const flatten = (message) => t.flattenDiagnosticMessageText(message, ' ');
@@ -747,6 +747,21 @@ function addDiagnostics(input) {
     for (const item of analysis.maze?.diagnostics ?? []) {
         builder.diagnostic({ code: item.code, severity: 'warning', message: item.message });
     }
+    // §7.6 R16: a feature this version cannot identify may add or replace members of the Store, so the
+    // range stays partial instead of the feature being passed through as transparent.
+    for (const declaration of stores.declarations.values()) {
+        const file = declaration.source.slice(0, declaration.source.indexOf(':'));
+        if (!scopeFiles.has(file))
+            continue;
+        const unresolved = declaration.features.filter(item => item.status === 'boundary');
+        if (declaration.status !== 'partial' && !unresolved.length)
+            continue;
+        const reason = unresolved.map(item => `${item.label}: ${item.reason ?? '識別できない feature'}`).join('; ') ||
+            declaration.gaps.join('; ') || '識別できない feature が member/state を上書きし得る';
+        const at = evidence.location(declaration.source);
+        builder.diagnostic({ code: 'unsupported-store-feature', severity: 'warning',
+            message: `${declaration.name}: ${reason}`, evidenceIds: at ? [at] : [], stopReason: reason });
+    }
     // §7.6 R16: a reactive API with no semantic model stops the trace instead of being read as a known one.
     for (const file of context.sourceFiles) {
         const source = context.program.getSourceFile(file);
@@ -787,5 +802,14 @@ function collectGaps(input) {
     }
     for (const message of analysis.mazeProblems)
         gaps.push({ code: 'ngmaze-unavailable', message, owner: null, file: null });
+    for (const declaration of input.stores.declarations.values()) {
+        const unresolved = declaration.features.filter(item => item.status === 'boundary');
+        if (declaration.status !== 'partial' && !unresolved.length)
+            continue;
+        gaps.push({ code: 'unsupported-store-feature',
+            message: `${declaration.name}: 識別できない feature が state/member を上書きし得る`,
+            owner: null, file: declaration.source.slice(0, declaration.source.indexOf(':')),
+            evidenceIds: [input.evidence.location(declaration.source)].filter((item) => !!item) });
+    }
     return gaps;
 }
