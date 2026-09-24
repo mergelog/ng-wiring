@@ -1,0 +1,29 @@
+{
+  "name": "ng-wiring",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "ng-wiring": "./dist/cli/index.js"
+  },
+  "files": ["dist", "docs", "README.md", "LICENSE"],
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "check:dist": "npm run build && git diff --exit-code -- dist && test -z \"$(git ls-files --others --exclude-standard dist)\""
+  },
+  "dependencies": {
+    "ngmaze": "github:mergelog/ng-maze#6da35347018531df30659d34e66a11d1bfcc3f22",
+    "typescript": "6.0.3",
+    "@angular/compiler": "22.1.5",
+    "ajv": "8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0"
+  }
+}

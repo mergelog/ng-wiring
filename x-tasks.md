@@ -4,13 +4,13 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **未着手**。`ng-wiring/` には `package.json` / `src` / `test` がまだ無く、下記の全項目が未完了。要素抽出と基礎グラフ取得は ngmaze 側で現物確認済みだが、ng-wiring 全体（投影・起動点・操作・状態/API の統合）は未実装（§1, §2）。
+現状: **実装中**。P0 基盤は完了。ng-wiring 全体（投影・起動点・操作・状態/API の統合）は未実装（§1, §2）。
 
 ## 進捗サマリ
 
 | フェーズ | 主な対象 | 項目数 | 完了 | 前提 |
 | --- | --- | --- | --- | --- |
-| P0 プロジェクト基盤 | package/dist/依存固定 | 7 | 0 | — |
+| P0 プロジェクト基盤 | package/dist/依存固定 | 7 | 7 | — |
 | P1 CLI 契約 | `src/cli` | 20 | 0 | P0 |
 | P2 解析コンテキストと workspace | `src/workspace` | 19 | 0 | P0 |
 | P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 0 | P2 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **0** | |
+| **合計** | | **237** | **7** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -43,13 +43,13 @@
 
 ## P0 プロジェクト基盤（§9）
 
-- [ ] P0-01 `package.json` 作成。bin は `ng-wiring` の 1 個、`engines` は `^22.22.3 || ^24.15.0 || >=26.0.0`（§4.2, §9）
-- [ ] P0-02 §9 のディレクトリ雛形を作る（`src/cli`, `src/workspace`, `src/index`, `src/resolve/{scope,view,operation}`, `src/model`, `src/render`, `src/adapters/ng-maze`, `src/adapters/reactive`, `docs`, `test/fixtures`, `test/contracts`）
-- [ ] P0-03 lockfile で ngmaze の固定リビジョン `6da3534…`・TS/@angular/compiler の配布版・JSON Schema runtime validator を固定（§9）
-- [ ] P0-04 `ts-morph` / `ast-grep` を初期必須依存に入れないことを確認（§9）
-- [ ] P0-05 `dist/` ビルド設定と、CI でのソース再ビルド一致検査（§9, A18）
-- [ ] P0-06 永続キャッシュを持たない実装方針（1 実行内で同じ snapshot/context の AST・索引のみ再利用）（§9）
-- [ ] P0-07 ng-maze の MIT License 表記の取り込み（§9）
+- [x] P0-01 `package.json` 作成。bin は `ng-wiring` の 1 個、`engines` は `^22.22.3 || ^24.15.0 || >=26.0.0`（§4.2, §9）
+- [x] P0-02 §9 のディレクトリ雛形を作る（`src/cli`, `src/workspace`, `src/index`, `src/resolve/{scope,view,operation}`, `src/model`, `src/render`, `src/adapters/ng-maze`, `src/adapters/reactive`, `docs`, `test/fixtures`, `test/contracts`）
+- [x] P0-03 lockfile で ngmaze の固定リビジョン `6da3534…`・TS/@angular/compiler の配布版・JSON Schema runtime validator を固定（§9）
+- [x] P0-04 `ts-morph` / `ast-grep` を初期必須依存に入れないことを確認（§9）
+- [x] P0-05 `dist/` ビルド設定と、CI でのソース再ビルド一致検査（§9, A18）
+- [x] P0-06 永続キャッシュを持たない実装方針（1 実行内で同じ snapshot/context の AST・索引のみ再利用）（§9）
+- [x] P0-07 ng-maze の MIT License 表記の取り込み（§9）
 
 ## P1 CLI 契約（`src/cli`, §3）
 
