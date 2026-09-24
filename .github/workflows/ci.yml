@@ -15,3 +15,14 @@ jobs:
       # `check:dist` runs first so a build mismatch is still reported when the contract check is red.
       - run: npm run check:dist
       - run: npm run check:contracts
+
+  # §9 the pinned ngmaze is a GitHub dependency with a `prepare` script, so installing builds it on the
+  # installing machine. This job proves that path from an empty npm cache into an empty directory.
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+      - run: npm run check:install

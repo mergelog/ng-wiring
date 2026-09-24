@@ -21,7 +21,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
-    "check:dist": "node scripts/check-dist.mjs"
+    "check:dist": "node scripts/check-dist.mjs",
+    "check:install": "node scripts/check-install.mjs"
   },
   "dependencies": {
     "ajv": "8.17.1",
