@@ -11,8 +11,8 @@
 | フェーズ | 主な対象 | 項目数 | 完了 | 前提 |
 | --- | --- | --- | --- | --- |
 | P0 プロジェクト基盤 | package/dist/依存固定 | 7 | 7 | — |
-| P1 CLI 契約 | `src/cli` | 20 | 11 | P0 |
-| P2 解析コンテキストと workspace | `src/workspace` | 19 | 0 | P0 |
+| P1 CLI 契約 | `src/cli` | 20 | 19 | P0 |
+| P2 解析コンテキストと workspace | `src/workspace` | 19 | 19 | P0 |
 | P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 0 | P2 |
 | P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 0 | P2, P3 |
 | P5 表示経路・投影・TemplateRef | `src/resolve/view` | 10 | 0 | P4 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **18** | |
+| **合計** | | **237** | **45** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -60,41 +60,41 @@
 - [x] P1-05 `--route <path>` の完全一致絞り込み（実 URL・query・fragment・glob として解釈しない）（§3.1）
 - [x] P1-06 `--candidate <番号|cand:ID>`。1 始まり番号または SHA-256 全桁、範囲外・不存在はエラー（§3.1）
 - [x] P1-07 `--event <name>` の正規化（`keydown` は `keydown.enter` 等を含む、修飾子付きは完全一致、該当なしでも理由付き資料を出す）（§3.1）
-- [~] P1-08 `--out-dir <dir>`（未存在なら作成、ソースリンクの基準にする）（§3.1）
+- [x] P1-08 `--out-dir <dir>`（未存在なら作成、ソースリンクの基準にする）（§3.1）
 - [~] P1-09 `--json`（ファイルを 1 個だけ作り、stdout に JSON 本文を流さない）（§3.1）
 - [x] P1-10 `--help` / `--version` は stdout に案内を出して code 0、対象引数不要（§3.3）
 - [x] P1-11 未知/重複した単値オプション、対象指定なし/両方指定を code 3（§3.3）
-- [~] P1-12 終了コード 0/1/2/3/4/5/130 と判定順（引数・設定 → 致命的失敗 → 対象なし（欠落なら 5、他は 1）→ 選択要求 2 → 出力成功時 0/5）（§3.3）
-- [~] P1-13 stdout は完成ファイルの絶対パス 1 行のみ、診断・候補・進捗は stderr（§3.3）
-- [~] P1-14 相対パスの基準分離（tsconfig/out-dir は実行ディレクトリ、source/ComponentId は workspace root）（§3.1）
+- [x] P1-12 終了コード 0/1/2/3/4/5/130 と判定順（引数・設定 → 致命的失敗 → 対象なし（欠落なら 5、他は 1）→ 選択要求 2 → 出力成功時 0/5）（§3.3）
+- [x] P1-13 stdout は完成ファイルの絶対パス 1 行のみ、診断・候補・進捗は stderr（§3.3）
+- [x] P1-14 相対パスの基準分離（tsconfig/out-dir は実行ディレクトリ、source/ComponentId は workspace root）（§3.1）
 - [x] P1-15 candidate の識別 tuple（context + 所有者 + span + 使用箇所列 + route 定義/loader 列 + bootstrap + 投影先）と canonical JSON → SHA-256。日時・OS 固有絶対ルートを含めない（§3.2）
-- [~] P1-16 `snapshotId` を candidate ID とは別に保持（§3.2）
+- [x] P1-16 `snapshotId` を candidate ID とは別に保持（§3.2）
 - [x] P1-17 候補の安定順序（`/` 区切りワークスペース相対、Unicode code point と数値位置、locale 非依存）（§3.2）
-- [~] P1-18 対話選択（stdin と stderr がともに TTY のときだけ stderr に一覧とプロンプト、stdout がパイプでも可、EOF は code 2、非対話は ID 付き一覧を出して資料を作らない）（§3.2, §3.3）
-- [~] P1-19 候補の分類表示（bootstrap 到達済み / 宣言・使用のみ / 未生成 TemplateRef / 動的配置未解決）と、不完全候補の明示選択（§3.2）
-- [~] P1-20 列挙上限に達した場合は自動選択を禁止し、候補ゼロを一意と扱わない。省略された ID の指定は through/route/project による絞り込みを案内（§3.2）
+- [x] P1-18 対話選択（stdin と stderr がともに TTY のときだけ stderr に一覧とプロンプト、stdout がパイプでも可、EOF は code 2、非対話は ID 付き一覧を出して資料を作らない）（§3.2, §3.3）
+- [x] P1-19 候補の分類表示（bootstrap 到達済み / 宣言・使用のみ / 未生成 TemplateRef / 動的配置未解決）と、不完全候補の明示選択（§3.2）
+- [x] P1-20 列挙上限に達した場合は自動選択を禁止し、候補ゼロを一意と扱わない。省略された ID の指定は through/route/project による絞り込みを案内（§3.2）
 
 ## P2 解析コンテキストと workspace（`src/workspace`, §4.1, §4.2）
 
-- [ ] P2-01 `AnalysisContext`（workspace root, project 名, tsconfig+extends のハッシュ, compilerOptions, toolchain, entry）。同ソースでも context が違えば別ノード（§4.1）
-- [ ] P2-02 `angular.json` の `architect.build` / `targets.build` の **options** から tsConfig と browser/main を取得。無ければ `tsconfig.app.json` → `tsconfig.json` の順、どれも無ければ code 3（§4.1）
-- [ ] P2-03 project 指定なしなら全 application project をそれぞれの設定で直列解析し、候補一覧だけ統合。application 無しは code 3（§3.1）
-- [ ] P2-04 library の扱い（参照された範囲を含め、単独指定時は bootstrap 未到達の資料を許す）。異なる project のグラフを接続しない（§3.1）
-- [ ] P2-05 明示 tsconfig の workspace root 決定と、solution-style の複数 references を勝手に選ばない（§3.1, §4.1）
-- [ ] P2-06 TS 設定読み込み API で extends / paths / baseUrl / moduleResolution / references を解決し、noEmit で Program + TypeChecker を作る（§4.1）
-- [ ] P2-07 解析対象集合 = 設定の fileNames + Program が import で読んだワークスペース内部の非宣言ソース。spec・生成物・node_modules・`_old` を走査から除外し、依存に必要な除外ソースは gap（§4.1）
-- [ ] P2-08 外部パッケージの `.d.ts` は型・公開 Angular メタデータのみに使い、再帰探索の対象外にする（§4.1）
-- [ ] P2-09 明示 tsconfig では fileNames と import closure に限定し、別 project の sourceRoot や alias をマージしない（§4.1）
-- [ ] P2-10 未使用ファイルの発見と bootstrap からの到達可能性を別に扱う（§4.1）
-- [ ] P2-11 外部境界の判定（ワークスペース外の linked source、宣言ファイルに置き換わった project reference、解決できない拡張子）（§4.1）
-- [ ] P2-12 entry の決定（project の browser/main、明示設定なら fileNames 内の entry、複数なら別候補）。不明なら bootstrap を推測せず partial（§4.1）
-- [ ] P2-13 fileReplacements・独自 builder・SSR/hydration を未適用として解析メタデータに記載。production/defaultConfiguration を暗黙適用しない（§4.1）
-- [ ] P2-14 限定 AST 評価器（import・定数・オブジェクト/配列・単純な戻り値のみ。式ごと最大 10,000 展開・深さ 64、副作用/循環/評価不能は停止。getter・provider factory・route loader を実行しない）（§4.1）
-- [ ] P2-15 snapshot 記録（ソース/テンプレート、設定/extends、依存 package metadata、lockfile の集合と内容ハッシュ。後から読んだ依存も追加）（§8）
-- [ ] P2-16 出力前の snapshot 再確認。変更を検出したら成果物を破棄して code 4 で再実行案内（根拠リンク掲載ファイルだけの検査では不足）（§8）
-- [ ] P2-17 ツールチェーン解決（対象 node_modules の TS と `@angular/compiler` を優先、未検出・ロード失敗で同梱版へ黙って継続しない、AST を版混在させない）（§4.2）
-- [ ] P2-18 対応版検査（Angular 22.x / TS 6.0.x、固定試験版 compiler・core 22.1.5 と TS 6.0.3、core/compiler の整合、非対応は code 3）（§4.2）
-- [ ] P2-19 リアクティブ依存の版検査（`@ngrx/store|effects|signals` 22.0.0、RxJS 7.8.2 を固定試験版に。未対応版・未知 API は該当アダプタの unsupported で部分解析、未使用パッケージを必須依存にしない）（§4.2）
+- [x] P2-01 `AnalysisContext`（workspace root, project 名, tsconfig+extends のハッシュ, compilerOptions, toolchain, entry）。同ソースでも context が違えば別ノード（§4.1）
+- [x] P2-02 `angular.json` の `architect.build` / `targets.build` の **options** から tsConfig と browser/main を取得。無ければ `tsconfig.app.json` → `tsconfig.json` の順、どれも無ければ code 3（§4.1）
+- [x] P2-03 project 指定なしなら全 application project をそれぞれの設定で直列解析し、候補一覧だけ統合。application 無しは code 3（§3.1）
+- [x] P2-04 library の扱い（参照された範囲を含め、単独指定時は bootstrap 未到達の資料を許す）。異なる project のグラフを接続しない（§3.1）
+- [x] P2-05 明示 tsconfig の workspace root 決定と、solution-style の複数 references を勝手に選ばない（§3.1, §4.1）
+- [x] P2-06 TS 設定読み込み API で extends / paths / baseUrl / moduleResolution / references を解決し、noEmit で Program + TypeChecker を作る（§4.1）
+- [x] P2-07 解析対象集合 = 設定の fileNames + Program が import で読んだワークスペース内部の非宣言ソース。spec・生成物・node_modules・`_old` を走査から除外し、依存に必要な除外ソースは gap（§4.1）
+- [x] P2-08 外部パッケージの `.d.ts` は型・公開 Angular メタデータのみに使い、再帰探索の対象外にする（§4.1）
+- [x] P2-09 明示 tsconfig では fileNames と import closure に限定し、別 project の sourceRoot や alias をマージしない（§4.1）
+- [x] P2-10 未使用ファイルの発見と bootstrap からの到達可能性を別に扱う（§4.1）
+- [x] P2-11 外部境界の判定（ワークスペース外の linked source、宣言ファイルに置き換わった project reference、解決できない拡張子）（§4.1）
+- [x] P2-12 entry の決定（project の browser/main、明示設定なら fileNames 内の entry、複数なら別候補）。不明なら bootstrap を推測せず partial（§4.1）
+- [x] P2-13 fileReplacements・独自 builder・SSR/hydration を未適用として解析メタデータに記載。production/defaultConfiguration を暗黙適用しない（§4.1）
+- [x] P2-14 限定 AST 評価器（import・定数・オブジェクト/配列・単純な戻り値のみ。式ごと最大 10,000 展開・深さ 64、副作用/循環/評価不能は停止。getter・provider factory・route loader を実行しない）（§4.1）
+- [x] P2-15 snapshot 記録（ソース/テンプレート、設定/extends、依存 package metadata、lockfile の集合と内容ハッシュ。後から読んだ依存も追加）（§8）
+- [x] P2-16 出力前の snapshot 再確認。変更を検出したら成果物を破棄して code 4 で再実行案内（根拠リンク掲載ファイルだけの検査では不足）（§8）
+- [x] P2-17 ツールチェーン解決（対象 node_modules の TS と `@angular/compiler` を優先、未検出・ロード失敗で同梱版へ黙って継続しない、AST を版混在させない）（§4.2）
+- [x] P2-18 対応版検査（Angular 22.x / TS 6.0.x、固定試験版 compiler・core 22.1.5 と TS 6.0.3、core/compiler の整合、非対応は code 3）（§4.2）
+- [x] P2-19 リアクティブ依存の版検査（`@ngrx/store|effects|signals` 22.0.0、RxJS 7.8.2 を固定試験版に。未対応版・未知 API は該当アダプタの unsupported で部分解析、未使用パッケージを必須依存にしない）（§4.2）
 
 ## P3 ngmaze アダプタ（`src/adapters/ng-maze`, §4.3）
 

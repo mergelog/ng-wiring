@@ -7,7 +7,12 @@
   "bin": {
     "ng-wiring": "./dist/cli/index.js"
   },
-  "files": ["dist", "docs", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },
@@ -18,12 +23,13 @@
     "check:dist": "npm run build && git diff --exit-code -- dist && test -z \"$(git ls-files --others --exclude-standard dist)\""
   },
   "dependencies": {
-    "ngmaze": "github:mergelog/ng-maze#6da35347018531df30659d34e66a11d1bfcc3f22",
-    "typescript": "6.0.3",
     "@angular/compiler": "22.1.5",
-    "ajv": "8.17.1"
+    "ajv": "8.17.1",
+    "ngmaze": "github:mergelog/ng-maze#6da35347018531df30659d34e66a11d1bfcc3f22",
+    "typescript": "6.0.3"
   },
   "devDependencies": {
+    "@angular/core": "22.1.5",
     "@types/node": "24.10.0"
   }
 }
