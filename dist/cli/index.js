@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { runCli } from './run.js';
 import { UsageError } from './arguments.js';
-// The parser is usable now; graph analysis and rendering are added in P3–P14.
+// The argument contract and both renderers are in place; assembling the analysis layers into the
+// intermediate model the renderers read is P16.
 const backend = {
-    async analyze() { throw new UsageError('Analysis backend is not implemented yet (P3–P14)'); },
-    async write() { throw new Error('Renderer is not implemented yet'); },
+    async analyze() { throw new UsageError('Analysis backend is not implemented yet (P16)'); },
+    async write() { throw new Error('The analysis is not assembled into a report yet (P16)'); },
 };
 const cancellation = new AbortController();
 process.once('SIGINT', () => cancellation.abort());

@@ -4,14 +4,14 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P13 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P14 以降の renderer と各解析層から中間モデルへの組み立てが必要（§1, §2）。
+現状: **実装中**。P0〜P14 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には、各解析層から中間モデルへの組み立て（P16）が残っている（§1, §2）。
 
 ## 進捗サマリ
 
 | フェーズ | 主な対象 | 項目数 | 完了 | 前提 |
 | --- | --- | --- | --- | --- |
 | P0 プロジェクト基盤 | package/dist/依存固定 | 7 | 7 | — |
-| P1 CLI 契約 | `src/cli` | 20 | 19 | P0 |
+| P1 CLI 契約 | `src/cli` | 20 | 20 | P0 |
 | P2 解析コンテキストと workspace | `src/workspace` | 19 | 19 | P0 |
 | P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 12 | P2 |
 | P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 13 | P2, P3 |
@@ -24,13 +24,13 @@
 | P11 Signal・SignalStore・dispatch | `src/adapters/reactive` | 15 | 15 | P9, P10 |
 | P12 API・HTTP・型 | `src/resolve/operation` | 7 | 7 | P9 |
 | P13 中間モデルと schema | `src/model`, `docs` | 15 | 15 | P5〜P12 |
-| P14 renderer とファイル名 | `src/render` | 22 | 0 | P13 |
+| P14 renderer とファイル名 | `src/render` | 22 | 22 | P13 |
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 0 | P13 |
 | P16 fixture・期待台帳・CI | `test/` | 15 | 0 | 各フェーズ並行 |
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **174** | |
+| **合計** | | **237** | **197** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -61,7 +61,7 @@
 - [x] P1-06 `--candidate <番号|cand:ID>`。1 始まり番号または SHA-256 全桁、範囲外・不存在はエラー（§3.1）
 - [x] P1-07 `--event <name>` の正規化（`keydown` は `keydown.enter` 等を含む、修飾子付きは完全一致、該当なしでも理由付き資料を出す）（§3.1）
 - [x] P1-08 `--out-dir <dir>`（未存在なら作成、ソースリンクの基準にする）（§3.1）
-- [~] P1-09 `--json`（ファイルを 1 個だけ作り、stdout に JSON 本文を流さない）（§3.1）
+- [x] P1-09 `--json`（ファイルを 1 個だけ作り、stdout に JSON 本文を流さない）（§3.1）
 - [x] P1-10 `--help` / `--version` は stdout に案内を出して code 0、対象引数不要（§3.3）
 - [x] P1-11 未知/重複した単値オプション、対象指定なし/両方指定を code 3（§3.3）
 - [x] P1-12 終了コード 0/1/2/3/4/5/130 と判定順（引数・設定 → 致命的失敗 → 対象なし（欠落なら 5、他は 1）→ 選択要求 2 → 出力成功時 0/5）（§3.3）
@@ -268,28 +268,40 @@
 
 ## P14 renderer とファイル名（`src/render`, §3.4, §8）
 
-- [ ] P14-01 資料冒頭（対象/所有者、project・snapshot・適用設定、候補 ID、選択した表示経路と root、イベント、confidence/coverage、重要な未解決理由）（§8）
-- [ ] P14-02 本体構成（`01` から子→root のコンポーネント節、宣言元/挿入先への参照、イベント別の処理、背景入力、診断・制限）（§8）
-- [ ] P14-03 同名クラスのパス併記、同一クラスの別出現は別番号、循環末尾は参照先と打ち切りを表示、存在しない root を番号付きで追加しない（§8）
-- [ ] P14-04 §8 の全 kind の定型文実装（template-use / display-parent / projection / view-insertion / route-load / route-outlet / route-redirect / bootstrap / dynamic-create / dom-listener / event-propagation / input-binding / output-subscription / output-emit / call / value-flow / state-write / state-read / reactive-link / query-target / di-resolve / action-dispatch / action-consume / event-dispatch / event-consume / http-create / http-consume / type-use / boundary）（§8）
-- [ ] P14-05 未知 kind を自由作文に回さず schema/render エラーにする。`in/process/out/state/service/relation` は表示グループに限り解析 kind と混同しない（§8）
-- [ ] P14-06 details が未知なら null + 理由で unresolved 表記。`dispatchMode` は explicit/reactive-factory/named-dispatcher/automatic-output を Markdown と JSON 双方に残す（§8）
-- [ ] P14-07 conditions は条件式から機械的に表示し、自然言語で新しい因果を補わない。確定できない表示親・通信先を placeholder 名で確定表現しない（§8）
-- [ ] P14-08 全ての文末に根拠リンクと必要な条件/未解決理由を付ける（§8）
-- [ ] P14-09 ソースリンクは出力ファイルからの相対パス + `#L<行>`、空白/`#`/`%` を URL エンコード。相対化できない場合は絶対パスのテキストと診断（§8）
-- [ ] P14-10 テキスト/属性/コード抜粋を Markdown/HTML としてエスケープし、ソース文字列をリンク構文として実行させない（§8）
-- [ ] P14-11 JSON renderer（`--json` でファイル 1 個、拡張子のみ `.json`）（§3.1, §3.4）
-- [ ] P14-12 同一 IR を両 renderer に渡す一致試験（CLI 2 回実行のバイト比較は要求しない）（§8, 指摘 2-9）
-- [ ] P14-13 ファイル名の基本形 `ngwi-{処理名}-{YYMMDD.HHMMSS}.md` と処理順 1〜5 の実装（§3.4）
-- [ ] P14-14 見出しは `SearchComponent.data-id="searchInputField"`、ファイル名元文字列は `SearchComponent.data-id=searchInputField`。値内部の引用符は除かない（§3.4-1）
-- [ ] P14-15 `--source` の処理名は `ComponentClass.要素名-L行番号-パスハッシュ`（所有コンポーネント ID + ソースパスの SHA-256 先頭 12 桁）（§3.4-1）
-- [ ] P14-16 ファイル名用文字列のみ NFC 化し、ASCII 英数字・`_`・`-`・`.`・`=` 以外を `%HH`（大文字、`%` 自身も）に変換。照合用の値・識別子は正規化しない（§3.4-2）
-- [ ] P14-17 160 文字超過時の短縮（`%HH` を分断しない先頭 140 文字 + `-h<元文字列 SHA-256 先頭 12 桁>`、元文字列は本文に無損失で残す）（§3.4-3）
-- [ ] P14-18 解析開始時のローカル日時を付与し、本文に ISO 8601 + UTC offset を残す（§3.4-4）
-- [ ] P14-19 衝突回避（大小文字を無視した既存名検査、**処理名側**に `-c1`, `-c2`…）（§3.4-5）
-- [ ] P14-20 出力の直列化（`.ng-wiring-output.lock` を `wx` で作成、最終ファイルも `wx`、既存を上書きしない、ロック競合は code 4、他プロセスのロックを削除しない、finally で解放）（§3.4-5）
-- [ ] P14-21 完全な出力内容をメモリ上で検証してから書き、失敗時は自分が作った不完全ファイルを削除。成功するまで stdout にパスを出さない（§3.4）
-- [ ] P14-22 `status: partial` を本文冒頭/JSON に表示。対象外の局所 gap だけでは partial にせず、起動点・スコープ全体を壊す gap は関連として扱う（§3.3）
+- [x] P14-01 資料冒頭（対象/所有者、project・snapshot・適用設定、候補 ID、選択した表示経路と root、イベント、confidence/coverage、重要な未解決理由）（§8）
+- [x] P14-02 本体構成（`01` から子→root のコンポーネント節、宣言元/挿入先への参照、イベント別の処理、背景入力、診断・制限）（§8）
+- [x] P14-03 同名クラスのパス併記、同一クラスの別出現は別番号、循環末尾は参照先と打ち切りを表示、存在しない root を番号付きで追加しない（§8）
+- [x] P14-04 §8 の全 kind の定型文実装（template-use / display-parent / projection / view-insertion / route-load / route-outlet / route-redirect / bootstrap / dynamic-create / dom-listener / event-propagation / input-binding / output-subscription / output-emit / call / value-flow / state-write / state-read / reactive-link / query-target / di-resolve / action-dispatch / action-consume / event-dispatch / event-consume / http-create / http-consume / type-use / boundary）（§8）
+- [x] P14-05 未知 kind を自由作文に回さず schema/render エラーにする。`in/process/out/state/service/relation` は表示グループに限り解析 kind と混同しない（§8）
+- [x] P14-06 details が未知なら null + 理由で unresolved 表記。`dispatchMode` は explicit/reactive-factory/named-dispatcher/automatic-output を Markdown と JSON 双方に残す（§8）
+- [x] P14-07 conditions は条件式から機械的に表示し、自然言語で新しい因果を補わない。確定できない表示親・通信先を placeholder 名で確定表現しない（§8）
+- [x] P14-08 全ての文末に根拠リンクと必要な条件/未解決理由を付ける（§8）
+- [x] P14-09 ソースリンクは出力ファイルからの相対パス + `#L<行>`、空白/`#`/`%` を URL エンコード。相対化できない場合は絶対パスのテキストと診断（§8）
+- [x] P14-10 テキスト/属性/コード抜粋を Markdown/HTML としてエスケープし、ソース文字列をリンク構文として実行させない（§8）
+- [x] P14-11 JSON renderer（`--json` でファイル 1 個、拡張子のみ `.json`）（§3.1, §3.4）
+- [x] P14-12 同一 IR を両 renderer に渡す一致試験（CLI 2 回実行のバイト比較は要求しない）（§8, 指摘 2-9）
+- [x] P14-13 ファイル名の基本形 `ngwi-{処理名}-{YYMMDD.HHMMSS}.md` と処理順 1〜5 の実装（§3.4）
+- [x] P14-14 見出しは `SearchComponent.data-id="searchInputField"`、ファイル名元文字列は `SearchComponent.data-id=searchInputField`。値内部の引用符は除かない（§3.4-1）
+- [x] P14-15 `--source` の処理名は `ComponentClass.要素名-L行番号-パスハッシュ`（所有コンポーネント ID + ソースパスの SHA-256 先頭 12 桁）（§3.4-1）
+- [x] P14-16 ファイル名用文字列のみ NFC 化し、ASCII 英数字・`_`・`-`・`.`・`=` 以外を `%HH`（大文字、`%` 自身も）に変換。照合用の値・識別子は正規化しない（§3.4-2）
+- [x] P14-17 160 文字超過時の短縮（`%HH` を分断しない先頭 140 文字 + `-h<元文字列 SHA-256 先頭 12 桁>`、元文字列は本文に無損失で残す）（§3.4-3）
+- [x] P14-18 解析開始時のローカル日時を付与し、本文に ISO 8601 + UTC offset を残す（§3.4-4）
+- [x] P14-19 衝突回避（大小文字を無視した既存名検査、**処理名側**に `-c1`, `-c2`…）（§3.4-5）
+- [x] P14-20 出力の直列化（`.ng-wiring-output.lock` を `wx` で作成、最終ファイルも `wx`、既存を上書きしない、ロック競合は code 4、他プロセスのロックを削除しない、finally で解放）（§3.4-5）
+- [x] P14-21 完全な出力内容をメモリ上で検証してから書き、失敗時は自分が作った不完全ファイルを削除。成功するまで stdout にパスを出さない（§3.4）
+- [x] P14-22 `status: partial` を本文冒頭/JSON に表示。対象外の局所 gap だけでは partial にせず、起動点・スコープ全体を壊す gap は関連として扱う（§3.3）
+
+実装メモ: `src/render` は中間モデルだけを読み、確定度・coverage・ID を再計算しない。§8 の kind 表は `src/render/sentences.ts` の `sentenceTemplates` として持ち、`sentenceSlotProblems()` が `src/model/types.ts` の `edgeContracts` との一致を固定する。定型文の slot は必須 details の**部分集合**とする。`template-use` の `occurrence` のように、参照用に必須でも §8 の文には現れない details があるため。
+
+`state` と `service` は表示グループ名であると同時に node kind でもある。混同を避けるため定型文は辺 kind だけで引き、表示グループは日本語ラベル（入力/処理/出力/状態/サービス/関連）として raw kind の隣に別に出す。`displayGroupProblems()` が「表示グループ名を辺 kind にしない」ことを固定する。
+
+節の見出しラベルは occurrence node の `details.label`（無ければ `details.name`、宣言シンボル名、kind の順）から取る。P16 の組み立てでは要素 occurrence に `label` を入れること。同名クラスのパス併記は**宣言元**のパスで判定する（使用箇所のファイルでは同じ親テンプレート内の 2 つを区別できない）。
+
+辺は必ず資料のどこか 1 箇所以上に出る。`produceReport` は書き出し前に全辺が出力に載ったことを確認し、1 つでも欠ければファイルを作らずに失敗する（P14-21）。例外は §8 が求める「通信」節で、そこだけ http 辺を再掲する。
+
+`--json` の本文は schema の `additionalProperties: false` に従い report そのものだけを入れる。短縮前のファイル名元文字列は Markdown 本文にのみ載せ、JSON 側は `query.raw` と `selection.ownerId` から同じ文字列を再構成できる状態に留める。
+
+P1-09 はこのフェーズで fixture が揃ったため `[~]` から `[x]` に繰り上げた（`test/render-p14.test.mjs` の CLI 経由試験で、`--json` がファイル 1 個のみを作り stdout に本文を流さないことを固定した）。
 
 ## P15 診断の関連付けと coverage 集計（§8）
 
