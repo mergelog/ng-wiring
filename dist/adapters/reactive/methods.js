@@ -117,6 +117,9 @@ export function analyzeReactiveMethods(context, stores) {
         }
         if (!t.isPropertyAccessExpression(expression))
             return null;
+        // A member with its own declaration is that declaration, not a Store member that shares its name.
+        if ((symbol?.declarations ?? []).some(declaration => context.sourceFiles.includes(declaration.getSourceFile().fileName)))
+            return null;
         // A generated Store exposes its members through a mapped type; fall back to the member name in that Store.
         const name = expression.name.text;
         const candidates = methods.filter(item => item.name === name);

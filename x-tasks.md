@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P11 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P12 以降の操作、モデル、renderer の統合が必要（§1, §2）。
+現状: **実装中**。P0〜P12 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P13 以降のモデルと renderer の統合が必要（§1, §2）。
 
 ## 進捗サマリ
 
@@ -22,7 +22,7 @@
 | P9 入出力・状態・非同期 | `src/resolve/operation` | 11 | 11 | P8 |
 | P10 DI と NgRx Store | `src/resolve/operation` | 12 | 12 | P9 |
 | P11 Signal・SignalStore・dispatch | `src/adapters/reactive` | 15 | 15 | P9, P10 |
-| P12 API・HTTP・型 | `src/resolve/operation` | 7 | 0 | P9 |
+| P12 API・HTTP・型 | `src/resolve/operation` | 7 | 7 | P9 |
 | P13 中間モデルと schema | `src/model`, `docs` | 15 | 0 | P5〜P12 |
 | P14 renderer とファイル名 | `src/render` | 22 | 0 | P13 |
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 0 | P13 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **152** | |
+| **合計** | | **237** | **159** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -232,13 +232,13 @@
 
 ## P12 API・HTTP・型（§7.5）
 
-- [ ] P12-01 サービス→生成クライアント→共通ラッパー→HTTP の段階解決（HTTP method、URL の静的部分/式、request 引数、response 型）（§7.5）
-- [ ] P12-02 URL が動的でも method/型を失わず、URL だけ unresolved にする。`Observable<any>` でも内部 `post<Response>` の型を区別（§7.5）
-- [ ] P12-03 型の掲載範囲（値/引数/返却で実際に使われた interface・type alias・生成 DTO・ジェネリックのみ。import 全件を Model として列挙しない）（§7.5）
-- [ ] P12-04 Observable の作成と購読による通信開始の区別（subscribe、登録済み effect の flattening、async pipe、`firstValueFrom`/`lastValueFrom`、`toSignal` の内部購読、`rxMethod` の pipeline、`withEventHandlers` の購読）。作るだけなら通信候補で止める（§7.5）
-- [ ] P12-05 Promise API は呼出し時の開始と `await`/`then` の結果を分ける（§7.5）
-- [ ] P12-06 interceptor・キャッシュ・retry・share/replay・取消しを枝として示し、未知なら HTTP 境界の診断。購読の発見だけで「必ず1回通信」と書かない（§7.5）
-- [ ] P12-07 API 名や factory 宣言の発見だけを通信開始としない（登録・インスタンス生成・入力/トリガーからの到達を確認）（§7.5）
+- [x] P12-01 サービス→生成クライアント→共通ラッパー→HTTP の段階解決（HTTP method、URL の静的部分/式、request 引数、response 型）（§7.5）
+- [x] P12-02 URL が動的でも method/型を失わず、URL だけ unresolved にする。`Observable<any>` でも内部 `post<Response>` の型を区別（§7.5）
+- [x] P12-03 型の掲載範囲（値/引数/返却で実際に使われた interface・type alias・生成 DTO・ジェネリックのみ。import 全件を Model として列挙しない）（§7.5）
+- [x] P12-04 Observable の作成と購読による通信開始の区別（subscribe、登録済み effect の flattening、async pipe、`firstValueFrom`/`lastValueFrom`、`toSignal` の内部購読、`rxMethod` の pipeline、`withEventHandlers` の購読）。作るだけなら通信候補で止める（§7.5）
+- [x] P12-05 Promise API は呼出し時の開始と `await`/`then` の結果を分ける（§7.5）
+- [x] P12-06 interceptor・キャッシュ・retry・share/replay・取消しを枝として示し、未知なら HTTP 境界の診断。購読の発見だけで「必ず1回通信」と書かない（§7.5）
+- [x] P12-07 API 名や factory 宣言の発見だけを通信開始としない（登録・インスタンス生成・入力/トリガーからの到達を確認）（§7.5）
 
 ## P13 中間モデルと schema（`src/model`, §5）
 
@@ -352,7 +352,7 @@
 | A11 | 検索操作（input/keydown/click の分離、既定 false・minimumChars=1・debounceTime=0・filter・null による逆方向・即時ジャンプと後続再計算・clear の複数到達） | [ ] | [ ] | [ ] |
 | A12 | データ伝播（alias/model/two-way/form accessor、signal、RxJS の条件/取消し/購読寿命、未知演算子を透過扱いしない） | [ ] | [ ] | [ ] |
 | A13 | NgRx（登録済み/未登録/lazy effect、dispatch:false、同一 action type 衝突、success/error chain、selector 値の不変、背景 read と因果の分離） | [ ] | [ ] | [ ] |
-| A14 | HTTP/Model（生成クライアント→ラッパー→要求/応答型、未購読 Observable、Promise、動的 URL、interceptor/cache/retry の境界、無関係な保存 API を出さない） | [ ] | [ ] | [ ] |
+| A14 | HTTP/Model（生成クライアント→ラッパー→要求/応答型、未購読 Observable、Promise、動的 URL、interceptor/cache/retry の境界、無関係な保存 API を出さない） | [x] | [ ] | [ ] |
 | A15 | 有限化（同一クラス別出現を残す、合流を循環と誤認しない、循環・候補/深さ/状態数の上限で停止位置と partial、一意性を捏造しない） | [ ] | [ ] | [ ] |
 | A16 | renderer（全 kind の定型文、同一 IR の Markdown/JSON 一致、schema、confidence と coverage の独立、局所/全体 gap、リンク/span/特殊文字） | [ ] | [ ] | [ ] |
 | A17 | ファイル（合意形式、引用符/NFC 衝突/長名/同秒/大小文字/並行実行、排他作成、失敗時削除、stdout/stderr/終了コード） | [ ] | [ ] | [ ] |
