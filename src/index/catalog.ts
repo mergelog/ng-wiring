@@ -139,7 +139,8 @@ function memberAliases(context: AnalysisContext, node: ts.ClassDeclaration,
       if (symbol?.flags && symbol.flags & t.SymbolFlags.Alias) symbol = context.checker.getAliasedSymbol(symbol);
       if (symbol?.getName() !== kind || !symbol.declarations?.some(d => slash(d.getSourceFile().fileName).includes('/node_modules/@angular/core/'))) continue;
       const argument = item.expression.arguments[0];
-      const value = argument && new StaticEvaluator(t, context.checker).evaluate(argument);
+      const aliasNode = argument && t.isObjectLiteralExpression(argument) ? getProperty(t, argument, 'alias') : argument;
+      const value = aliasNode && new StaticEvaluator(t, context.checker).evaluate(aliasNode);
       const alias = value?.known && typeof value.value === 'string' ? value.value : name;
       result.set(alias, name);
     }
@@ -155,7 +156,8 @@ function memberAliases(context: AnalysisContext, node: ts.ClassDeclaration,
     const options = call.arguments.find(t.isObjectLiteralExpression);
     const aliasExpression = options && getProperty(t, options, 'alias');
     const value = aliasExpression && new StaticEvaluator(t, context.checker).evaluate(aliasExpression);
-    result.set(value?.known && typeof value.value === 'string' ? value.value : name, name);
+    const alias = value?.known && typeof value.value === 'string' ? value.value : name;
+    result.set(kind === 'Output' && exportName === 'model' ? `${alias}Change` : alias, name);
   }
   return result;
 }

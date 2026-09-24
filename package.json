@@ -29,7 +29,10 @@
     "typescript": "6.0.3"
   },
   "devDependencies": {
+    "@angular/common": "22.1.5",
     "@angular/core": "22.1.5",
+    "@angular/forms": "22.1.5",
+    "@ngrx/operators": "22.0.0",
     "@types/node": "24.10.0"
   }
 }

@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P8 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P9 以降の操作、モデル、renderer の統合が必要（§1, §2）。
+現状: **実装中**。P0〜P9 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P10 以降の操作、モデル、renderer の統合が必要（§1, §2）。
 
 ## 進捗サマリ
 
@@ -19,7 +19,7 @@
 | P6 route と bootstrap | `src/resolve/view` | 10 | 10 | P4 |
 | P7 制御フローと有限化 | `src/resolve/view` | 10 | 10 | P5, P6 |
 | P8 リスナー・DOM 伝播・式 | `src/resolve/operation` | 14 | 14 | P4 |
-| P9 入出力・状態・非同期 | `src/resolve/operation` | 11 | 0 | P8 |
+| P9 入出力・状態・非同期 | `src/resolve/operation` | 11 | 11 | P8 |
 | P10 DI と NgRx Store | `src/resolve/operation` | 12 | 0 | P9 |
 | P11 Signal・SignalStore・dispatch | `src/adapters/reactive` | 15 | 0 | P9, P10 |
 | P12 API・HTTP・型 | `src/resolve/operation` | 7 | 0 | P9 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **114** | |
+| **合計** | | **237** | **125** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -185,17 +185,17 @@
 
 ## P9 入出力・状態・非同期（§7.3）
 
-- [ ] P9-01 `input`/`input.required`/`@Input`/`model` と property binding、`output`/`@Output` と event binding を alias 込みで対応付け（§7.3）
-- [ ] P9-02 入力既定値はその使用箇所のみ適用。transform・setInput・imperative assignment・別 provider/生成経路があれば条件を残す。静的属性が directive input に渡る場合も扱う（§7.3）
-- [ ] P9-03 `model` の暗黙 `nameChange`、two-way binding、フォーム directive と ControlValueAccessor を既知アダプタで分離。未知 accessor/pipe/transform を透過的代入にしない（§7.3）
-- [ ] P9-04 Angular/RxJS/NgRx の API は import 元のシンボルで認識し、同名のユーザー関数を誤認しない（§7.3）
-- [ ] P9-05 呼出箇所と状態更新の区別（property assignment、signal set/update、computed/effect、Subject next/subscribe、input 変更と ngOnChanges の関連）（§7.3）
-- [ ] P9-06 購読の登録文脈（constructor/ngOnInit）を調べ、そこでの無関係な初期化を今回の因果に足さない。生存期間・条件付き購読・unsubscribe/takeUntilDestroyed を条件化（§7.3）
-- [ ] P9-07 RxJS アダプタ初期セット（`Subject`、subscribe、map/tap/filter、debounce/debounceTime、switchMap/mergeMap/concatMap/exhaustMap、withLatestFrom/concatLatestFrom、take、catchError、forkJoin、timer、async pipe）と取消し/並行/直列/間引き条件の記録（§7.3）
-- [ ] P9-08 追加の既知 API（`of`/`from`、配列/Promise の ObservableInput、`firstValueFrom`/`lastValueFrom`、`distinctUntilChanged`、`@ngrx/operators` の `tapResponse`/`mapResponse`）（§7.6）
-- [ ] P9-09 未知演算子は効果を推定せず、既知の前後を未解決境界で区切る（§7.3）
-- [ ] P9-10 時系列の区別（同期呼出し、output、RxJS 演算子、timer、Promise、変更検知の境界、`EventEmitter(true)` の非同期設定）（§7.3）
-- [ ] P9-11 根拠の重複除去と操作回数を分離（`clear()` の直接 emit と `value$.next('')` 経由は別経路。回数を証明できなければ「最大1回」「必ず2回」と書かない）（§7.3）
+- [x] P9-01 `input`/`input.required`/`@Input`/`model` と property binding、`output`/`@Output` と event binding を alias 込みで対応付け（§7.3）
+- [x] P9-02 入力既定値はその使用箇所のみ適用。transform・setInput・imperative assignment・別 provider/生成経路があれば条件を残す。静的属性が directive input に渡る場合も扱う（§7.3）
+- [x] P9-03 `model` の暗黙 `nameChange`、two-way binding、フォーム directive と ControlValueAccessor を既知アダプタで分離。未知 accessor/pipe/transform を透過的代入にしない（§7.3）
+- [x] P9-04 Angular/RxJS/NgRx の API は import 元のシンボルで認識し、同名のユーザー関数を誤認しない（§7.3）
+- [x] P9-05 呼出箇所と状態更新の区別（property assignment、signal set/update、computed/effect、Subject next/subscribe、input 変更と ngOnChanges の関連）（§7.3）
+- [x] P9-06 購読の登録文脈（constructor/ngOnInit）を調べ、そこでの無関係な初期化を今回の因果に足さない。生存期間・条件付き購読・unsubscribe/takeUntilDestroyed を条件化（§7.3）
+- [x] P9-07 RxJS アダプタ初期セット（`Subject`、subscribe、map/tap/filter、debounce/debounceTime、switchMap/mergeMap/concatMap/exhaustMap、withLatestFrom/concatLatestFrom、take、catchError、forkJoin、timer、async pipe）と取消し/並行/直列/間引き条件の記録（§7.3）
+- [x] P9-08 追加の既知 API（`of`/`from`、配列/Promise の ObservableInput、`firstValueFrom`/`lastValueFrom`、`distinctUntilChanged`、`@ngrx/operators` の `tapResponse`/`mapResponse`）（§7.6）
+- [x] P9-09 未知演算子は効果を推定せず、既知の前後を未解決境界で区切る（§7.3）
+- [x] P9-10 時系列の区別（同期呼出し、output、RxJS 演算子、timer、Promise、変更検知の境界、`EventEmitter(true)` の非同期設定）（§7.3）
+- [x] P9-11 根拠の重複除去と操作回数を分離（`clear()` の直接 emit と `value$.next('')` 経由は別経路。回数を証明できなければ「最大1回」「必ず2回」と書かない）（§7.3）
 
 ## P10 DI と NgRx Store（§7.4）
 
