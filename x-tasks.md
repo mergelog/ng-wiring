@@ -13,7 +13,7 @@
 | P0 プロジェクト基盤 | package/dist/依存固定 | 7 | 7 | — |
 | P1 CLI 契約 | `src/cli` | 20 | 19 | P0 |
 | P2 解析コンテキストと workspace | `src/workspace` | 19 | 19 | P0 |
-| P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 0 | P2 |
+| P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 9 | P2 |
 | P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 0 | P2, P3 |
 | P5 表示経路・投影・TemplateRef | `src/resolve/view` | 10 | 0 | P4 |
 | P6 route と bootstrap | `src/resolve/view` | 10 | 0 | P4 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **45** | |
+| **合計** | | **237** | **54** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -98,18 +98,18 @@
 
 ## P3 ngmaze アダプタ（`src/adapters/ng-maze`, §4.3）
 
-- [ ] P3-01 package root 解決（`createRequire(import.meta.url).resolve.paths('ngmaze')` の検索ディレクトリ順に `ngmaze/package.json` をファイルとして探し、realpath と name/version を照合。exports 越しの解決と未生成 main を経由しない）（§4.3）
-- [ ] P3-02 `bin.ngmaze` が package root 内の実在ファイルか検査（§4.3）
-- [ ] P3-03 `spawn(process.execPath, [binPath, ...args], {shell:false, cwd: workspaceRoot})` で起動。PATH 上の別 ngmaze や Windows `.cmd` shim に依存しない（§4.3）
-- [ ] P3-04 引数生成の 2 形態（`--project <絶対> --angular-project <name> --json` / `--project <絶対> --tsconfig <絶対> --json`）。component クエリ・`--all`・`--with-routes` は渡さない（§4.3）
-- [ ] P3-05 契約検証（v0.1.0、固定リビジョン、スキーマハッシュ、`docs/ngmaze.schema.json` と JSON 契約を境界にする。内部モジュールを import しない）（§4.3）
-- [ ] P3-06 照合項目（workspaceRoot/analysisRoot の realpath、primary + 付加 tsconfig、project 集合、TS/compiler の版と source、ComponentId のパス）。meta だけで完全一致の証明としない（§4.3）
-- [ ] P3-07 不一致時は結合せず code 3。bundled へ fallback した ngmaze の結果も拒否（§4.2, §4.3）
-- [ ] P3-08 受領データの利用（`result.components`（templateFile/templateKind 含む）、`edges`、`routes`、`routeEdges`、`externalUsages`、`ambiguousUsages`、`global.diagnostics`、`global.detectionGaps`）（§4.3）
-- [ ] P3-09 project 集合の期待値比較（project 指定は 1 件、明示 tsconfig は ngmaze の発見集合。後者を使用アプリ集合と読み替えない）（§4.3）
-- [ ] P3-10 プロセス制御（120 秒で終了、stdout は 64 MiB 上限のストリーム収集、超過・異常終了・不正 JSON・stderr・`error` を診断、非ゼロ終了を成功 JSON として消費しない、複数 context は直列実行して Program を解放）（§4.3）
-- [ ] P3-11 受領辺の自前 AST/span 照合と `origin: ngmaze` / `origin: ng-wiring` の付与（§4.3）
-- [ ] P3-12 欠落補完（report-widgets のように import で到達した共有部品が省かれる場合を自前カタログで補う。別アプリの全体解析の辺をコピーしない）（§4.3, 指摘 1-3）
+- [x] P3-01 package root 解決（`createRequire(import.meta.url).resolve.paths('ngmaze')` の検索ディレクトリ順に `ngmaze/package.json` をファイルとして探し、realpath と name/version を照合。exports 越しの解決と未生成 main を経由しない）（§4.3）
+- [x] P3-02 `bin.ngmaze` が package root 内の実在ファイルか検査（§4.3）
+- [x] P3-03 `spawn(process.execPath, [binPath, ...args], {shell:false, cwd: workspaceRoot})` で起動。PATH 上の別 ngmaze や Windows `.cmd` shim に依存しない（§4.3）
+- [x] P3-04 引数生成の 2 形態（`--project <絶対> --angular-project <name> --json` / `--project <絶対> --tsconfig <絶対> --json`）。component クエリ・`--all`・`--with-routes` は渡さない（§4.3）
+- [x] P3-05 契約検証（v0.1.0、固定リビジョン、スキーマハッシュ、`docs/ngmaze.schema.json` と JSON 契約を境界にする。内部モジュールを import しない）（§4.3）
+- [~] P3-06 照合項目（workspaceRoot/analysisRoot の realpath、primary + 付加 tsconfig、project 集合、TS/compiler の版と source、ComponentId のパス）。meta だけで完全一致の証明としない（§4.3）
+- [x] P3-07 不一致時は結合せず code 3。bundled へ fallback した ngmaze の結果も拒否（§4.2, §4.3）
+- [x] P3-08 受領データの利用（`result.components`（templateFile/templateKind 含む）、`edges`、`routes`、`routeEdges`、`externalUsages`、`ambiguousUsages`、`global.diagnostics`、`global.detectionGaps`）（§4.3）
+- [x] P3-09 project 集合の期待値比較（project 指定は 1 件、明示 tsconfig は ngmaze の発見集合。後者を使用アプリ集合と読み替えない）（§4.3）
+- [x] P3-10 プロセス制御（120 秒で終了、stdout は 64 MiB 上限のストリーム収集、超過・異常終了・不正 JSON・stderr・`error` を診断、非ゼロ終了を成功 JSON として消費しない、複数 context は直列実行して Program を解放）（§4.3）
+- [~] P3-11 受領辺の自前 AST/span 照合と `origin: ngmaze` / `origin: ng-wiring` の付与（§4.3）
+- [~] P3-12 欠落補完（report-widgets のように import で到達した共有部品が省かれる場合を自前カタログで補う。別アプリの全体解析の辺をコピーしない）（§4.3, 指摘 1-3）
 
 ## P4 索引と Angular スコープ解決（`src/index`, `src/resolve/scope`, §4.3, §3.1）
 
