@@ -298,14 +298,14 @@ export function assembleReport(input: AssembleInput): WiringReport {
     if (occurrence) scopeFiles.add(relative(occurrence.definition.file));
     for (const directiveId of item.element?.directives ?? []) scopeFiles.add(directiveId.slice(0, directiveId.indexOf('#')));
   }
-  addDiagnostics({ analysis, builder, evidence, relative, scopeFiles, problems, stores });
+  const sourceGaps = addDiagnostics({ analysis, builder, evidence, relative, scopeFiles, problems, stores });
   const incomplete: ScopeIncompleteness[] = [
     ...analysis.mazeProblems.map(reason => ({ reason })),
     ...catalog.gaps.map(reason => ({ reason })),
     ...index.unsupported.map(item => ({ reason: `${item.kind}: ${item.reason}`, owner: item.ownerId,
       file: item.span ? relative(item.span.file) : null })),
   ];
-  const rawGaps = [...collectGaps({ analysis, evidence, relative, stores }), ...resolvedGaps];
+  const rawGaps = [...collectGaps({ analysis, evidence, relative, stores }), ...sourceGaps, ...resolvedGaps];
   const placedGaps = builder.relateGaps(rawGaps, { owners: [...scopeOwners], targets: [selected.candidate.tuple.ownerId],
     files: [...scopeFiles], incomplete });
   for (const gap of placedGaps) {
@@ -769,8 +769,9 @@ interface DiagnosticsInput {
  * §10 the syntax, type and configuration errors that were detected are always reported. A clean build of
  * the target application is not a pass condition, so these are stated instead of being required to be absent.
  */
-function addDiagnostics(input: DiagnosticsInput): void {
+function addDiagnostics(input: DiagnosticsInput): RawGap[] {
   const { analysis, builder, evidence, relative, scopeFiles, stores } = input;
+  const gaps: RawGap[] = [];
   const { context, catalog, index } = analysis;
   const t = context.toolchain.typescript;
   const flatten = (message: string | ts.DiagnosticMessageChain): string => t.flattenDiagnosticMessageText(message, ' ');
@@ -784,10 +785,17 @@ function addDiagnostics(input: DiagnosticsInput): void {
     for (const item of found) {
       const span = item.start !== undefined && item.length
         ? evidence.table.tryAdd({ file, start: item.start, end: item.start + item.length, precision: 'exact' }) : null;
-      builder.diagnostic({ code: item.category === t.DiagnosticCategory.Error ? 'ts-error' : 'ts-report',
-        severity: item.category === t.DiagnosticCategory.Error ? 'error' : 'warning',
-        message: `TS${item.code}: ${flatten(item.messageText)}`,
+      const error = item.category === t.DiagnosticCategory.Error;
+      const message = `TS${item.code}: ${flatten(item.messageText)}`;
+      builder.diagnostic({ code: error ? 'ts-error' : 'ts-report',
+        severity: error ? 'error' : 'warning', message,
         evidenceIds: span ? [span] : [], stopReason: null });
+      // §10 a source in the explored scope that does not type-check may have been read wrongly, so the
+      // related range is reported as incomplete instead of being claimed as fully covered.
+      if (error) {
+        gaps.push({ code: 'ts-error', message, owner: null, file: relative(file),
+          evidenceIds: span ? [span] : [] });
+      }
     }
   }
   if (outside) {
@@ -836,6 +844,7 @@ function addDiagnostics(input: DiagnosticsInput): void {
         evidenceIds: span ? [span] : [], stopReason: use.capability.note ?? 'unsupported reactive API' });
     }
   }
+  return gaps;
 }
 
 /** §8 every detection gap that was reported, before it is placed against the selection. */

@@ -96,3 +96,29 @@ test('the same-named class that is never displayed gets no root, route or projec
   assert.deepEqual(keys, ['boundary|<input>|boundary'], keys.join(', '));
   assert.equal(report.paths[0].end, 'root-unresolved');
 });
+
+// P16-14
+test('a source that does not type-check is reported, and the run still produces a report', async () => {
+  const { report } = await analyzeFixture('broken-sources', { target: 'data-id=brokenField' });
+  const codes = report.diagnostics.map(item => item.code);
+  // The type errors of the selected component are reported with their positions.
+  const typeErrors = report.diagnostics.filter(item => item.code === 'ts-error');
+  assert(typeErrors.length >= 2, `expected the handler's type errors: ${codes.join(', ')}`);
+  assert(typeErrors.some(item => item.message.includes('TS2339')), typeErrors.map(item => item.message).join(' | '));
+  for (const item of typeErrors) {
+    assert.equal(item.severity, 'error');
+    assert(item.evidenceIds.length > 0, `${item.message} has no source position`);
+  }
+  // The missing template file is a configuration error and is reported as one.
+  assert(codes.includes('missing-template'), codes.join(', '));
+  assert(codes.includes('template-index'), codes.join(', '));
+  // The related analysis gap is reported beside the error, so the range is not claimed as covered.
+  const active = report.coverage.gaps.filter(item => item.relation === 'related' && !item.resolvedBy);
+  assert(active.some(item => item.code === 'ts-error'), 'no analysis gap accompanies the type error');
+  assert.equal(report.status, 'partial');
+  // A build of the whole application succeeding is not a pass condition: the report is produced anyway.
+  assert.equal(report.paths[0].end, 'bootstrap');
+  assert(edgeKeys(report).includes('state-write|input → onInput($event)|value'));
+  // An error outside the selection is counted, not dropped in silence.
+  assert(codes.includes('ts-outside-selection'), codes.join(', '));
+});
