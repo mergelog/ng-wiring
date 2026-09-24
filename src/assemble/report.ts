@@ -12,6 +12,7 @@ import { analyzeStore, storeInputsForSelection, type StoreGraph } from '../resol
 import { traceStoreDispatch } from '../resolve/operation/store-flow.js';
 import { analyzeHttp } from '../resolve/operation/http.js';
 import { traceHttpFromMethod } from '../resolve/operation/http-flow.js';
+import { resolveElementBindings } from '../resolve/operation/bindings.js';
 import { resolveTemplateExpressions } from '../resolve/operation/expressions.js';
 import { analyzeSignals, type SignalGraph, type SignalSource } from '../adapters/reactive/signals.js';
 import { catalogSignalStores } from '../adapters/reactive/signal-store.js';
@@ -282,6 +283,36 @@ export function assembleReport(input: AssembleInput): WiringReport {
     addOperations({ analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
       targetElement, targetNodeId: target.id, targetKind: target.placed.kind, placed,
       viewPath: selected.path, options, operationIds, problems, resolvedGaps, stores });
+  }
+
+  // ---- background inputs --------------------------------------------------------------------------
+  // §8 what enters the components of this path from outside the selected operation: the input bindings
+  // written at each use site. They are neither a display step nor a consequence of the event, so they
+  // stay outside the path and the operations and are reported as background inputs.
+  for (const item of built) {
+    const element = item.placed.element;
+    if (!element || !item.evidenceIds.length) continue;
+    const resolution = resolveElementBindings(element, context, catalog);
+    for (const relation of resolution.relations) {
+      if (relation.kind === 'output-subscription') continue;
+      const evidenceIds = [evidence.span(relation.span ?? element.span, 'exact')]
+        .filter((entry): entry is string => !!entry);
+      if (!evidenceIds.length) continue;
+      if (!relation.targetId) { problems.push(`${relation.alias} の束縛先を確定できていない`); continue; }
+      // The receiving member is the end of the binding, so two inputs of one component stay apart.
+      const member = relation.member ?? relation.alias;
+      const to = builder.definition({ kind: 'symbol', symbolId: `${relation.targetId}.${member}`,
+        evidenceIds, details: { name: detail(member), label: detail(member) } });
+      const predicates = relation.conditions.map(text =>
+        conditions.predicate({ expression: text, scope: item.placed.step.ownerId, evidenceId: evidenceIds[0]! }));
+      connect({ kind: 'input-binding', from: item.id, fromKind: item.placed.kind, to, toKind: 'symbol',
+        evidenceIds, conditionId: predicates.length ? conditions.all(predicates) : null,
+        details: { expression: detail(relation.expression), owner: detail(item.placed.step.ownerId),
+          input: detail(`${relation.alias} → ${relation.targetId}.${member}`) } });
+    }
+    for (const message of resolution.diagnostics) {
+      builder.diagnostic({ code: 'input-binding', severity: 'info', message });
+    }
   }
 
   // ---- diagnostics, gaps and limits ---------------------------------------------------------------

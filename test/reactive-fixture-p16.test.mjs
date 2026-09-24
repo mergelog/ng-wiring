@@ -363,3 +363,50 @@ test('rxjs-consume: the success and the failure handler each keep their own noti
   assert.deepEqual(mappedKeys.filter(key => key.endsWith('|failed')), [],
     'the error branch of another operator was attributed to mapResponse');
 });
+
+// R02-R04: the interop boundary, the inputs the parent binds, and the write that goes back.
+test('interop-apis: each bound input is its own relation and a model writes back to the parent', async () => {
+  const { report } = await analyzeFixture('interop-apis', { target: 'data-id=commitButton' });
+  const keys = edgeKeys(report);
+  // Three inputs of one component stay three relations, named by the member each one reaches.
+  assert(keys.includes('input-binding|FieldComponent|label'));
+  assert(keys.includes('input-binding|FieldComponent|name'));
+  assert(keys.includes('input-binding|FieldComponent|value'));
+  // A model write is an implicit output back to the parent binding, and it needs an explicit emit.
+  const emit = report.edges.find(edge => edge.kind === 'output-subscription');
+  assert(emit, keys.join('\n'));
+  assert.equal(emit.confidence, 'conditional');
+  // The conditional read is a dependency only while the branch is taken.
+  assert(keys.includes('reactive-link|value|summary'));
+  assert(keys.includes('state-read|summary|<span>'));
+  // These bindings are background inputs: they belong to neither the display path nor the operation.
+  const inPathOrOperation = new Set([...report.paths.flatMap(item => item.edgeIds),
+    ...report.operations.flatMap(item => item.edgeIds)]);
+  for (const edge of report.edges.filter(item => item.kind === 'input-binding')) {
+    assert(!inPathOrOperation.has(edge.id), 'an input binding was reported as a step of the operation');
+  }
+});
+
+test('interop-apis: the after-render phase and the explicit destroy stay on their own effect', async () => {
+  const bump = await analyzeFixture('interop-apis', { target: 'data-id=bumpButton' });
+  const afterRender = bump.report.edges.find(edge => edge.kind === 'reactive-link' &&
+    edge.details.consumer?.value === 'angular/afterRenderEffect');
+  assert(afterRender, edgeKeys(bump.report).join('\n'));
+  assert.equal(afterRender.details.scheduling.value, 'after-render');
+
+  const commit = await analyzeFixture('interop-apis', { target: 'data-id=commitButton' });
+  const changeDetection = commit.report.edges.find(edge => edge.kind === 'reactive-link' &&
+    edge.details.consumer?.value === 'angular/effect');
+  assert.equal(changeDetection.details.scheduling.value, 'change-detection');
+  // The explicitly destroyed effect records where its lifetime ends.
+  const conditions = new Map(commit.report.conditions.map(item => [item.id, item]));
+  const text = (id) => {
+    const condition = conditions.get(id);
+    if (!condition) return '';
+    if (condition.kind === 'predicate') return condition.expression;
+    if (condition.kind === 'all' || condition.kind === 'any') return condition.operandIds.map(text).join(' && ');
+    return condition.kind;
+  };
+  assert(text(changeDetection.conditionId).includes('explicitly destroyed at'),
+    text(changeDetection.conditionId));
+});

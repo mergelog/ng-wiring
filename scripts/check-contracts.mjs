@@ -98,6 +98,36 @@ for (const item of reactiveCases()) {
         `${labelOf(report, edge.to)}`).join(', ')} — ${pattern.reason}`);
     }
   }
+  // §7.6 what must hold for a relation is written on its condition, so it is checked with the relation.
+  if (item.expectedConditions.length) {
+    const conditions = new Map(report.conditions.map(entry => [entry.id, entry]));
+    const text = (id) => {
+      const condition = conditions.get(id);
+      if (!condition) return '';
+      if (condition.kind === 'predicate') return condition.expression;
+      if (condition.kind === 'all' || condition.kind === 'any') return condition.operandIds.map(text).join(' && ');
+      if (condition.kind === 'phase') return `phase ${condition.phase} ${condition.detail ?? ''}`;
+      return condition.kind;
+    };
+    const written = report.edges
+      .filter(edge => item.expectedEdges.includes(`${edge.kind}|${labelOf(report, edge.from)}|${labelOf(report, edge.to)}`))
+      .map(edge => text(edge.conditionId)).join(' | ');
+    for (const expected of item.expectedConditions) {
+      if (!written.includes(expected)) {
+        fail('condition', `${item.id}: expected the condition "${expected}" on its relations in ${item.fixture.id}`);
+      }
+    }
+  }
+  for (const expected of item.expectedDetails) {
+    const edge = report.edges.find(entry =>
+      `${entry.kind}|${labelOf(report, entry.from)}|${labelOf(report, entry.to)}` === expected.edge);
+    if (!edge) { fail('detail', `${item.id}: ${expected.edge} is not in ${item.fixture.id}`); continue; }
+    const field = edge.details[expected.key];
+    if ((field?.value ?? null) !== expected.value) {
+      fail('detail', `${item.id}: ${expected.edge} has ${expected.key}=${field?.value ?? 'null'}, ` +
+        `expected ${expected.value}`);
+    }
+  }
   for (const code of item.expectedDiagnostics) {
     if (!report.diagnostics.some(entry => entry.code === code)) {
       fail('diagnostic', `${item.id}: expected the diagnostic ${code} in ${item.fixture.id}`);

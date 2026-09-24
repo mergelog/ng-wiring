@@ -65,6 +65,13 @@ export interface ReactiveCase {
   forbiddenEdges: EdgePattern[];
   /** Diagnostic codes that must be reported. */
   expectedDiagnostics: string[];
+  /**
+   * Text that must appear among the conditions of the expected edges. A relation existing is not the
+   * whole expectation: §7.6 also fixes what has to hold for it, and that is written on the condition.
+   */
+  expectedConditions: string[];
+  /** Details §8 requires the relation to preserve, such as the dispatch form or the read's tracking. */
+  expectedDetails: { edge: string; key: string; value: string }[];
   /** Why no fixture covers this yet; required whenever `fixture` is null. */
   missingFixture: string | null;
   /**
@@ -79,13 +86,14 @@ const NGRX = '22.0.0';
 const RXJS = '7.8.2';
 
 type Optional = 'kind' | 'export' | 'member' | 'form' | 'fixture' | 'expectedEdges' | 'expectedNodes'
-| 'forbiddenEdges' | 'expectedDiagnostics' | 'missingFixture' | 'demonstratedBy';
+| 'forbiddenEdges' | 'expectedDiagnostics' | 'expectedConditions' | 'expectedDetails' | 'missingFixture'
+| 'demonstratedBy';
 type Draft = Omit<ReactiveCase, Optional> & Partial<Pick<ReactiveCase, Optional>>;
 
 const entry = (draft: Draft): ReactiveCase => ({
   kind: 'detect', export: null, member: null, form: 'function', fixture: null, expectedEdges: [],
-  expectedNodes: [], forbiddenEdges: [], expectedDiagnostics: [], missingFixture: null,
-  demonstratedBy: null, ...draft,
+  expectedNodes: [], forbiddenEdges: [], expectedDiagnostics: [], expectedConditions: [],
+  expectedDetails: [], missingFixture: null, demonstratedBy: null, ...draft,
 });
 
 const signalWrite = (target: string): FixtureRef => ({ id: 'signal-write', target });
@@ -94,6 +102,7 @@ const ngrxApis = (target: string): FixtureRef => ({ id: 'ngrx-apis', target });
 const storeApis = (target: string): FixtureRef => ({ id: 'signal-store-apis', target });
 const eventsApis = (target: string): FixtureRef => ({ id: 'events-apis', target });
 const rxjsConsume = (target: string): FixtureRef => ({ id: 'rxjs-consume', target });
+const interopApis = (target: string): FixtureRef => ({ id: 'interop-apis', target });
 const patchFixture: FixtureRef = { id: 'signal-store-patch', target: 'data-id=filterField' };
 const dispatchFixture: FixtureRef = { id: 'store-dispatch', target: 'data-id=termField' };
 const eventsFixture: FixtureRef = { id: 'events-reducer', target: 'data-id=termField' };
@@ -110,7 +119,8 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R01', id: 'R01/signal.read', package: '@angular/core', export: 'signal', form: 'invoke',
     version: ANGULAR, expectation: 'count() をテンプレート/コードの read として検知する',
     fixture: signalWrite('data-id=incrementButton'),
-    expectedEdges: ['state-read|count|<span>'] }),
+    expectedEdges: ['state-read|count|<span>'],
+    expectedDetails: [{ edge: 'state-read|count|<span>', key: 'tracking', value: 'tracked' }] }),
   entry({ contract: 'R01', id: 'R01/signal.set', package: '@angular/core', export: 'WritableSignal', member: 'set',
     form: 'member', version: ANGULAR, expectation: 'set を write とし、UI 操作から表示まで effect なしで完結する',
     fixture: signalWrite('data-id=countField'),
@@ -124,6 +134,7 @@ const ledger: ReactiveCase[] = [
     member: 'asReadonly', form: 'member', version: ANGULAR,
     expectation: 'asReadonly の参照を同一状態の読み取り用参照として結ぶ',
     fixture: signalApis('data-id=termField'),
+    expectedConditions: ['same state'],
     expectedEdges: ['reactive-link|term|currentTerm', 'state-read|currentTerm|<span>'] }),
   entry({ contract: 'R01', id: 'R01/signal.via-service', package: '@angular/core', export: 'signal', form: 'form',
     version: ANGULAR, expectation: '別名・service/facade 経由で参照された同じ signal を同一状態として結ぶ',
@@ -138,11 +149,13 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R02', id: 'R02/computed.equal', package: '@angular/core', export: 'computed', member: 'equal',
     form: 'option', version: ANGULAR, expectation: 'equal の比較関数を条件として残す',
     fixture: signalApis('data-id=termField'),
+    expectedConditions: ['equal:'],
     expectedEdges: ['reactive-link|term|upper', 'state-read|upper|<span>'] }),
   entry({ contract: 'R02', id: 'R02/linkedSignal', package: '@angular/core', export: 'linkedSignal', version: ANGULAR,
     expectation: 'source 変化による再計算と明示 write の双方を検知する',
-    fixture: signalApis('data-id=draftButton'),
-    expectedEdges: ['state-write|click → stageDraft()|draft', 'state-read|draft|<span>'] }),
+    fixture: signalApis('data-id=termField'),
+    expectedConditions: ['the value is recomputed when its source changes', 'explicit write'],
+    expectedEdges: ['reactive-link|term|draft', 'state-read|draft|<span>'] }),
   entry({ contract: 'R02', id: 'R02/untracked', package: '@angular/core', export: 'untracked', version: ANGULAR,
     expectation: 'untracked 内の read を依存にせず、中の write/dispatch は残す',
     fixture: signalApis('data-id=silentButton'),
@@ -150,7 +163,8 @@ const ledger: ReactiveCase[] = [
     forbiddenEdges: [{ kind: 'reactive-link', from: 'term', reason: 'untracked の read を再実行の依存にしない' }] }),
   entry({ contract: 'R02', id: 'R02/conditional-read', package: '@angular/core', export: 'computed', form: 'form',
     version: ANGULAR, expectation: '条件付き read の依存追加/除去を条件付きで表示する',
-    missingFixture: '条件分岐で read が変わる fixture が未作成' }),
+    fixture: interopApis('data-id=commitButton'),
+    expectedEdges: ['reactive-link|value|summary', 'state-read|summary|<span>'] }),
 
   // ---- R03 effects, phase, teardown ----------------------------------------------------------------
   entry({ contract: 'R03', id: 'R03/effect', package: '@angular/core', export: 'effect', version: ANGULAR,
@@ -159,14 +173,20 @@ const ledger: ReactiveCase[] = [
     expectedEdges: ['reactive-link|term|angular/effect'] }),
   entry({ contract: 'R03', id: 'R03/afterRenderEffect', package: '@angular/core', export: 'afterRenderEffect',
     version: ANGULAR, expectation: '描画後 phase を effect と別に保持する',
-    missingFixture: 'afterRenderEffect の fixture が未作成' }),
+    fixture: interopApis('data-id=bumpButton'),
+    expectedEdges: ['reactive-link|renders|angular/afterRenderEffect'],
+    expectedDetails: [{ edge: 'reactive-link|renders|angular/afterRenderEffect', key: 'scheduling',
+      value: 'after-render' }] }),
   entry({ contract: 'R03', id: 'R03/effect.onCleanup', package: '@angular/core', export: 'effect', member: 'onCleanup',
     form: 'option', version: ANGULAR, expectation: 'cleanup 登録を終了条件として残す',
     fixture: signalApis('data-id=termField'),
+    expectedConditions: ['cleanup registered at'],
     expectedEdges: ['reactive-link|term|angular/effect'] }),
   entry({ contract: 'R03', id: 'R03/EffectRef.destroy', package: '@angular/core', export: 'EffectRef',
     member: 'destroy', form: 'member', version: ANGULAR, expectation: '明示破棄を生存期間の終端として残す',
-    missingFixture: 'EffectRef.destroy の fixture が未作成' }),
+    fixture: interopApis('data-id=commitButton'),
+    expectedEdges: ['reactive-link|value|angular/effect'],
+    expectedConditions: ['explicitly destroyed at'] }),
   entry({ contract: 'R03', kind: 'counter-example', id: 'R03/effect.await-read', package: '@angular/core', export: 'effect', form: 'form',
     version: ANGULAR, expectation: 'await 後の read を自動依存にしない',
     fixture: signalApis('data-id=silentButton'),
@@ -175,19 +195,26 @@ const ledger: ReactiveCase[] = [
   // ---- R04 inputs, the RxJS interop boundary, the Store signal consumer -----------------------------
   entry({ contract: 'R04', id: 'R04/input', package: '@angular/core', export: 'input', version: ANGULAR,
     expectation: '親からの入力束縛を state source として追う',
-    missingFixture: 'input() を使う fixture が未作成' }),
+    fixture: interopApis('data-id=commitButton'),
+    expectedEdges: ['input-binding|FieldComponent|label'] }),
   entry({ contract: 'R04', id: 'R04/input.required', package: '@angular/core', export: 'input', member: 'required',
     form: 'member', version: ANGULAR, expectation: 'required 形態を input と別 subcase として検知する',
-    missingFixture: 'input.required の fixture が未作成' }),
+    fixture: interopApis('data-id=commitButton'),
+    expectedEdges: ['input-binding|FieldComponent|name'] }),
   entry({ contract: 'R04', id: 'R04/model', package: '@angular/core', export: 'model', version: ANGULAR,
     expectation: 'model の暗黙出力（親への書き戻し）を条件付きで残す',
-    missingFixture: 'model() の fixture が未作成' }),
+    fixture: interopApis('data-id=commitButton'),
+    expectedEdges: ['input-binding|FieldComponent|value',
+      'output-subscription|FieldComponent|valueChange → term'],
+    expectedConditions: ['requires explicit output emit'] }),
   entry({ contract: 'R04', id: 'R04/toSignal', package: '@angular/core/rxjs-interop', export: 'toSignal',
     version: ANGULAR, expectation: '内部購読の開始と破棄を保持し、Observable の消費側として扱う',
-    missingFixture: 'toSignal の fixture が未作成' }),
+    demonstratedBy: interopApis('data-id=commitButton'),
+    missingFixture: 'interop-apis の toSignal は Observable が起点のため、どの操作からも依存辺として現れない（R04 未達）' }),
   entry({ contract: 'R04', id: 'R04/toObservable', package: '@angular/core/rxjs-interop', export: 'toObservable',
     version: ANGULAR, expectation: 'set と通知が同数になると仮定しない',
-    missingFixture: 'toObservable の fixture が未作成' }),
+    demonstratedBy: interopApis('data-id=commitButton'),
+    missingFixture: 'interop-apis の toObservable(this.value) が value の書き換えに接続されない（R04 未達）' }),
   entry({ contract: 'R04', id: 'R04/Store.selectSignal', package: '@ngrx/store', export: 'Store',
     member: 'selectSignal', form: 'member', version: NGRX,
     expectation: 'selector から Signal を経て表示まで追う', fixture: dispatchFixture,
@@ -440,12 +467,16 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R12', id: 'R12/injectDispatch', package: '@ngrx/signals/events', export: 'injectDispatch',
     version: NGRX, expectation: '名前付き送信を直接送信と同じ event に対応付ける', fixture: eventsFixture,
     expectedEdges: ['event-dispatch|src/filter.ts#FilterComponent|[Search] termChanged'],
+    expectedDetails: [{ edge: 'event-dispatch|src/filter.ts#FilterComponent|[Search] termChanged',
+      key: 'dispatchMode', value: 'named-dispatcher' }],
     forbiddenEdges: [{ kind: 'action-dispatch', reason: 'SignalStore event を NgRx action bus に流さない' }] }),
   entry({ contract: 'R12', id: 'R12/Dispatcher.dispatch', package: '@ngrx/signals/events', export: 'Dispatcher',
     member: 'dispatch', form: 'member', version: NGRX, expectation: '直接送信を名前付き送信と別形態として検知する',
     fixture: eventsApis('data-id=directButton'),
     expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] row selected',
-      'state-write|src/grid.store.ts:11:5|selected'] }),
+      'state-write|src/grid.store.ts:11:5|selected'],
+    expectedDetails: [{ edge: 'event-dispatch|src/grid.component.ts#GridComponent|[Grid] row selected',
+      key: 'dispatchMode', value: 'explicit' }] }),
 
   // ---- R13 event consumption -----------------------------------------------------------------------
   entry({ contract: 'R13', id: 'R13/withReducer', package: '@ngrx/signals/events', export: 'withReducer',
@@ -483,11 +514,17 @@ const ledger: ReactiveCase[] = [
     form: 'option', version: NGRX, expectation: 'self scope をローカル bus に限定する',
     fixture: eventsApis('data-id=pageButton'),
     expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] pageChanged',
-      'event-consume|[Grid] pageChanged|src/grid.store.ts:10:5'] }),
+      'event-consume|[Grid] pageChanged|src/grid.store.ts:10:5'],
+    expectedDetails: [{ edge: 'event-dispatch|src/grid.component.ts#GridComponent|[Grid] pageChanged',
+      key: 'scope', value: 'self' },
+      { edge: 'event-dispatch|src/grid.component.ts#GridComponent|[Grid] pageChanged', key: 'busId',
+        value: 'src/panel.component.ts#PanelComponent' }] }),
   entry({ contract: 'R14', id: 'R14/scope.parent', package: '@ngrx/signals/events', export: 'injectDispatch',
     form: 'option', version: NGRX, expectation: 'parent scope を注入された dispatcher の親に向ける',
     fixture: eventsApis('data-id=parentButton'),
     expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] pageChanged'],
+    expectedDetails: [{ edge: 'event-dispatch|src/grid.component.ts#GridComponent|[Grid] pageChanged',
+      key: 'scope', value: 'parent' }],
     forbiddenEdges: [{ kind: 'event-consume', to: 'src/grid.store.ts:10:5',
       reason: 'parent scope の送信をローカル bus の consumer に届けない' }] }),
   entry({ contract: 'R14', id: 'R14/scope.global', package: '@ngrx/signals/events', export: 'injectDispatch',
