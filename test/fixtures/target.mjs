@@ -22,8 +22,13 @@ export async function writeTargetManifest(root, dependencies = targetDependencie
     JSON.stringify({ name: 'target-workspace', private: true, version: '0.0.0', dependencies }, null, 2));
 }
 
-/** The manifest plus the installed tree the fixtures share. */
+/**
+ * The manifest plus the installed tree the fixtures share. Windows only creates a directory symlink
+ * with a privilege the CI runner does not have, so the link is a junction there (§4.2 lists Windows
+ * among the supported systems).
+ */
 export async function linkTargetWorkspace(root) {
   await writeTargetManifest(root);
-  await symlink(path.join(repoRoot, 'node_modules'), path.join(root, 'node_modules'), 'dir');
+  await symlink(path.join(repoRoot, 'node_modules'), path.join(root, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir');
 }
