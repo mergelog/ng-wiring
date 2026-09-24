@@ -40,7 +40,11 @@ test('every contract has registered matchers, semantic models, and a framework s
   assert.equal(modelAudit().length, 0, modelAudit().join('; '));
   const supported = capabilities().filter(item => item.support === 'supported');
   // Every reactive-system API names its framework; the shared RxJS consumption APIs belong to none.
-  assert(supported.every(item => item.framework || item.module === 'rxjs'), 'a supported matcher has no framework');
+  // `@ngrx/operators` ships RxJS operators usable with any of the reactive systems, so it names none either.
+  const frameworkFree = ['rxjs', '@ngrx/operators'];
+  assert(supported.every(item => item.framework || frameworkFree.includes(item.module)),
+    `a supported matcher has no framework: ${supported.filter(item => !item.framework &&
+      !frameworkFree.includes(item.module)).map(item => item.matcherId).join(', ')}`);
   const frameworks = new Set(supported.map(item => item.framework));
   for (const name of ['angular-signal', 'signal-state', 'signal-store', 'ngrx-store'])
     assert(frameworks.has(name), `${name} has no registered API`);
