@@ -171,9 +171,23 @@ export function assembleReport(input) {
         const step = parent.placed.step;
         const evidenceIds = parent.evidenceIds.length ? parent.evidenceIds : child.evidenceIds;
         const conditionId = stepCondition(step, evidenceIds[0]);
-        const parentLabel = labelFor(parent.placed), childLabel = labelFor(child.placed);
+        const parentLabel = labelFor(parent.placed);
+        let childLabel = labelFor(child.placed);
         const preferred = downwardEdgeKind[step.relation];
         let toId = child.id, toKind = child.placed.kind;
+        // §6.2 a routed component is a sibling of its <router-outlet> anchor: the element that holds the
+        // outlet is the display parent of what the route placed, and the route node is not in that chain.
+        if (preferred === 'display-parent' && child.placed.kind === 'route') {
+            let cursor = at - 1;
+            while (cursor >= 0 && built[cursor].placed.kind === 'route')
+                cursor--;
+            const routed = built[cursor];
+            if (routed) {
+                toId = routed.id;
+                toKind = routed.placed.kind;
+                childLabel = labelFor(routed.placed);
+            }
+        }
         if (preferred === 'bootstrap' || preferred === 'dynamic-create') {
             toId = declarationNode(child.placed.step.ownerId);
             toKind = 'component';
