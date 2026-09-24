@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P10 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P11 以降の操作、モデル、renderer の統合が必要（§1, §2）。
+現状: **実装中**。P0〜P11 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P12 以降の操作、モデル、renderer の統合が必要（§1, §2）。
 
 ## 進捗サマリ
 
@@ -21,7 +21,7 @@
 | P8 リスナー・DOM 伝播・式 | `src/resolve/operation` | 14 | 14 | P4 |
 | P9 入出力・状態・非同期 | `src/resolve/operation` | 11 | 11 | P8 |
 | P10 DI と NgRx Store | `src/resolve/operation` | 12 | 12 | P9 |
-| P11 Signal・SignalStore・dispatch | `src/adapters/reactive` | 15 | 0 | P9, P10 |
+| P11 Signal・SignalStore・dispatch | `src/adapters/reactive` | 15 | 15 | P9, P10 |
 | P12 API・HTTP・型 | `src/resolve/operation` | 7 | 0 | P9 |
 | P13 中間モデルと schema | `src/model`, `docs` | 15 | 0 | P5〜P12 |
 | P14 renderer とファイル名 | `src/render` | 22 | 0 | P13 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **137** | |
+| **合計** | | **237** | **152** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -214,21 +214,21 @@
 
 ## P11 Signal・SignalStore・dispatch の共通実装（`src/adapters/reactive`, §7.6）
 
-- [ ] P11-01 `capabilities.ts` に matcher ID・意味モデル ID・対応契約 ID（R01〜R16）を登録（§9, §10）
-- [ ] P11-02 Angular Signal・NgRx Store・NgRx SignalStore を別 framework として区別（`angular-signal` / `signal-state` / `signal-store` / `ngrx-store`）（§7.6）
-- [ ] P11-03 state details（framework、宣言/インスタンス/state key）と `state-read` の tracking（tracked/snapshot/untracked）、effect の framework/実行 phase（§7.6）
-- [ ] P11-04 配送の分離（`action-dispatch`/`action-consume` と `event-dispatch`/`event-consume`、各々 busId・送信形式・scope・登録/生存条件）（§7.6）
-- [ ] P11-05 Store method は `call`、patchState は `state-write`、computed 等は `reactive-link`。全てを effect ノードに変換しない（§7.6）
-- [ ] P11-06 `signalStore(...)` の**変数へ返される生成クラス**のカタログ化（宣言ファイル・変数/シンボル位置・context で ID、インスタンスは DI provider/生成箇所。`class X extends signalStore(...)`、別名 import/re-export、再利用 feature の直接参照と factory 呼出しも追う）（§7.6）
-- [ ] P11-07 feature の引数順合成と同名 member の上書き判定（宣言順・実際の型/値解決）。未知 feature を透明として通過させない（§7.6）
-- [ ] P11-08 destructuring した state signal・method 内で捕捉した store 参照を元のインスタンスへ戻す（§7.6）
-- [ ] P11-09 Store の提供だけでは生成済みとせず、inject/new と withHooks の生存期間を確認。onInit は起動条件、onDestroy は終了条件として扱う（§7.6）
-- [ ] P11-10 SignalStore Events の scope 対応（`provideDispatcher`、self/parent/global、`toScope`/`mapToScope`、`injectDispatch(group)({scope:'parent'})`）。同じ event type でも無関係な sibling/local scope に配らない（§7.6）
-- [ ] P11-11 通常の NgRx Store と SignalStore Events を別 bus として扱い、同じ `{type, payload}` で自動的に双方へ届くとしない（§7.6）
-- [ ] P11-12 `withEventHandlers` の規則（初期化時の購読登録、出力が新 event の場合の再配送、void の副作用、受信 event の素通し、`[event, scope設定]` の区別）と `withReducer` 更新→handler 通知の順序（§7.6）
-- [ ] P11-13 明示 bridge（実例の `withViewBridge` 型）のみ両系統を接続し、`globalStore.dispatch(viewEvents.x())` を `Events.on` へ結ばない。橋渡し未検出は「送信済み・対応受信未検出」と記録（§7.6）
-- [ ] P11-14 `withEffects` のような古い名称を公開 API として追加せず、実際の exports を基準にする（§7.6）
-- [ ] P11-15 R01〜R16 の個別実装は末尾の [R 対応表](#必須検知契約-r01r16) で管理（§7.6）
+- [x] P11-01 `capabilities.ts` に matcher ID・意味モデル ID・対応契約 ID（R01〜R16）を登録（§9, §10）
+- [x] P11-02 Angular Signal・NgRx Store・NgRx SignalStore を別 framework として区別（`angular-signal` / `signal-state` / `signal-store` / `ngrx-store`）（§7.6）
+- [x] P11-03 state details（framework、宣言/インスタンス/state key）と `state-read` の tracking（tracked/snapshot/untracked）、effect の framework/実行 phase（§7.6）
+- [x] P11-04 配送の分離（`action-dispatch`/`action-consume` と `event-dispatch`/`event-consume`、各々 busId・送信形式・scope・登録/生存条件）（§7.6）
+- [x] P11-05 Store method は `call`、patchState は `state-write`、computed 等は `reactive-link`。全てを effect ノードに変換しない（§7.6）
+- [x] P11-06 `signalStore(...)` の**変数へ返される生成クラス**のカタログ化（宣言ファイル・変数/シンボル位置・context で ID、インスタンスは DI provider/生成箇所。`class X extends signalStore(...)`、別名 import/re-export、再利用 feature の直接参照と factory 呼出しも追う）（§7.6）
+- [x] P11-07 feature の引数順合成と同名 member の上書き判定（宣言順・実際の型/値解決）。未知 feature を透明として通過させない（§7.6）
+- [x] P11-08 destructuring した state signal・method 内で捕捉した store 参照を元のインスタンスへ戻す（§7.6）
+- [x] P11-09 Store の提供だけでは生成済みとせず、inject/new と withHooks の生存期間を確認。onInit は起動条件、onDestroy は終了条件として扱う（§7.6）
+- [x] P11-10 SignalStore Events の scope 対応（`provideDispatcher`、self/parent/global、`toScope`/`mapToScope`、`injectDispatch(group)({scope:'parent'})`）。同じ event type でも無関係な sibling/local scope に配らない（§7.6）
+- [x] P11-11 通常の NgRx Store と SignalStore Events を別 bus として扱い、同じ `{type, payload}` で自動的に双方へ届くとしない（§7.6）
+- [x] P11-12 `withEventHandlers` の規則（初期化時の購読登録、出力が新 event の場合の再配送、void の副作用、受信 event の素通し、`[event, scope設定]` の区別）と `withReducer` 更新→handler 通知の順序（§7.6）
+- [x] P11-13 明示 bridge（実例の `withViewBridge` 型）のみ両系統を接続し、`globalStore.dispatch(viewEvents.x())` を `Events.on` へ結ばない。橋渡し未検出は「送信済み・対応受信未検出」と記録（§7.6）
+- [x] P11-14 `withEffects` のような古い名称を公開 API として追加せず、実際の exports を基準にする（§7.6）
+- [x] P11-15 R01〜R16 の個別実装は末尾の [R 対応表](#必須検知契約-r01r16) で管理（§7.6）
 
 ## P12 API・HTTP・型（§7.5）
 
@@ -357,10 +357,10 @@
 | A16 | renderer（全 kind の定型文、同一 IR の Markdown/JSON 一致、schema、confidence と coverage の独立、局所/全体 gap、リンク/span/特殊文字） | [ ] | [ ] | [ ] |
 | A17 | ファイル（合意形式、引用符/NFC 衝突/長名/同秒/大小文字/並行実行、排他作成、失敗時削除、stdout/stderr/終了コード） | [ ] | [ ] | [ ] |
 | A18 | 配布/性能（固定 ngmaze の bin を各 OS で起動、Node 対応版、クリーン npx、dist 一致、cold/warm 時間・両プロセスのピーク RSS） | [ ] | [ ] | [ ] |
-| A19 | Angular Signal（R01〜R04 の各 API/subcase、effect のない state 更新、untracked、linkedSignal、interop/購読） | [ ] | [ ] | [ ] |
-| A20 | SignalStore/SignalState（R05〜R08、生成 Store、feature 合成、patchState、hooks、rxMethod/signalMethod と未生成/未起動の反例） | [ ] | [ ] | [ ] |
+| A19 | Angular Signal（R01〜R04 の各 API/subcase、effect のない state 更新、untracked、linkedSignal、interop/購読） | [x] | [ ] | [ ] |
+| A20 | SignalStore/SignalState（R05〜R08、生成 Store、feature 合成、patchState、hooks、rxMethod/signalMethod と未生成/未起動の反例） | [x] | [ ] | [ ] |
 | A21 | 通常の dispatch（R09〜R11、effect なしの reducer 経路、facade、関数 overload、next、dispatch:false 内の明示 dispatch） | [ ] | [ ] | [ ] |
-| A22 | SignalStore Events（R12〜R14、injectDispatch/Dispatcher、reducer のみ、handler の内部購読/自動配送、scope と別 bus の非接続） | [ ] | [ ] | [ ] |
+| A22 | SignalStore Events（R12〜R14、injectDispatch/Dispatcher、reducer のみ、handler の内部購読/自動配送、scope と別 bus の非接続） | [x] | [ ] | [ ] |
 | A23 | 現物と非対応境界（R15/R16、ログ/設定 Store の実例と外部 feature の欠落診断を固定 fixture 化、未対応 API を無言で落とさない） | [ ] | [ ] | [ ] |
 | A24 | 実装・試験の対応漏れ（API 台帳照合で未登録 matcher/意味モデル、欠落・skip/todo の fixture、根拠や禁止辺の不足を CI で失敗に） | [ ] | [ ] | [ ] |
 
@@ -370,22 +370,22 @@
 
 | ID | 検知する API・形態 | matcher 実装 | 意味モデル | 台帳転記 | 全 subcase fixture |
 | --- | --- | --- | --- | --- | --- |
-| R01 | `signal`、read、`set/update/asReadonly`、別名・service/facade 経由 | [ ] | [ ] | [ ] | [ ] |
-| R02 | `computed/linkedSignal`、equal、条件付き read、`untracked` | [ ] | [ ] | [ ] | [ ] |
-| R03 | Angular `effect/afterRenderEffect`、cleanup/destroy | [ ] | [ ] | [ ] | [ ] |
-| R04 | `input/model`、`toSignal/toObservable`、`Store.selectSignal` | [ ] | [ ] | [ ] | [ ] |
-| R05 | `signalStore/signalStoreFeature/withFeature`、生成変数・extends・再利用 feature | [ ] | [ ] | [ ] | [ ] |
-| R06 | `withState/withComputed/withLinkedState/withProps/withMethods/withHooks` | [ ] | [ ] | [ ] | [ ] |
-| R07 | `signalState/patchState/getState/watchState/deepComputed`、state の深いプロパティ | [ ] | [ ] | [ ] | [ ] |
-| R08 | `rxMethod`、`signalMethod` | [ ] | [ ] | [ ] | [ ] |
+| R01 | `signal`、read、`set/update/asReadonly`、別名・service/facade 経由 | [x] | [x] | [ ] | [ ] |
+| R02 | `computed/linkedSignal`、equal、条件付き read、`untracked` | [x] | [x] | [ ] | [ ] |
+| R03 | Angular `effect/afterRenderEffect`、cleanup/destroy | [x] | [x] | [ ] | [ ] |
+| R04 | `input/model`、`toSignal/toObservable`、`Store.selectSignal` | [x] | [x] | [ ] | [ ] |
+| R05 | `signalStore/signalStoreFeature/withFeature`、生成変数・extends・再利用 feature | [x] | [x] | [ ] | [ ] |
+| R06 | `withState/withComputed/withLinkedState/withProps/withMethods/withHooks` | [x] | [x] | [ ] | [ ] |
+| R07 | `signalState/patchState/getState/watchState/deepComputed`、state の深いプロパティ | [x] | [x] | [ ] | [ ] |
+| R08 | `rxMethod`、`signalMethod` | [x] | [x] | [ ] | [ ] |
 | R09 | `Store.dispatch(action)`、facade 経由、action object、`createAction/createActionGroup` | [ ] | [ ] | [ ] | [ ] |
 | R10 | `Store.dispatch(() => action)` と明示 injector、`Store.next(action)` | [ ] | [ ] | [ ] | [ ] |
-| R11 | NgRx `createEffect/ofType`、返却 action、手動 dispatch、`dispatch:false` | [ ] | [ ] | [ ] | [ ] |
-| R12 | SignalStore `event/eventGroup`、`injectDispatch`、`Dispatcher.dispatch` | [ ] | [ ] | [ ] | [ ] |
-| R13 | `withReducer/on`、`Events.on/ReducerEvents`、`withEventHandlers` | [ ] | [ ] | [ ] | [ ] |
-| R14 | `provideDispatcher`、self/parent/global、`toScope/mapToScope`、複数 Store | [ ] | [ ] | [ ] | [ ] |
+| R11 | NgRx `createEffect/ofType`、返却 action、手動 dispatch、`dispatch:false` | [x] | [x] | [ ] | [ ] |
+| R12 | SignalStore `event/eventGroup`、`injectDispatch`、`Dispatcher.dispatch` | [x] | [x] | [ ] | [ ] |
+| R13 | `withReducer/on`、`Events.on/ReducerEvents`、`withEventHandlers` | [x] | [x] | [ ] | [ ] |
+| R14 | `provideDispatcher`、self/parent/global、`toScope/mapToScope`、複数 Store | [x] | [x] | [ ] | [ ] |
 | R15 | 実アプリ由来の複合ケース（ログ画面の injectDispatch→event→withReducer/withEventHandlers、設定 Store の withMethods→lastValueFrom(forkJoin)→patchState） | [ ] | [ ] | [ ] | [ ] |
-| R16 | 未対応版・未知 custom feature・`@ngrx/signals/entities`/resource 等（Angular resource/rxResource/httpResource、NgRx ComponentStore、外部 toolkit を含む） | [ ] | [ ] | [ ] | [ ] |
+| R16 | 未対応版・未知 custom feature・`@ngrx/signals/entities`/resource 等（Angular resource/rxResource/httpResource、NgRx ComponentStore、外部 toolkit を含む） | [x] | [x] | [ ] | [ ] |
 
 ## 完了時の報告規約（§10）
 
