@@ -626,7 +626,9 @@ function addOperations(input: OperationInput): void {
       };
       // The reactive layer runs first so the NgRx and HTTP traces can be reconciled against what it resolved.
       const keys = addReactiveWrites({ listenerNode, inside: reached, signals, eventGraph, owners, materialize,
-        scope, storeGraph, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId });
+        scope, storeGraph, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId,
+        reachedConsumers: new Set(storeTrace.steps.filter(step => step.kind === 'reactive-link')
+          .map(step => step.target)) });
       addDisplayReads({ analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope,
         storeMemberFor, memberClassFor });
       materialize(reconcile(storeTraceEdges(storeTrace), ownerId), scope);
@@ -665,6 +667,8 @@ interface ReactiveWriteInput {
   patchStates: ReturnType<typeof findPatchStateCalls>;
   /** Method names this operation entered, so an unreached Store method writes nothing here. */
   entered: ReadonlySet<string>;
+  /** Selector consumers the NgRx trace reached; the others stay background reads. */
+  reachedConsumers: ReadonlySet<string>;
   ownerId: string;
   materialize: (edges: readonly TracedEdge[], into: { nodes: Set<string>; edges: string[] }) => void;
   scope: { nodes: Set<string>; edges: string[] };
@@ -675,7 +679,7 @@ interface ReactiveWriteInput {
 /** §7.6 the state this operation writes through Signal and SignalStore APIs, with no effect required. */
 function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
   const { listenerNode, inside, signals, eventGraph, owners, storeGraph, materialize, scope,
-    callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId } = input;
+    callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId, reachedConsumers } = input;
   const keys: DisplayKey[] = [];
   const traced: TracedEdge[] = [];
   const listenerEnd = { kind: 'listener' as NodeKind, id: 'listener', label: 'listener', nodeId: listenerNode };
@@ -764,8 +768,10 @@ function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
       }
     }
   }
-  // §7.4 an NgRx selector consumed as a signal is read by the template through its component member.
+  // §7.4 only a selector this operation's state change actually reached is a display of it. A consumer
+  // the trace never reached is a background read and does not become a consequence of this operation.
   for (const consumer of storeGraph.consumers) {
+    if (!reachedConsumers.has(consumer.id)) continue;
     const member = memberNameAt(consumer.source);
     if (member) keys.push({ ownerId: consumer.owner, member,
       node: { kind: 'state', id: consumer.id, label: member } });

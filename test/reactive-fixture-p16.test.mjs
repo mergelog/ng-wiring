@@ -200,3 +200,44 @@ test('signal-apis: a derived value, a read-only alias and an effect each keep th
   assert(text(effect.conditionId).includes('cleanup registered at'), text(effect.conditionId));
   assert.equal(effect.details.scheduling.value, 'change-detection');
 });
+
+// R09-R11: the action bus, with the forms that must stay apart.
+test('ngrx-apis: an effect, its returned action and a dispatch:false callback stay separate', async () => {
+  const { report } = await analyzeFixture('ngrx-apis', { target: 'data-id=effectButton' });
+  const keys = edgeKeys(report);
+  // dispatch -> effect -> returned action -> reducer -> selector -> selectSignal -> display.
+  assert(keys.includes('action-dispatch|src/panel.component.ts#SearchPanelComponent|src/actions.ts#searchRequested'));
+  assert(keys.includes('action-consume|src/actions.ts#searchRequested|src/effects.ts#runSearch$'));
+  assert(keys.includes('action-dispatch|src/effects.ts#runSearch$|src/actions.ts#searchSucceeded'));
+  assert(keys.includes('action-consume|src/actions.ts#searchSucceeded|src/reducer.ts#searchReducer'));
+  assert(keys.includes('state-write|src/reducer.ts#searchReducer|search'));
+  assert(keys.includes('state-read|hits|<span>'));
+  // dispatch:false: the callback's own dispatch is kept, the stream's value is not dispatched.
+  assert(keys.includes('action-dispatch|src/effects.ts#auditSearch$|src/actions.ts#panelOpened'));
+  assert(!keys.includes('action-dispatch|src/effects.ts#auditSearch$|src/actions.ts#searchSucceeded'));
+  // An effect that was never registered is not running.
+  assert.deepEqual(keys.filter(key => key.includes('ignored$')), [], keys.join('\n'));
+  // ofType decides what each effect receives.
+  assert(!keys.includes('action-consume|src/actions.ts#searchRequested|src/effects.ts#auditSearch$'));
+});
+
+test('ngrx-apis: a facade dispatch is still the dispatch, and a plain Subject.next is not one', async () => {
+  const viaFacade = await analyzeFixture('ngrx-apis', { target: 'data-id=facadeButton' });
+  const facadeKeys = edgeKeys(viaFacade.report);
+  assert(facadeKeys.includes('call|src/panel.component.ts#SearchPanelComponent|facade.changeTerm'));
+  assert(facadeKeys.includes('action-dispatch|src/facade.ts#SearchFacade|src/actions.ts#termChanged'));
+  assert(facadeKeys.includes('action-consume|src/actions.ts#termChanged|src/reducer.ts#searchReducer'));
+
+  const viaSubject = await analyzeFixture('ngrx-apis', { target: 'data-id=subjectButton' });
+  const subjectKeys = edgeKeys(viaSubject.report);
+  assert(subjectKeys.includes('state-write|src/panel.component.ts#SearchPanelComponent|this.local'));
+  assert.deepEqual(subjectKeys.filter(key => key.startsWith('action-')), [],
+    'a plain Subject.next was read as a Store dispatch');
+});
+
+// A13: a selector nobody's change reached is a background read, not a consequence of this operation.
+test('ngrx-apis: a display fed by another slice is not attributed to this operation', async () => {
+  const { report } = await analyzeFixture('ngrx-apis', { target: 'data-id=subjectButton' });
+  assert.deepEqual(edgeKeys(report).filter(key => key.startsWith('state-read|')), [],
+    'a selector display was attributed to an operation that writes no state');
+});
