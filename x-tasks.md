@@ -26,11 +26,11 @@
 | P13 中間モデルと schema | `src/model`, `docs` | 15 | 15 | P5〜P12 |
 | P14 renderer とファイル名 | `src/render` | 22 | 22 | P13 |
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 6 | P13 |
-| P16 fixture・期待台帳・CI | `test/` | 15 | 13 | 各フェーズ並行 |
+| P16 fixture・期待台帳・CI | `test/` | 15 | 14 | 各フェーズ並行 |
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **216** | |
+| **合計** | | **237** | **217** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -334,7 +334,7 @@ P1-09 はこのフェーズで fixture が揃ったため `[~]` から `[x]` に
 - [x] P16-12 API/subcase の削除・unsupported 化は設計契約の変更としてレビューし、テストを通すために期待台帳を減らさない（§10）
 - [x] P16-13 設計表の R ID と台帳の各 API/subcase の転記を実装レビューで照合（§10）
 - [x] P16-14 検出した構文/型/設定エラーと関連する解析欠落を必ず出す（対象アプリ全体のビルド成功は合格条件にしない）（§10）
-- [ ] P16-15 受け入れ条件 A01〜A24 は末尾の [A 対応表](#受け入れ条件-a01a24) で管理（§10）
+- [x] P16-15 受け入れ条件 A01〜A24 は末尾の [A 対応表](#受け入れ条件-a01a24) で管理（§10）
 
 ## P17 配布・性能（§9, §10）
 
@@ -378,17 +378,23 @@ P1-09 はこのフェーズで fixture が揃ったため `[~]` から `[x]` に
 | A11 | 検索操作（input/keydown/click の分離、既定 false・minimumChars=1・debounceTime=0・filter・null による逆方向・即時ジャンプと後続再計算・clear の複数到達） | [ ] | [ ] | [ ] |
 | A12 | データ伝播（alias/model/two-way/form accessor、signal、RxJS の条件/取消し/購読寿命、未知演算子を透過扱いしない） | [ ] | [ ] | [ ] |
 | A13 | NgRx（登録済み/未登録/lazy effect、dispatch:false、同一 action type 衝突、success/error chain、selector 値の不変、背景 read と因果の分離） | [ ] | [ ] | [ ] |
-| A14 | HTTP/Model（生成クライアント→ラッパー→要求/応答型、未購読 Observable、Promise、動的 URL、interceptor/cache/retry の境界、無関係な保存 API を出さない） | [x] | [ ] | [ ] |
+| A14 | HTTP/Model（生成クライアント→ラッパー→要求/応答型、未購読 Observable、Promise、動的 URL、interceptor/cache/retry の境界、無関係な保存 API を出さない） | [x] | [~] | [~] |
 | A15 | 有限化（同一クラス別出現を残す、合流を循環と誤認しない、循環・候補/深さ/状態数の上限で停止位置と partial、一意性を捏造しない） | [ ] | [ ] | [ ] |
 | A16 | renderer（全 kind の定型文、同一 IR の Markdown/JSON 一致、schema、confidence と coverage の独立、局所/全体 gap、リンク/span/特殊文字） | [ ] | [ ] | [ ] |
 | A17 | ファイル（合意形式、引用符/NFC 衝突/長名/同秒/大小文字/並行実行、排他作成、失敗時削除、stdout/stderr/終了コード） | [ ] | [ ] | [ ] |
 | A18 | 配布/性能（固定 ngmaze の bin を各 OS で起動、Node 対応版、クリーン npx、dist 一致、cold/warm 時間・両プロセスのピーク RSS） | [ ] | [ ] | [ ] |
-| A19 | Angular Signal（R01〜R04 の各 API/subcase、effect のない state 更新、untracked、linkedSignal、interop/購読） | [x] | [ ] | [ ] |
-| A20 | SignalStore/SignalState（R05〜R08、生成 Store、feature 合成、patchState、hooks、rxMethod/signalMethod と未生成/未起動の反例） | [x] | [ ] | [ ] |
+| A19 | Angular Signal（R01〜R04 の各 API/subcase、effect のない state 更新、untracked、linkedSignal、interop/購読） | [x] | [~] | [~] |
+| A20 | SignalStore/SignalState（R05〜R08、生成 Store、feature 合成、patchState、hooks、rxMethod/signalMethod と未生成/未起動の反例） | [x] | [~] | [~] |
 | A21 | 通常の dispatch（R09〜R11、effect なしの reducer 経路、facade、関数 overload、next、dispatch:false 内の明示 dispatch） | [ ] | [ ] | [ ] |
-| A22 | SignalStore Events（R12〜R14、injectDispatch/Dispatcher、reducer のみ、handler の内部購読/自動配送、scope と別 bus の非接続） | [x] | [ ] | [ ] |
-| A23 | 現物と非対応境界（R15/R16、ログ/設定 Store の実例と外部 feature の欠落診断を固定 fixture 化、未対応 API を無言で落とさない） | [ ] | [ ] | [ ] |
-| A24 | 実装・試験の対応漏れ（API 台帳照合で未登録 matcher/意味モデル、欠落・skip/todo の fixture、根拠や禁止辺の不足を CI で失敗に） | [ ] | [ ] | [ ] |
+| A22 | SignalStore Events（R12〜R14、injectDispatch/Dispatcher、reducer のみ、handler の内部購読/自動配送、scope と別 bus の非接続） | [x] | [~] | [~] |
+| A23 | 現物と非対応境界（R15/R16、ログ/設定 Store の実例と外部 feature の欠落診断を固定 fixture 化、未対応 API を無言で落とさない） | [x] | [x] | [x] |
+| A24 | 実装・試験の対応漏れ（API 台帳照合で未登録 matcher/意味モデル、欠落・skip/todo の fixture、根拠や禁止辺の不足を CI で失敗に） | [x] | [x] | [x] |
+
+`[~]` は一部の subcase だけが fixture/CI に載っている状態を指す。列の対応関係は `test/a-conditions-p16.test.mjs` が検査し、実装が `[ ]` のまま fixture や CI を `[x]` にできない。P16 時点の対応は次のとおり。
+
+- A23: `test/fixtures/real-log-store` / `real-settings-store` / `unsupported-apis` と `test/real-source-p16.test.mjs` / `test/reactive-fixture-p16.test.mjs`。
+- A24: `test/contracts/reactive-cases.ts`（台帳）、`scripts/check-contracts.mjs`（照合）、CI の `npm run check:contracts`。
+- A14/A19/A20/A22 は P16 の fixture が一部の subcase を覆ったのみで、残りは台帳の `missingFixture` が示す。
 
 ## 必須検知契約 R01〜R16
 
