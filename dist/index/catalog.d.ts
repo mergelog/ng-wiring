@@ -44,4 +44,8 @@ export interface Catalog {
     byNode: Map<ts.ClassDeclaration, Declaration>;
     gaps: string[];
 }
+export declare function getProperty(tsApi: typeof ts, object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined;
+export declare function unwrap(tsApi: typeof ts, node: ts.Expression): ts.Expression;
+export declare function classAt(context: AnalysisContext, expression: ts.Expression): ts.ClassDeclaration | undefined;
+export declare function idForClass(context: AnalysisContext, declaration: ts.ClassDeclaration): string | undefined;
 export declare function buildCatalog(context: AnalysisContext): Promise<Catalog>;

@@ -1,16 +1,16 @@
 import path from 'node:path';
 import { StaticEvaluator } from '../workspace/evaluate.js';
 const slash = (s) => s.replaceAll('\\', '/');
-function getProperty(tsApi, object, name) {
+export function getProperty(tsApi, object, name) {
     const assignment = object.properties.find(p => tsApi.isPropertyAssignment(p) &&
         (tsApi.isIdentifier(p.name) || tsApi.isStringLiteral(p.name)) && p.name.text === name);
     return assignment && tsApi.isPropertyAssignment(assignment) ? assignment.initializer : undefined;
 }
-function unwrap(tsApi, node) {
+export function unwrap(tsApi, node) {
     return tsApi.isAsExpression(node) || tsApi.isSatisfiesExpression(node) || tsApi.isParenthesizedExpression(node)
         ? unwrap(tsApi, node.expression) : node;
 }
-function classAt(context, expression) {
+export function classAt(context, expression) {
     const t = context.toolchain.typescript;
     const node = unwrap(t, expression);
     const symbolNode = t.isPropertyAccessExpression(node) ? node.name : node;
@@ -19,7 +19,7 @@ function classAt(context, expression) {
         symbol = context.checker.getAliasedSymbol(symbol);
     return symbol?.declarations?.find(t.isClassDeclaration);
 }
-function idForClass(context, declaration) {
+export function idForClass(context, declaration) {
     if (!declaration.name)
         return undefined;
     const file = declaration.getSourceFile().fileName;
@@ -65,7 +65,7 @@ function refs(context, expression, gaps, label) {
         if (t.isArrayLiteralExpression(node))
             return node.elements.flatMap(element => t.isSpreadElement(element) ? visit(element.expression) : visit(element));
         if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
-            node.expression.name.text === 'forRoot')
+            ['forRoot', 'forChild'].includes(node.expression.name.text))
             return visit(node.expression.expression);
         if (t.isObjectLiteralExpression(node)) {
             const directive = getProperty(t, node, 'directive');

@@ -31,16 +31,16 @@ export interface Catalog { declarations: Map<string, Declaration>; external: Map
   byNode: Map<ts.ClassDeclaration, Declaration>; gaps: string[] }
 
 const slash = (s: string): string => s.replaceAll('\\', '/');
-function getProperty(tsApi: typeof ts, object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
+export function getProperty(tsApi: typeof ts, object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
   const assignment = object.properties.find(p => tsApi.isPropertyAssignment(p) &&
     (tsApi.isIdentifier(p.name) || tsApi.isStringLiteral(p.name)) && p.name.text === name);
   return assignment && tsApi.isPropertyAssignment(assignment) ? assignment.initializer : undefined;
 }
-function unwrap(tsApi: typeof ts, node: ts.Expression): ts.Expression {
+export function unwrap(tsApi: typeof ts, node: ts.Expression): ts.Expression {
   return tsApi.isAsExpression(node) || tsApi.isSatisfiesExpression(node) || tsApi.isParenthesizedExpression(node)
     ? unwrap(tsApi, node.expression) : node;
 }
-function classAt(context: AnalysisContext, expression: ts.Expression): ts.ClassDeclaration | undefined {
+export function classAt(context: AnalysisContext, expression: ts.Expression): ts.ClassDeclaration | undefined {
   const t = context.toolchain.typescript;
   const node = unwrap(t, expression);
   const symbolNode = t.isPropertyAccessExpression(node) ? node.name : node;
@@ -48,7 +48,7 @@ function classAt(context: AnalysisContext, expression: ts.Expression): ts.ClassD
   if (symbol?.flags && symbol.flags & t.SymbolFlags.Alias) symbol = context.checker.getAliasedSymbol(symbol);
   return symbol?.declarations?.find(t.isClassDeclaration);
 }
-function idForClass(context: AnalysisContext, declaration: ts.ClassDeclaration): string | undefined {
+export function idForClass(context: AnalysisContext, declaration: ts.ClassDeclaration): string | undefined {
   if (!declaration.name) return undefined;
   const file = declaration.getSourceFile().fileName;
   return file.includes(`${path.sep}node_modules${path.sep}`)
@@ -84,7 +84,7 @@ function refs(context: AnalysisContext, expression: ts.Expression | undefined, g
     if (t.isArrayLiteralExpression(node)) return node.elements.flatMap(element =>
       t.isSpreadElement(element) ? visit(element.expression) : visit(element));
     if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === 'forRoot') return visit(node.expression.expression);
+      ['forRoot', 'forChild'].includes(node.expression.name.text)) return visit(node.expression.expression);
     if (t.isObjectLiteralExpression(node)) {
       const directive = getProperty(t, node, 'directive');
       if (directive) return visit(directive);

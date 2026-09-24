@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P5 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P6 以降の route/bootstrap、操作、モデル、renderer の統合が必要（§1, §2）。
+現状: **実装中**。P0〜P7 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P8 以降の操作、モデル、renderer の統合が必要（§1, §2）。
 
 ## 進捗サマリ
 
@@ -16,8 +16,8 @@
 | P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 12 | P2 |
 | P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 13 | P2, P3 |
 | P5 表示経路・投影・TemplateRef | `src/resolve/view` | 10 | 10 | P4 |
-| P6 route と bootstrap | `src/resolve/view` | 10 | 0 | P4 |
-| P7 制御フローと有限化 | `src/resolve/view` | 10 | 0 | P5, P6 |
+| P6 route と bootstrap | `src/resolve/view` | 10 | 10 | P4 |
+| P7 制御フローと有限化 | `src/resolve/view` | 10 | 10 | P5, P6 |
 | P8 リスナー・DOM 伝播・式 | `src/resolve/operation` | 14 | 0 | P4 |
 | P9 入出力・状態・非同期 | `src/resolve/operation` | 11 | 0 | P8 |
 | P10 DI と NgRx Store | `src/resolve/operation` | 12 | 0 | P9 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **80** | |
+| **合計** | | **237** | **100** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -142,29 +142,29 @@
 
 ## P6 route と bootstrap（`src/resolve/view`, §6.2）
 
-- [ ] P6-01 root の `provideRouter` / `RouterModule.forRoot` と routes 参照、`children`、`loadChildren`、`RouterModule.forChild`、`loadComponent` をソースから再構築（§6.2）
-- [ ] P6-02 `RouteOccurrenceId` に定義位置 + 使用/loader の列を入れ、同じ routes 配列を別 path から取り込む場合も区別（§6.2）
-- [ ] P6-03 componentless route は URL/条件の列に残し、コンポーネント節にしない。static redirect は遷移参照で親子辺にしない（§6.2）
-- [ ] P6-04 guard・matcher・記述順・先行候補・pathMatch を条件として保持し、URL 一致だけで activation を確定しない（§6.2）
-- [ ] P6-05 `host === null` を bootstrap 直下と解釈しない。取り込み元を調べ、root router 設定まで接続できた route だけを bootstrap の outlet に結ぶ。ロード元不明の route 配列も未解決として残す（§6.2, 指摘 1-6）
-- [ ] P6-06 outlet 探索（primary/named を最寄り表示ホストのテンプレートとその子 view 内で探し、名前・router context・生成条件を照合。root から任意の outlet を探さない）（§6.2）
-- [ ] P6-07 outlet が無い/複数で絞れない/投影・TemplateRef で router context 不明は未解決。path だけで区別できない named outlet は candidate 化（§6.2）
-- [ ] P6-08 bootstrap 解決（選択 entry から到達する `bootstrapApplication`、または `bootstrapModule` と NgModule の bootstrap 配列。未使用の別 entry の bootstrap を結合しない）（§6.2）
-- [ ] P6-09 application ノード→bootstrap component と bootstrap component→最初の route component を別の辺にする（`AppRootComponent → AppComponent` は router 配置）（§2, §6.2）
-- [ ] P6-10 動的 `resetConfig` 等は到達範囲の gap として記録（§6.2）
+- [x] P6-01 root の `provideRouter` / `RouterModule.forRoot` と routes 参照、`children`、`loadChildren`、`RouterModule.forChild`、`loadComponent` をソースから再構築（§6.2）
+- [x] P6-02 `RouteOccurrenceId` に定義位置 + 使用/loader の列を入れ、同じ routes 配列を別 path から取り込む場合も区別（§6.2）
+- [x] P6-03 componentless route は URL/条件の列に残し、コンポーネント節にしない。static redirect は遷移参照で親子辺にしない（§6.2）
+- [x] P6-04 guard・matcher・記述順・先行候補・pathMatch を条件として保持し、URL 一致だけで activation を確定しない（§6.2）
+- [x] P6-05 `host === null` を bootstrap 直下と解釈しない。取り込み元を調べ、root router 設定まで接続できた route だけを bootstrap の outlet に結ぶ。ロード元不明の route 配列も未解決として残す（§6.2, 指摘 1-6）
+- [x] P6-06 outlet 探索（primary/named を最寄り表示ホストのテンプレートとその子 view 内で探し、名前・router context・生成条件を照合。root から任意の outlet を探さない）（§6.2）
+- [x] P6-07 outlet が無い/複数で絞れない/投影・TemplateRef で router context 不明は未解決。path だけで区別できない named outlet は candidate 化（§6.2）
+- [x] P6-08 bootstrap 解決（選択 entry から到達する `bootstrapApplication`、または `bootstrapModule` と NgModule の bootstrap 配列。未使用の別 entry の bootstrap を結合しない）（§6.2）
+- [x] P6-09 application ノード→bootstrap component と bootstrap component→最初の route component を別の辺にする（`AppRootComponent → AppComponent` は router 配置）（§2, §6.2）
+- [x] P6-10 動的 `resetConfig` 等は到達範囲の gap として記録（§6.2）
 
 ## P7 制御フローと有限化（§6.3）
 
-- [ ] P7-01 `@if/@else if/@else`（先行条件の否定を含める）（§6.3）
-- [ ] P7-02 `@for/@empty`（要素存在・反復数不明・空集合を保持）（§6.3）
-- [ ] P7-03 `@switch/@case/@default`（switch 式と case の対応を保つ）（§6.3）
-- [ ] P7-04 `@let` は値/スコープの定義として扱い、表示分岐にしない（§6.3）
-- [ ] P7-05 `@defer` の phase 分離（main/placeholder/loading/error）と on/when・prefetch・after/minimum の個別保持（§6.3）
-- [ ] P7-06 `@defer` の合成規則（複数トリガーは OR、外側ブロックとの包含は AND、when が false に戻っても未ロードへ戻さず「起動済み」状態として表す、prefetch は描画完了でない、SSR/hydrate をブラウザー操作に混ぜない）（§6.3, 指摘 3-1）
-- [ ] P7-07 未知のテンプレート AST を読み飛ばさず unsupported として coverage に反映（§6.3）
-- [ ] P7-08 親探索の循環キー `(contextId, 定義ID, 使用位置, 関係種別, 直近の route/fragment 挿入位置)`。伸び続ける祖先配列を含めない。異なる使用箇所の同じクラスは残す（§6.3, 2回目レビュー 1）
-- [ ] P7-09 再帰は具体インスタンスを列挙せず cycle boundary と他の非循環 root 経路を併記（§6.3）
-- [ ] P7-10 初期上限（親経路深さ 200、候補 1,000、展開状態 100,000）と、上限に達した枝・未列挙範囲の記録（§6.3）
+- [x] P7-01 `@if/@else if/@else`（先行条件の否定を含める）（§6.3）
+- [x] P7-02 `@for/@empty`（要素存在・反復数不明・空集合を保持）（§6.3）
+- [x] P7-03 `@switch/@case/@default`（switch 式と case の対応を保つ）（§6.3）
+- [x] P7-04 `@let` は値/スコープの定義として扱い、表示分岐にしない（§6.3）
+- [x] P7-05 `@defer` の phase 分離（main/placeholder/loading/error）と on/when・prefetch・after/minimum の個別保持（§6.3）
+- [x] P7-06 `@defer` の合成規則（複数トリガーは OR、外側ブロックとの包含は AND、when が false に戻っても未ロードへ戻さず「起動済み」状態として表す、prefetch は描画完了でない、SSR/hydrate をブラウザー操作に混ぜない）（§6.3, 指摘 3-1）
+- [x] P7-07 未知のテンプレート AST を読み飛ばさず unsupported として coverage に反映（§6.3）
+- [x] P7-08 親探索の循環キー `(contextId, 定義ID, 使用位置, 関係種別, 直近の route/fragment 挿入位置)`。伸び続ける祖先配列を含めない。異なる使用箇所の同じクラスは残す（§6.3, 2回目レビュー 1）
+- [x] P7-09 再帰は具体インスタンスを列挙せず cycle boundary と他の非循環 root 経路を併記（§6.3）
+- [x] P7-10 初期上限（親経路深さ 200、候補 1,000、展開状態 100,000）と、上限に達した枝・未列挙範囲の記録（§6.3）
 
 ## P8 リスナー・DOM 伝播・テンプレート式（`src/resolve/operation`, §7.1, §7.2）
 

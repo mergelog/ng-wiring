@@ -1,11 +1,16 @@
 import type { AnalysisContext } from '../../workspace/context.js';
 import type { Catalog } from '../../index/catalog.js';
-import type { IndexedElement, IndexedSlot, Span, TemplateIndex } from '../../index/templates.js';
+import type { ControlFlowFrame, IndexedElement, IndexedSlot, Span, TemplateIndex } from '../../index/templates.js';
 import type { MazeGraph } from '../../adapters/ng-maze/index.js';
+import { resolveOutletPlacement, type RouteGraph, type RouteOccurrence } from './routes.js';
 import type ts from 'typescript';
 
 export type ViewRelation = 'element' | 'component-use' | 'projection-slot' | 'fragment-declaration' |
-  'template-insertion' | 'structural-view' | 'dynamic-creation';
+  'template-insertion' | 'structural-view' | 'control-flow' | 'dynamic-creation' | 'route-outlet' | 'bootstrap';
+export interface ViewRouteRef {
+  occurrenceId: string; pattern: string; outlet: string | null;
+  definition: Span; loaders: Span[]; rooted: boolean;
+}
 export interface ViewStep {
   number: string;
   relation: ViewRelation;
@@ -20,14 +25,23 @@ export interface ViewStep {
   displayCondition: string | null;
   creationCondition: string | null;
   insertionContext: string | null;
+  routeRef: ViewRouteRef | null;
+  controlFlow: ControlFlowFrame | null;
 }
 export interface ViewPath {
   steps: ViewStep[];
   declarationRefs: { ownerId: string; span: Span | null }[];
-  end: 'root-unresolved' | 'unrendered' | 'projection-unresolved' | 'fragment-uninstantiated' | 'dynamic-boundary' | 'cycle' | 'limit';
+  end: 'root-unresolved' | 'unrendered' | 'projection-unresolved' | 'fragment-uninstantiated' | 'dynamic-boundary' |
+  'route-unresolved' | 'bootstrap' | 'cycle' | 'limit';
   reason: string;
 }
-export interface ViewResolution { paths: ViewPath[]; diagnostics: string[] }
+/** §6.3 initial finitization limits. */
+export interface ViewLimits { depth: number; paths: number; states: number }
+export const defaultViewLimits: ViewLimits = { depth: 200, paths: 1_000, states: 100_000 };
+export interface ViewLimitReport extends ViewLimits {
+  depthStops: number; pathStops: number; stateStops: number; unexplored: number;
+}
+export interface ViewResolution { paths: ViewPath[]; diagnostics: string[]; limits: ViewLimitReport }
 
 function selectorMatches(context: AnalysisContext, selector: string, projected: IndexedElement): boolean {
   const ng = context.toolchain.angularCompiler;
@@ -107,7 +121,7 @@ function step(relation: ViewRelation, ownerId: string, label: string, span: Span
   displayParent = true, insertionContext: string | null = null): ViewStep {
   return { number: '', relation, ownerId, label, span, displayParent, declarationOwnerId: ownerId,
     expressionOwnerId: ownerId, diOwnerId: ownerId, diContextOverride: null,
-    displayCondition: null, creationCondition: null, insertionContext };
+    displayCondition: null, creationCondition: null, insertionContext, routeRef: null, controlFlow: null };
 }
 
 function finalize(steps: ViewStep[], end: ViewPath['end'], reason: string): ViewPath {
@@ -208,27 +222,103 @@ function templateAliases(context: AnalysisContext, ownerId: string, reference: s
   return aliases;
 }
 
+function routeStepFor(occurrence: RouteOccurrence, ownerId: string): ViewStep {
+  const name = occurrence.outlet ? ` name="${occurrence.outlet}"` : '';
+  const placement = step('route-outlet', ownerId, `route ${occurrence.pattern} places ${ownerId} in <router-outlet${name}>`,
+    occurrence.definition, true, occurrence.id);
+  placement.creationCondition = 'route activation';
+  placement.displayCondition = occurrence.conditions.map(condition => condition.text).join('; ') || 'route matches the URL';
+  placement.routeRef = { occurrenceId: occurrence.id, pattern: occurrence.pattern, outlet: occurrence.outlet,
+    definition: occurrence.definition, loaders: occurrence.loaders, rooted: occurrence.rooted };
+  return placement;
+}
+
+/** Frames introduced between an element and its display parent, outermost first. */
+function ownControlFlow(element: IndexedElement): ControlFlowFrame[] {
+  const outer = element.parent?.controlFlow ?? [];
+  let shared = 0;
+  while (shared < outer.length && shared < element.controlFlow.length && outer[shared] === element.controlFlow[shared]) shared++;
+  return element.controlFlow.slice(shared);
+}
+
+function controlFlowSteps(element: IndexedElement): ViewStep[] {
+  const created: Record<ControlFlowFrame['kind'], string> = {
+    if: 'embedded view created while this branch is selected',
+    for: 'one embedded view per item; individual rows are not identified',
+    'for-empty': 'embedded view created while the collection is empty',
+    switch: 'embedded view created while this case is selected',
+    defer: 'deferred view created for this phase',
+  };
+  // Innermost first: steps run from the element towards the root.
+  return ownControlFlow(element).reverse().map(frame => {
+    const item = step('control-flow', element.owner.id, frame.label, frame.span, false);
+    item.displayCondition = [frame.condition, ...frame.notes].join('; ');
+    item.creationCondition = frame.phase && frame.phase !== 'main'
+      ? `${frame.phase} view created for ${frame.defer?.id ?? 'the @defer block'}` : created[frame.kind];
+    item.controlFlow = frame;
+    return item;
+  });
+}
+
+/** §6.3 cycle key: no growing ancestor array, and the same class at another use stays distinct. */
+function cycleKey(context: AnalysisContext, element: IndexedElement, relation: ViewRelation, insertion: string): string {
+  return [context.id, element.owner.id, `${element.span.file}:${element.span.start}-${element.span.end}`,
+    relation, insertion].join('|');
+}
+
 export function resolveViewPaths(target: IndexedElement, context: AnalysisContext, catalog: Catalog,
-  index: TemplateIndex, limit = 1_000, maze?: MazeGraph): ViewResolution {
+  index: TemplateIndex, limit: number | Partial<ViewLimits> = {}, maze?: MazeGraph, routes?: RouteGraph): ViewResolution {
+  const limits: ViewLimits = { ...defaultViewLimits, ...typeof limit === 'number' ? { paths: limit } : limit };
+  const report: ViewLimitReport = { ...limits, depthStops: 0, pathStops: 0, stateStops: 0, unexplored: 0 };
   const diagnostics: string[] = [];
   const paths: ViewPath[] = [];
-  type State = { current: IndexedElement; steps: ViewStep[]; visited: Set<IndexedElement>; depth: number };
-  const stack: State[] = [{ current: target, steps: [], visited: new Set(), depth: 0 }];
+  type State = { current: IndexedElement; steps: ViewStep[]; keys: Set<string>; depth: number;
+    routeIds: Set<string>; relation: ViewRelation; insertion: string; anchor?: boolean };
+  const stack: State[] = [{ current: target, steps: [], keys: new Set(), depth: 0, routeIds: new Set(),
+    relation: 'element', insertion: 'none' }];
+  let states = 0;
+  const stop = (kind: 'depth' | 'paths' | 'states', state: State, reason: string): void => {
+    report[`${kind === 'depth' ? 'depth' : kind === 'paths' ? 'path' : 'state'}Stops`]++;
+    diagnostics.push(reason);
+    paths.push(finalize(state.steps, 'limit', reason));
+  };
   while (stack.length) {
     const state = stack.pop()!;
     const current = state.current;
-    const key = `${current.owner.id}:${current.span.file}:${current.span.start}:${current.span.end}`;
-    if (state.visited.has(current)) { paths.push(finalize(state.steps, 'cycle', `View cycle at ${key}`)); continue; }
-    if (state.depth >= limit || paths.length + stack.length >= limit) {
-      paths.push(finalize(state.steps, 'limit', `View expansion stopped at ${key}`)); continue;
+    const where = `${current.owner.id} at ${current.span.file}:${current.span.line}`;
+    if (states >= limits.states) {
+      report.unexplored += stack.length + 1;
+      stop('states', state, `View expansion stopped after ${limits.states} states at ${where}; ${stack.length + 1} branches were not enumerated`);
+      break;
     }
-    const visited = new Set(state.visited); visited.add(current);
+    states++;
+    const key = cycleKey(context, current, state.relation, state.insertion);
+    if (state.keys.has(key)) {
+      // The boundary is reported once; the other non-cyclic branches keep being enumerated (§6.3).
+      paths.push(finalize(state.steps, 'cycle', `Recursion boundary: ${where} is re-entered through ${state.relation}`));
+      continue;
+    }
+    if (state.depth >= limits.depth) {
+      report.unexplored += 1;
+      stop('depth', state, `Parent path depth limit ${limits.depth} reached at ${where}`);
+      continue;
+    }
+    if (paths.length >= limits.paths) {
+      report.unexplored += stack.length + 1;
+      stop('paths', state, `Candidate limit ${limits.paths} reached at ${where}; ${stack.length + 1} branches were not enumerated`);
+      break;
+    }
+    const keys = new Set(state.keys); keys.add(key);
+    const routeIds = state.routeIds;
+    const insertion = state.insertion;
     const steps = [...state.steps];
-    if (current.tag !== 'ng-container' && current.tag !== 'ng-template') {
+    // A routed component is a sibling of its <router-outlet> anchor, so the anchor is not a display ancestor.
+    if (!state.anchor && current.tag !== 'ng-container' && current.tag !== 'ng-template') {
       const entry = step('element', current.owner.id, `<${current.tag}>`, current.span);
       if (current.repeated) entry.displayCondition = '@for iteration exists; individual row is not identified';
       steps.push(entry);
     }
+    steps.push(...controlFlowSteps(current));
     if (current.parent) {
       const parent = current.parent;
       if (parent.component) {
@@ -239,7 +329,8 @@ export function resolveViewPaths(target: IndexedElement, context: AnalysisContex
           const reason = chain.reason;
           diagnostics.push(reason); paths.push(finalize(steps, chain.unresolved ? 'projection-unresolved' : 'unrendered', reason)); continue;
         }
-        stack.push({ current: parent, steps: [...steps, ...chain.steps], visited, depth: state.depth + 1 });
+        stack.push({ current: parent, steps: [...steps, ...chain.steps], keys, depth: state.depth + 1, routeIds,
+          relation: 'projection-slot', insertion: `${parent.span.file}:${parent.span.start}` });
         continue;
       }
       if (parent.node.constructor.name === 'Template') {
@@ -285,7 +376,8 @@ export function resolveViewPaths(target: IndexedElement, context: AnalysisContex
               `${variable.name}<-${variable.value || '$implicit'}`).join(', ')}; ${insertion.boundExpressions.get('ngTemplateOutletContext') ?? 'context unknown'}` :
               insertion.boundExpressions.get('ngTemplateOutletContext') ?? null;
             if (placement.diContextOverride) diagnostics.push(`DI context overridden at ${insertion.span.file}:${insertion.span.line}`);
-            stack.push({ current: insertion, steps: [...steps, fragment, placement], visited, depth: state.depth + 1 });
+            stack.push({ current: insertion, steps: [...steps, fragment, placement], keys, depth: state.depth + 1, routeIds,
+              relation: 'template-insertion', insertion: `${insertion.span.file}:${insertion.span.start}` });
           }
           for (const insertion of vcr) {
             const fragment = step('fragment-declaration', parent.owner.id, `#${reference}`, parent.span, false);
@@ -293,8 +385,9 @@ export function resolveViewPaths(target: IndexedElement, context: AnalysisContex
               insertion.span, !!insertion.container, `${insertion.span.file}:${insertion.span.start}`);
             placement.displayCondition = 'createEmbeddedView call executes';
             placement.creationCondition = 'fragment declaration exists';
-            if (insertion.container) stack.push({ current: insertion.container, steps: [...steps, fragment, placement], visited,
-              depth: state.depth + 1 });
+            if (insertion.container) stack.push({ current: insertion.container, steps: [...steps, fragment, placement], keys,
+              depth: state.depth + 1, routeIds, relation: 'template-insertion',
+              insertion: `${insertion.span.file}:${insertion.span.start}` });
             else paths.push(finalize([...steps, fragment, placement], 'dynamic-boundary', 'ViewContainerRef location is unresolved'));
           }
           continue;
@@ -311,10 +404,11 @@ export function resolveViewPaths(target: IndexedElement, context: AnalysisContex
         const structural = step('structural-view', parent.owner.id, `*${parent.tag}`, parent.span, false);
         structural.displayCondition = [...parent.boundAttributes, ...(template.templateAttrs ?? []).map(attr => attr.name)].join(', ');
         steps.push(structural);
-        stack.push({ current: parent, steps, visited, depth: state.depth + 1 });
+        stack.push({ current: parent, steps, keys, depth: state.depth + 1, routeIds,
+          relation: 'structural-view', insertion });
         continue;
       }
-      stack.push({ current: parent, steps, visited, depth: state.depth + 1 });
+      stack.push({ current: parent, steps, keys, depth: state.depth + 1, routeIds, relation: 'element', insertion });
       continue;
     }
     const uses = index.elements.filter(element => element.component === current.owner.id);
@@ -333,8 +427,39 @@ export function resolveViewPaths(target: IndexedElement, context: AnalysisContex
       relation.displayCondition = 'external library wrapper and display container unresolved';
       paths.push(finalize([...steps, relation], 'dynamic-boundary', `External caller ${usage.callerName} is a display boundary`));
     }
+    const occurrences = routes?.byComponent.get(current.owner.id) ?? [];
+    for (const occurrence of occurrences) {
+      if (routeIds.has(occurrence.id)) {
+        paths.push(finalize([...steps, routeStepFor(occurrence, current.owner.id)], 'cycle',
+          `Route cycle at ${occurrence.pattern}`));
+        continue;
+      }
+      for (const placement of resolveOutletPlacement(context, routes!, index, occurrence)) {
+        const entry = routeStepFor(occurrence, current.owner.id);
+        if (placement.kind === 'unresolved') {
+          diagnostics.push(placement.reason);
+          paths.push(finalize([...steps, entry], 'route-unresolved', placement.reason));
+          continue;
+        }
+        entry.ownerId = placement.hostId;
+        entry.declarationOwnerId = placement.hostId;
+        entry.expressionOwnerId = current.owner.id;
+        entry.diOwnerId = current.owner.id;
+        if (placement.conditions.length) entry.displayCondition = `${entry.displayCondition}; ${placement.conditions.join('; ')}`;
+        stack.push({ current: placement.element, steps: [...steps, entry], keys,
+          depth: state.depth + 1, routeIds: new Set([...routeIds, occurrence.id]), anchor: true,
+          relation: 'route-outlet', insertion: occurrence.id });
+      }
+    }
+    const bootstraps = routes?.bootstrapByComponent.get(current.owner.id) ?? [];
+    for (const bootstrap of bootstraps) {
+      const entry = step('bootstrap', bootstrap.id, `${bootstrap.id} bootstraps ${current.owner.id}`, bootstrap.span, false);
+      entry.creationCondition = 'application bootstrap';
+      entry.displayCondition = `${bootstrap.kind === 'module' ? 'bootstrapModule' : 'bootstrapApplication'} runs for entry ${bootstrap.entry}`;
+      paths.push(finalize([...steps, entry], 'bootstrap', `Bootstrapped from ${bootstrap.entry}`));
+    }
     if (!uses.length) {
-      if (dynamic.length || external.length) continue;
+      if (dynamic.length || external.length || occurrences.length || bootstraps.length) continue;
       const declaration = catalog.declarations.get(current.owner.id);
       const reason = declaration ? `No confirmed display use for ${current.owner.id}` : `Unknown declaration ${current.owner.id}`;
       paths.push(finalize(steps, 'root-unresolved', reason)); continue;
@@ -349,7 +474,8 @@ export function resolveViewPaths(target: IndexedElement, context: AnalysisContex
       relation.expressionOwnerId = use.owner.id;
       relation.diOwnerId = use.owner.id;
       if (target.fallbackSlot) relation.displayCondition = 'ng-content fallback when no projected content matches';
-      stack.push({ current: use, steps: [...steps, relation], visited, depth: state.depth + 1 });
+      stack.push({ current: use, steps: [...steps, relation], keys, depth: state.depth + 1, routeIds,
+        relation: 'component-use', insertion });
     }
     if (target.fallbackSlot && !fallbackVisible) {
       const reason = `ng-content fallback is suppressed by projected content in ${current.owner.id}`;
@@ -357,5 +483,5 @@ export function resolveViewPaths(target: IndexedElement, context: AnalysisContex
     }
   }
   if (!paths.length) paths.push(finalize([], 'root-unresolved', 'No display path'));
-  return { paths, diagnostics };
+  return { paths, diagnostics, limits: report };
 }

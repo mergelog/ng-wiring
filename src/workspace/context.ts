@@ -29,7 +29,7 @@ export interface AnalysisContext {
   program: ts.Program;
   checker: ts.TypeChecker;
   sourceFiles: string[];
-  // Discovery is independent of bootstrap reachability, resolved in P6.
+  // Discovery stays independent of bootstrap reachability; the route graph resolves that separately.
   bootstrapReachableFiles: null;
   gaps: string[];
   unapplied: string[];

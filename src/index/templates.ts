@@ -27,8 +27,36 @@ export interface IndexedElement {
   appliedOutputs: Map<string, string[]>;
   origin: 'ngmaze' | 'ng-wiring' | null;
   gaps: string[];
+  controlFlow: ControlFlowFrame[];
 }
 export interface IndexedSlot { owner: Declaration; node: TmplAstNode; selector: string; span: Span; parent: IndexedElement | null; order: number }
+
+export type DeferPhase = 'main' | 'placeholder' | 'loading' | 'error';
+export type DeferTriggerGroup = 'trigger' | 'prefetch' | 'hydrate';
+export interface DeferTrigger { group: DeferTriggerGroup; kind: string; detail: string | null; text: string }
+export interface DeferInfo {
+  id: string;
+  triggers: DeferTrigger[];
+  placeholderMinimumMs: number | null;
+  loadingAfterMs: number | null;
+  loadingMinimumMs: number | null;
+}
+export type ControlFlowKind = 'if' | 'for' | 'for-empty' | 'switch' | 'defer';
+/** One enclosing control-flow branch. Outer frames combine with inner frames by AND (§6.3). */
+export interface ControlFlowFrame {
+  kind: ControlFlowKind;
+  id: string;
+  label: string;
+  condition: string;
+  notes: string[];
+  span: Span | null;
+  phase: DeferPhase | null;
+  repeated: boolean;
+  alias: string | null;
+  defer: DeferInfo | null;
+}
+export interface IndexedLet { owner: Declaration; name: string; value: string; span: Span | null }
+export interface UnsupportedRegion { ownerId: string; kind: string; reason: string; span: Span | null }
 export interface TemplateIndex {
   elements: IndexedElement[];
   slots: IndexedSlot[];
@@ -36,6 +64,8 @@ export interface TemplateIndex {
   diagnostics: string[];
   verifiedMazeEdges: MazeEdge[];
   unmatchedMazeEdges: MazeEdge[];
+  lets: IndexedLet[];
+  unsupported: UnsupportedRegion[];
 }
 const slash = (s: string): string => s.replaceAll('\\', '/');
 
@@ -93,6 +123,8 @@ export async function indexTemplates(context: AnalysisContext, catalog: Catalog,
   const diagnostics: string[] = [];
   const matchedMaze = new Set<MazeEdge>();
   const templateCache = new Map<string, string>();
+  const lets: IndexedLet[] = [];
+  const unsupported: UnsupportedRegion[] = [];
   for (const owner of catalog.declarations.values()) {
     if (owner.kind !== 'component' || owner.template.kind === 'none') continue;
     let source = owner.template.text;
@@ -133,7 +165,9 @@ export async function indexTemplates(context: AnalysisContext, catalog: Catalog,
       catch { diagnostics.push(`${id}: invalid Angular selector ${declaration.selector}`); }
     }
     const ownerElements: IndexedElement[] = [];
-    const walk = (nodes: TmplAstNode[], parent: IndexedElement | null, repeated: boolean, fallbackSlot: IndexedSlot | null = null): void => {
+    const walk = (nodes: TmplAstNode[], parent: IndexedElement | null, frames: ControlFlowFrame[],
+      fallbackSlot: IndexedSlot | null): void => {
+      const repeated = frames.some(frame => frame.repeated);
       for (const node of nodes) {
         let current = parent;
         let localFallback = fallbackSlot;
@@ -203,26 +237,146 @@ export async function indexTemplates(context: AnalysisContext, catalog: Catalog,
               component, directives: [...new Set(directives)],
               appliedInputs, appliedOutputs,
               origin: component ? mazeEdge ? 'ngmaze' : 'ng-wiring' : null, gaps,
+              controlFlow: frames,
             };
             elements.push(indexed); ownerElements.push(indexed); current = indexed;
           }
         }
-        const child = node as TmplAstNode & { children?: TmplAstNode[];
-          branches?: { children?: TmplAstNode[] }[]; cases?: { children?: TmplAstNode[] }[];
-          empty?: { children?: TmplAstNode[] }; placeholder?: { children?: TmplAstNode[] };
-          loading?: { children?: TmplAstNode[] }; error?: { children?: TmplAstNode[] } };
-        const forLoop = node.constructor.name.includes('ForLoop') ||
-          (node instanceof ng.TmplAstTemplate && node.templateAttrs.some(attribute => attribute.name.startsWith('ngFor')));
-        if (child.children) walk(child.children, current, repeated || forLoop, localFallback);
-        for (const branch of child.branches ?? []) if (branch.children) walk(branch.children, current, repeated, localFallback);
-        for (const branch of child.cases ?? []) if (branch.children) walk(branch.children, current, repeated, localFallback);
-        if (child.empty?.children) walk(child.empty.children, current, repeated, localFallback);
-        if (child.placeholder?.children) walk(child.placeholder.children, current, repeated, localFallback);
-        if (child.loading?.children) walk(child.loading.children, current, repeated, localFallback);
-        if (child.error?.children) walk(child.error.children, current, repeated, localFallback);
+        descend(node, current, frames, localFallback);
       }
     };
-    walk(parsed.nodes, null, false);
+    const at = (node: TmplAstNode): string => `${owner.id}@${node.sourceSpan.start.offset}`;
+    const expressionText = (ast: unknown): string | null => {
+      const source = (ast as { source?: unknown } | null | undefined)?.source;
+      return typeof source === 'string' && source.trim() ? source.trim() : null;
+    };
+    const frame = (input: Partial<ControlFlowFrame> & Pick<ControlFlowFrame, 'kind' | 'id' | 'label' | 'condition'>,
+      node: TmplAstNode): ControlFlowFrame => ({
+      notes: [], span: map(node.sourceSpan.start.offset, node.sourceSpan.end.offset), phase: null,
+      repeated: false, alias: null, defer: null, ...input,
+    });
+    const markUnsupported = (node: TmplAstNode, kind: string, reason: string): void => {
+      const span = map(node.sourceSpan.start.offset, node.sourceSpan.end.offset);
+      unsupported.push({ ownerId: owner.id, kind, reason, span });
+      diagnostics.push(`${owner.id}: unsupported template node ${kind} at ${span ?
+        `${slash(path.relative(context.workspaceRoot, span.file))}:${span.line}` : 'an unmapped offset'}: ${reason}`);
+    };
+    const deferTriggers = (block: InstanceType<typeof ng.TmplAstDeferredBlock>): DeferTrigger[] => {
+      const groups: [DeferTriggerGroup, Record<string, unknown>][] = [['trigger', block.triggers],
+        ['prefetch', block.prefetchTriggers], ['hydrate', block.hydrateTriggers]];
+      const result: DeferTrigger[] = [];
+      for (const [group, table] of groups) for (const [kind, trigger] of Object.entries(table ?? {})) {
+        const delay = (trigger as { delay?: unknown }).delay;
+        const detail = kind === 'when' ? expressionText((trigger as { value?: unknown }).value) :
+          typeof delay === 'number' ? `${delay}ms` : (trigger as { reference?: string | null }).reference || null;
+        const body = kind === 'when' ? `when ${detail ?? '(expression unresolved)'}` : `on ${kind}${detail ? `(${detail})` : ''}`;
+        result.push({ group, kind, detail, text: `${group === 'trigger' ? '' : `${group} `}${body}` });
+      }
+      return result;
+    };
+    const descend = (node: TmplAstNode, current: IndexedElement | null, frames: ControlFlowFrame[],
+      fallbackSlot: IndexedSlot | null): void => {
+      if (node instanceof ng.TmplAstTemplate) {
+        const loop = node.templateAttrs.find(attribute => attribute.name === 'ngForOf') ??
+          node.templateAttrs.find(attribute => attribute.name === 'ngFor');
+        if (!loop) { walk(node.children, current, frames, fallbackSlot); return; }
+        const value = (loop as { valueSpan?: typeof loop.sourceSpan }).valueSpan ?? loop.sourceSpan;
+        const subject = source.slice(value.start.offset, value.end.offset);
+        walk(node.children, current, [...frames, frame({ kind: 'for', id: `for:${at(node)}`, label: `*ngFor (${subject})`,
+          condition: `${subject} has at least one item`, repeated: true,
+          notes: ['the iteration count is unknown and an individual row is not identified'] }, node)], fallbackSlot);
+        return;
+      }
+      if (node instanceof ng.TmplAstElement || node instanceof ng.TmplAstContent) {
+        walk(node.children, current, frames, fallbackSlot); return;
+      }
+      if (node instanceof ng.TmplAstIfBlock) {
+        const preceding: string[] = [];
+        for (const [order, branch] of node.branches.entries()) {
+          const own = expressionText(branch.expression);
+          // Every branch carries the negation of the branches declared before it (§6.3).
+          const condition = [...preceding.map(item => `!(${item})`), ...(own ? [`(${own})`] : [])].join(' && ') || 'true';
+          const alias = branch.expressionAlias?.name ?? null;
+          walk(branch.children, current, [...frames, frame({ kind: 'if', id: `if:${at(node)}#${order}`,
+            label: order === 0 ? `@if (${own ?? 'true'})` : own ? `@else if (${own})` : '@else', condition, alias,
+            notes: alias ? [`@if alias ${alias} holds the evaluated condition value`] : [] }, branch)], fallbackSlot);
+          if (own) preceding.push(own);
+        }
+        return;
+      }
+      if (node instanceof ng.TmplAstForLoopBlock) {
+        const subject = expressionText(node.expression) ?? '(collection expression unresolved)';
+        const track = expressionText(node.trackBy);
+        const item = node.item?.name ?? '$implicit';
+        walk(node.children, current, [...frames, frame({ kind: 'for', id: `for:${at(node)}`,
+          label: `@for (${item} of ${subject}${track ? `; track ${track}` : ''})`,
+          condition: `${subject} has at least one item`, repeated: true, alias: item,
+          notes: ['the iteration count is unknown and an individual row is not identified'] }, node)], fallbackSlot);
+        // @empty is the complementary branch and is not repeated: the empty collection is kept as its own case.
+        if (node.empty) walk(node.empty.children, current, [...frames, frame({ kind: 'for-empty', id: `for-empty:${at(node)}`,
+          label: '@empty', condition: `${subject} is empty` }, node.empty)], fallbackSlot);
+        return;
+      }
+      if (node instanceof ng.TmplAstSwitchBlock) {
+        const subject = expressionText(node.expression) ?? '(switch expression unresolved)';
+        const declared = node.groups.flatMap(group => group.cases.map(item => expressionText(item.expression)))
+          .filter((item): item is string => item !== null);
+        for (const [order, group] of node.groups.entries()) {
+          const values = group.cases.map(item => expressionText(item.expression));
+          const fallback = values.some(item => item === null);
+          const matched = values.filter((item): item is string => item !== null);
+          walk(group.children, current, [...frames, frame({ kind: 'switch', id: `switch:${at(node)}#${order}`,
+            label: fallback ? `@switch (${subject}) @default` : `@switch (${subject}) @case (${matched.join(', ')})`,
+            condition: fallback ? `${subject} matches no @case (${declared.join(', ') || 'none declared'})` :
+              matched.map(value => `${subject} === ${value}`).join(' || ') }, group)], fallbackSlot);
+        }
+        for (const unknown of node.unknownBlocks ?? []) markUnsupported(unknown, `@${unknown.name}`, 'unknown block inside @switch');
+        return;
+      }
+      if (node instanceof ng.TmplAstDeferredBlock) {
+        const triggers = deferTriggers(node);
+        const pick = (group: DeferTriggerGroup): DeferTrigger[] => triggers.filter(item => item.group === group);
+        // Several triggers on one block combine by OR; the enclosing frames combine by AND (§6.3).
+        const started = pick('trigger').map(item => item.text).join(' OR ') || 'on idle (Angular default)';
+        const notes = ['a started @defer stays started: when turning false later does not return it to the unloaded state'];
+        const prefetch = pick('prefetch');
+        const hydrate = pick('hydrate');
+        if (prefetch.length) notes.push(`${prefetch.map(item => item.text).join(' OR ')} loads dependencies without rendering this block`);
+        if (hydrate.length) notes.push(`${hydrate.map(item => item.text).join(' OR ')} belongs to SSR hydration and is not a browser interaction path`);
+        const defer: DeferInfo = { id: `defer:${at(node)}`, triggers,
+          placeholderMinimumMs: node.placeholder?.minimumTime ?? null,
+          loadingAfterMs: node.loading?.afterTime ?? null, loadingMinimumMs: node.loading?.minimumTime ?? null };
+        const phase = (name: DeferPhase, label: string, condition: string, extra: string[], target: TmplAstNode):
+        ControlFlowFrame => frame({ kind: 'defer', id: `${defer.id}#${name}`, label, condition, phase: name,
+          notes: [...notes, ...extra], defer }, target);
+        walk(node.children, current, [...frames, phase('main', `@defer (${started})`,
+          `@defer ${defer.id} has started (${started})`, [], node)], fallbackSlot);
+        if (node.placeholder) walk(node.placeholder.children, current, [...frames, phase('placeholder', '@placeholder',
+          `@defer ${defer.id} has not started`, defer.placeholderMinimumMs === null ? [] :
+            [`@placeholder stays for at least ${defer.placeholderMinimumMs}ms`], node.placeholder)], fallbackSlot);
+        if (node.loading) walk(node.loading.children, current, [...frames, phase('loading', '@loading',
+          `@defer ${defer.id} has started and its dependencies are still loading`,
+          [...defer.loadingAfterMs === null ? [] : [`@loading appears after ${defer.loadingAfterMs}ms`],
+            ...defer.loadingMinimumMs === null ? [] : [`@loading stays for at least ${defer.loadingMinimumMs}ms`]],
+          node.loading)], fallbackSlot);
+        if (node.error) walk(node.error.children, current, [...frames, phase('error', '@error',
+          `@defer ${defer.id} failed to load its dependencies`, [], node.error)], fallbackSlot);
+        return;
+      }
+      // @let defines a value in the surrounding scope; it is not a display branch (§6.3).
+      if (node instanceof ng.TmplAstLetDeclaration) {
+        lets.push({ owner, name: node.name, span: map(node.sourceSpan.start.offset, node.sourceSpan.end.offset),
+          value: source.slice(node.valueSpan.start.offset, node.valueSpan.end.offset) });
+        return;
+      }
+      if (node instanceof ng.TmplAstText || node instanceof ng.TmplAstBoundText) return;
+      if (node instanceof ng.TmplAstIcu) {
+        markUnsupported(node, 'Icu', 'markup inside an ICU message is not indexed as elements'); return;
+      }
+      if (node instanceof ng.TmplAstUnknownBlock) { markUnsupported(node, `@${node.name}`, 'unknown template block'); return; }
+      markUnsupported(node, node.constructor.name, 'unrecognized template AST node');
+    };
+    walk(parsed.nodes, null, [], null);
     byOwner.set(owner.id, ownerElements);
   }
   const verifiesOutlet = (edge: MazeEdge): boolean => {
@@ -254,7 +408,7 @@ export async function indexTemplates(context: AnalysisContext, catalog: Catalog,
     edge.kind === 'ng-component-outlet' ? verifiesOutlet(edge) : true) ?? [];
   const unmatchedMazeEdges = maze?.edges.filter(edge => !verifiedMazeEdges.includes(edge)) ?? [];
   diagnostics.push(...unmatchedMazeEdges.map(edge => `${edge.from}: ngmaze ${edge.kind} edge to ${edge.to} was not confirmed at ${edge.location.file}:${edge.location.line}`));
-  return { elements, slots, byOwner, diagnostics, verifiedMazeEdges, unmatchedMazeEdges };
+  return { elements, slots, byOwner, diagnostics, verifiedMazeEdges, unmatchedMazeEdges, lets, unsupported };
 }
 
 export function matchingElements(index: TemplateIndex, target: { kind: 'attribute'; name: string; value: string } |

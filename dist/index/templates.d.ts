@@ -30,6 +30,7 @@ export interface IndexedElement {
     appliedOutputs: Map<string, string[]>;
     origin: 'ngmaze' | 'ng-wiring' | null;
     gaps: string[];
+    controlFlow: ControlFlowFrame[];
 }
 export interface IndexedSlot {
     owner: Declaration;
@@ -39,6 +40,47 @@ export interface IndexedSlot {
     parent: IndexedElement | null;
     order: number;
 }
+export type DeferPhase = 'main' | 'placeholder' | 'loading' | 'error';
+export type DeferTriggerGroup = 'trigger' | 'prefetch' | 'hydrate';
+export interface DeferTrigger {
+    group: DeferTriggerGroup;
+    kind: string;
+    detail: string | null;
+    text: string;
+}
+export interface DeferInfo {
+    id: string;
+    triggers: DeferTrigger[];
+    placeholderMinimumMs: number | null;
+    loadingAfterMs: number | null;
+    loadingMinimumMs: number | null;
+}
+export type ControlFlowKind = 'if' | 'for' | 'for-empty' | 'switch' | 'defer';
+/** One enclosing control-flow branch. Outer frames combine with inner frames by AND (§6.3). */
+export interface ControlFlowFrame {
+    kind: ControlFlowKind;
+    id: string;
+    label: string;
+    condition: string;
+    notes: string[];
+    span: Span | null;
+    phase: DeferPhase | null;
+    repeated: boolean;
+    alias: string | null;
+    defer: DeferInfo | null;
+}
+export interface IndexedLet {
+    owner: Declaration;
+    name: string;
+    value: string;
+    span: Span | null;
+}
+export interface UnsupportedRegion {
+    ownerId: string;
+    kind: string;
+    reason: string;
+    span: Span | null;
+}
 export interface TemplateIndex {
     elements: IndexedElement[];
     slots: IndexedSlot[];
@@ -46,6 +88,8 @@ export interface TemplateIndex {
     diagnostics: string[];
     verifiedMazeEdges: MazeEdge[];
     unmatchedMazeEdges: MazeEdge[];
+    lets: IndexedLet[];
+    unsupported: UnsupportedRegion[];
 }
 export declare function indexTemplates(context: AnalysisContext, catalog: Catalog, maze?: MazeGraph): Promise<TemplateIndex>;
 export declare function matchingElements(index: TemplateIndex, target: {
