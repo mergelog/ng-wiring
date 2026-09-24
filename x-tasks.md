@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P12 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P13 以降のモデルと renderer の統合が必要（§1, §2）。
+現状: **実装中**。P0〜P13 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P14 以降の renderer と各解析層から中間モデルへの組み立てが必要（§1, §2）。
 
 ## 進捗サマリ
 
@@ -23,14 +23,14 @@
 | P10 DI と NgRx Store | `src/resolve/operation` | 12 | 12 | P9 |
 | P11 Signal・SignalStore・dispatch | `src/adapters/reactive` | 15 | 15 | P9, P10 |
 | P12 API・HTTP・型 | `src/resolve/operation` | 7 | 7 | P9 |
-| P13 中間モデルと schema | `src/model`, `docs` | 15 | 0 | P5〜P12 |
+| P13 中間モデルと schema | `src/model`, `docs` | 15 | 15 | P5〜P12 |
 | P14 renderer とファイル名 | `src/render` | 22 | 0 | P13 |
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 0 | P13 |
 | P16 fixture・期待台帳・CI | `test/` | 15 | 0 | 各フェーズ並行 |
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **159** | |
+| **合計** | | **237** | **174** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -246,21 +246,25 @@
 
 ## P13 中間モデルと schema（`src/model`, §5）
 
-- [ ] P13-01 Markdown と JSON を同じ正規化済みモデルから生成する構造（§5）
-- [ ] P13-02 `docs/ng-wiring.schema.json`（`schemaVersion: "1.0.0"`）に必須フィールド・列挙・不変条件を表現。意味を変える変更は major を上げる（§5）
-- [ ] P13-03 トップレベルフィールド（schemaVersion/toolVersion/status/generatedAt/snapshotId/context/query/selection/nodes/edges/evidence/conditions/paths/operations/diagnostics/coverage/limits）（§5）
-- [ ] P13-04 定義ノードと使用箇所ノードの分離。`OccurrenceId` は context・所有者・使用 span・挿入/投影/route 文脈を含み、具体インスタンス数を表さない（§5）
-- [ ] P13-05 node kind の列挙（application/component/directive/pipe/element/template/route/listener/symbol/operation/state/action/event/event-bus/effect/service/http/type/boundary）と、参照先のない辺の禁止（§5）
-- [ ] P13-06 evidence（id/file/startOffset/endOffset/startLine/startColumn/endLine/endColumn/precision/symbolId/contentHash。offset は UTF-16、半開区間、行列 1 始まり、インラインは対応表、`approximate` を正確なタグ位置に使わない）（§5）
-- [ ] P13-07 edge（id/from/to/kind/evidenceIds/conditionId/confidence/origin/contextId/details。evidenceIds を空にしない。方向は親→子・原因→受け手で保存し、表示時のみ逆順に辿る）（§5）
-- [ ] P13-08 condition 木（true/false/predicate/all/any/not/phase。predicate は元の式・位置・スコープ、phase は lifecycle/defer/subscription/route activation。評価不能を false にしない）（§5）
-- [ ] P13-09 `confidence` 3 値（confirmed/conditional/unresolved）と単一路の最弱集約、分岐見出しでの最弱値 + 各枝値、false と証明できた枝の除外理由の診断（§5）
-- [ ] P13-10 `coverage`（complete-within-scope / partial）を confidence と独立に算出。親経路・各イベント・全体で別々に集約し、無関係な枝が親の確定度を書き換えない（§5）
-- [ ] P13-11 探索辺の扱い（解決不能は `boundary` kind、接続は判明して付随情報のみ未知なら元の kind に field 別 unresolved reason）（§5）
-- [ ] P13-12 モデル検証（全 ID 参照の存在、context 一致、edge kind と両端 node kind の整合、partial の理由、行/span 範囲）（§5）
-- [ ] P13-13 `paths` / `operations`（順序付き occurrence/edge ID、宣言元 ID、終端理由、confidence、coverage / 起点 event・listener ID と到達 node・edge ID）（§5）
-- [ ] P13-14 診断（id/code/severity/message/evidenceIds/relatedIds/stopReason。ソース根拠のない診断は evidenceIds を空配列可）（§5）
-- [ ] P13-15 単一出力には選択 context のみ格納し、別 context は候補一覧と集計に留める（§5）
+- [x] P13-01 Markdown と JSON を同じ正規化済みモデルから生成する構造（§5）
+- [x] P13-02 `docs/ng-wiring.schema.json`（`schemaVersion: "1.0.0"`）に必須フィールド・列挙・不変条件を表現。意味を変える変更は major を上げる（§5）
+- [x] P13-03 トップレベルフィールド（schemaVersion/toolVersion/status/generatedAt/snapshotId/context/query/selection/nodes/edges/evidence/conditions/paths/operations/diagnostics/coverage/limits）（§5）
+- [x] P13-04 定義ノードと使用箇所ノードの分離。`OccurrenceId` は context・所有者・使用 span・挿入/投影/route 文脈を含み、具体インスタンス数を表さない（§5）
+- [x] P13-05 node kind の列挙（application/component/directive/pipe/element/template/route/listener/symbol/operation/state/action/event/event-bus/effect/service/http/type/boundary）と、参照先のない辺の禁止（§5）
+- [x] P13-06 evidence（id/file/startOffset/endOffset/startLine/startColumn/endLine/endColumn/precision/symbolId/contentHash。offset は UTF-16、半開区間、行列 1 始まり、インラインは対応表、`approximate` を正確なタグ位置に使わない）（§5）
+- [x] P13-07 edge（id/from/to/kind/evidenceIds/conditionId/confidence/origin/contextId/details。evidenceIds を空にしない。方向は親→子・原因→受け手で保存し、表示時のみ逆順に辿る）（§5）
+- [x] P13-08 condition 木（true/false/predicate/all/any/not/phase。predicate は元の式・位置・スコープ、phase は lifecycle/defer/subscription/route activation。評価不能を false にしない）（§5）
+- [x] P13-09 `confidence` 3 値（confirmed/conditional/unresolved）と単一路の最弱集約、分岐見出しでの最弱値 + 各枝値、false と証明できた枝の除外理由の診断（§5）
+- [x] P13-10 `coverage`（complete-within-scope / partial）を confidence と独立に算出。親経路・各イベント・全体で別々に集約し、無関係な枝が親の確定度を書き換えない（§5）
+- [x] P13-11 探索辺の扱い（解決不能は `boundary` kind、接続は判明して付随情報のみ未知なら元の kind に field 別 unresolved reason）（§5）
+- [x] P13-12 モデル検証（全 ID 参照の存在、context 一致、edge kind と両端 node kind の整合、partial の理由、行/span 範囲）（§5）
+- [x] P13-13 `paths` / `operations`（順序付き occurrence/edge ID、宣言元 ID、終端理由、confidence、coverage / 起点 event・listener ID と到達 node・edge ID）（§5）
+- [x] P13-14 診断（id/code/severity/message/evidenceIds/relatedIds/stopReason。ソース根拠のない診断は evidenceIds を空配列可）（§5）
+- [x] P13-15 単一出力には選択 context のみ格納し、別 context は候補一覧と集計に留める（§5）
+
+実装メモ: §8 の kind 表を `src/model/types.ts` の `edgeContracts`（両端 node kind + 必須 details）として 1 箇所に持ち、`docs/ng-wiring.schema.json` の kind 別 `if/then` はこの表から起こした。P14-04 の定型文も同じ表を参照し、両者の一致は `test/model-p13.test.mjs` の schema 照合試験で固定する。kind を増やす変更は表・schema・定型文・試験を同時に直す。
+
+`coverage.gaps` の `relation` / `resolvedBy` はモデルが保持するだけで、関連付けの判定は P15 で入れる（現状は呼び出し側の指定をそのまま集計する）。インラインテンプレートの evidence は `EvidenceTable.registerInline` に対応表を登録して初めて TS ファイル位置へ解決するため、P16 の組み立てでテンプレート索引から登録すること。
 
 ## P14 renderer とファイル名（`src/render`, §3.4, §8）
 

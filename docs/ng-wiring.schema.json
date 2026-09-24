@@ -1,0 +1,669 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/mergelog/ng-wiring/docs/ng-wiring.schema.json",
+  "title": "ng-wiring analysis output",
+  "description": "Normalized wiring model. Both the Markdown and the JSON report are rendered from this shape. Offsets are UTF-16 code units over half-open ranges; lines and columns start at 1. A change that alters the meaning of a field raises the major version.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "toolVersion",
+    "status",
+    "generatedAt",
+    "snapshotId",
+    "context",
+    "query",
+    "selection",
+    "nodes",
+    "edges",
+    "evidence",
+    "conditions",
+    "paths",
+    "operations",
+    "diagnostics",
+    "coverage",
+    "limits"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {"const":"1.0.0"},
+    "toolVersion": {"type":"string","minLength":1},
+    "status": {"enum":["complete-within-scope","partial"]},
+    "generatedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "snapshotId": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "context": {"$ref":"#/definitions/context"},
+    "query": {"$ref":"#/definitions/query"},
+    "selection": {"$ref":"#/definitions/selection"},
+    "nodes": {"type":"array","items":{"$ref":"#/definitions/node"}},
+    "edges": {"type":"array","items":{"$ref":"#/definitions/edge"}},
+    "evidence": {"type":"array","items":{"$ref":"#/definitions/evidence"}},
+    "conditions": {"type":"array","items":{"$ref":"#/definitions/condition"}},
+    "paths": {"type":"array","items":{"$ref":"#/definitions/path"}},
+    "operations": {"type":"array","items":{"$ref":"#/definitions/operation"}},
+    "diagnostics": {"type":"array","items":{"$ref":"#/definitions/diagnostic"}},
+    "coverage": {"$ref":"#/definitions/coverage"},
+    "limits": {"$ref":"#/definitions/limits"}
+  },
+  "definitions": {
+    "detailField": {
+      "type": "object",
+      "required": ["value","unresolvedReason"],
+      "additionalProperties": false,
+      "properties": {"value":{"type":["string","null"]},"unresolvedReason":{"type":["string","null"]}},
+      "oneOf": [
+        {"properties":{"value":{"type":"string"},"unresolvedReason":{"type":"null"}}},
+        {"properties":{"value":{"type":"null"},"unresolvedReason":{"type":"string","minLength":1}}}
+      ]
+    },
+    "details": {"type":"object","additionalProperties":{"$ref":"#/definitions/detailField"}},
+    "span": {
+      "type": "object",
+      "required": ["file","start","end"],
+      "additionalProperties": false,
+      "properties": {"file":{"type":"string"},"start":{"type":"integer","minimum":0},"end":{"type":"integer","minimum":0}}
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "id",
+        "file",
+        "startOffset",
+        "endOffset",
+        "startLine",
+        "startColumn",
+        "endLine",
+        "endColumn",
+        "precision",
+        "symbolId",
+        "contentHash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^ev:[a-f0-9]{64}$"},
+        "file": {"type":"string","pattern":"^[^\\\\]*$"},
+        "startOffset": {"type":"integer","minimum":0},
+        "endOffset": {"type":"integer","minimum":1},
+        "startLine": {"type":"integer","minimum":1},
+        "startColumn": {"type":"integer","minimum":1},
+        "endLine": {"type":"integer","minimum":1},
+        "endColumn": {"type":"integer","minimum":1},
+        "precision": {"enum":["exact","approximate"]},
+        "symbolId": {"type":["string","null"]},
+        "contentHash": {"type":"string","pattern":"^[a-f0-9]{64}$"}
+      }
+    },
+    "occurrenceKey": {
+      "type": "object",
+      "required": ["contextId","ownerId","definitionId","span","insertion","projection","route"],
+      "additionalProperties": false,
+      "properties": {
+        "contextId": {"type":"string"},
+        "ownerId": {"type":"string"},
+        "definitionId": {"type":["string","null"]},
+        "span": {"oneOf":[{"$ref":"#/definitions/span"},{"type":"null"}]},
+        "insertion": {"type":["string","null"]},
+        "projection": {"type":["string","null"]},
+        "route": {"type":["string","null"]}
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": ["id","kind","role","contextId","definitionId","occurrence","evidenceIds","details"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^(def:|occ:[a-f0-9]{64}$|bnd:[a-f0-9]{64}$)"},
+        "kind": {
+          "enum": [
+            "application",
+            "component",
+            "directive",
+            "pipe",
+            "element",
+            "template",
+            "route",
+            "listener",
+            "symbol",
+            "operation",
+            "state",
+            "action",
+            "event",
+            "event-bus",
+            "effect",
+            "service",
+            "http",
+            "type",
+            "boundary"
+          ]
+        },
+        "role": {"enum":["definition","occurrence","boundary"]},
+        "contextId": {"type":"string"},
+        "definitionId": {"type":["string","null"]},
+        "occurrence": {"oneOf":[{"$ref":"#/definitions/occurrenceKey"},{"type":"null"}]},
+        "evidenceIds": {"type":"array","items":{"type":"string","pattern":"^ev:[a-f0-9]{64}$"}},
+        "details": {"$ref":"#/definitions/details"}
+      },
+      "allOf": [
+        {
+          "if": {"properties":{"role":{"const":"occurrence"}}},
+          "then": {"properties":{"occurrence":{"$ref":"#/definitions/occurrenceKey"}}},
+          "else": {"properties":{"occurrence":{"type":"null"}}}
+        },
+        {
+          "if": {"properties":{"role":{"const":"boundary"}}},
+          "then": {"properties":{"kind":{"const":"boundary"},"details":{"required":["reason","lastConfirmed"]}}},
+          "else": {"properties":{"kind":{"not":{"const":"boundary"}}}}
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id","from","to","kind","evidenceIds","conditionId","confidence","origin","contextId","details"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^edge:[a-f0-9]{64}$"},
+        "from": {"type":"string"},
+        "to": {"type":"string"},
+        "kind": {
+          "enum": [
+            "template-use",
+            "display-parent",
+            "projection",
+            "view-insertion",
+            "route-load",
+            "route-outlet",
+            "route-redirect",
+            "bootstrap",
+            "dynamic-create",
+            "dom-listener",
+            "event-propagation",
+            "input-binding",
+            "output-subscription",
+            "output-emit",
+            "call",
+            "value-flow",
+            "state-write",
+            "state-read",
+            "reactive-link",
+            "query-target",
+            "di-resolve",
+            "action-dispatch",
+            "action-consume",
+            "event-dispatch",
+            "event-consume",
+            "http-create",
+            "http-consume",
+            "type-use",
+            "boundary"
+          ]
+        },
+        "evidenceIds": {"type":"array","minItems":1,"items":{"type":"string","pattern":"^ev:[a-f0-9]{64}$"}},
+        "conditionId": {"oneOf":[{"type":"string","pattern":"^cond:[a-f0-9]{64}$"},{"type":"null"}]},
+        "confidence": {"enum":["confirmed","conditional","unresolved"]},
+        "origin": {"enum":["ngmaze","ngmaze-verified","ng-wiring"]},
+        "contextId": {"type":"string"},
+        "details": {"$ref":"#/definitions/details"}
+      },
+      "allOf": [
+        {
+          "if": {"properties":{"kind":{"const":"template-use"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["owner","child","occurrence","location"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"display-parent"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["parent","child"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"projection"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["child","host","slot"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"view-insertion"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["fragment","declarer","insertion"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"route-load"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["sourceRoute","targetRoute","loader"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"route-outlet"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["route","component","outlet"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"route-redirect"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["route","destination"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"bootstrap"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["application","component"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"dynamic-create"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["caller","component","container"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"dom-listener"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["event","selected","listener","handler"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"event-propagation"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["event","fromElement","toElement","phase"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"input-binding"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["expression","owner","input"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"output-subscription"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["output","subscriber"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"output-emit"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["output","valueExpression","declaredType"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"call"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["caller","callee","arguments"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"value-flow"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["valueExpression","destination"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"state-write"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["writer","state","valueExpression"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"state-read"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["reader","state","tracking"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"reactive-link"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["source","operator","consumer","scheduling"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"query-target"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["query","target","scope"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"di-resolve"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["token","implementation","provider"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"action-dispatch"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["caller","action","busId","dispatchMode"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"action-consume"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["action","consumer","busId","registration"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"event-dispatch"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["caller","event","busId","scope","dispatchMode"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"event-consume"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["event","consumer","busId","registration"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"http-create"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["method","urlExpression","requestType","responseType"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"http-consume"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["request","consumer"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"type-use"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["value","type","role"]}}}
+        },
+        {
+          "if": {"properties":{"kind":{"const":"boundary"}},"required":["kind"]},
+          "then": {"properties":{"details":{"required":["reason","lastConfirmed"]}}}
+        },
+        {
+          "if": {"properties":{"confidence":{"const":"unresolved"}},"required":["confidence"]},
+          "then": {"properties":{"kind":{"const":"boundary"}}}
+        }
+      ]
+    },
+    "condition": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["id","kind"],
+          "additionalProperties": false,
+          "properties": {"id":{"type":"string","pattern":"^cond:[a-f0-9]{64}$"},"kind":{"const":"true"}}
+        },
+        {
+          "type": "object",
+          "required": ["id","kind","reason"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type":"string","pattern":"^cond:[a-f0-9]{64}$"},
+            "kind": {"const":"false"},
+            "reason": {"type":"string","minLength":1}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id","kind","expression","scope","evidenceId"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type":"string","pattern":"^cond:[a-f0-9]{64}$"},
+            "kind": {"const":"predicate"},
+            "expression": {"type":"string","minLength":1},
+            "scope": {"type":"string"},
+            "evidenceId": {"type":"string","pattern":"^ev:[a-f0-9]{64}$"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id","kind","operandIds"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type":"string","pattern":"^cond:[a-f0-9]{64}$"},
+            "kind": {"enum":["all","any"]},
+            "operandIds": {"type":"array","minItems":2,"items":{"type":"string","pattern":"^cond:[a-f0-9]{64}$"}}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id","kind","operandIds"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type":"string","pattern":"^cond:[a-f0-9]{64}$"},
+            "kind": {"const":"not"},
+            "operandIds": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {"type":"string","pattern":"^cond:[a-f0-9]{64}$"}
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id","kind","phase","detail","evidenceId"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type":"string","pattern":"^cond:[a-f0-9]{64}$"},
+            "kind": {"const":"phase"},
+            "phase": {"enum":["lifecycle","defer","subscription","route-activation"]},
+            "detail": {"type":["string","null"]},
+            "evidenceId": {"oneOf":[{"type":"string","pattern":"^ev:[a-f0-9]{64}$"},{"type":"null"}]}
+          }
+        }
+      ]
+    },
+    "path": {
+      "type": "object",
+      "required": [
+        "id",
+        "occurrenceIds",
+        "edgeIds",
+        "declarationIds",
+        "end",
+        "endReason",
+        "confidence",
+        "coverage",
+        "coverageReasons"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^path:[a-f0-9]{64}$"},
+        "occurrenceIds": {"type":"array","items":{"type":"string"}},
+        "edgeIds": {"type":"array","items":{"type":"string","pattern":"^edge:[a-f0-9]{64}$"}},
+        "declarationIds": {"type":"array","items":{"type":"string"}},
+        "end": {
+          "enum": [
+            "root-unresolved",
+            "unrendered",
+            "projection-unresolved",
+            "fragment-uninstantiated",
+            "dynamic-boundary",
+            "route-unresolved",
+            "bootstrap",
+            "cycle",
+            "limit"
+          ]
+        },
+        "endReason": {"type":"string"},
+        "confidence": {"enum":["confirmed","conditional","unresolved"]},
+        "coverage": {"enum":["complete-within-scope","partial"]},
+        "coverageReasons": {"type":"array","items":{"type":"string"}}
+      }
+    },
+    "operation": {
+      "type": "object",
+      "required": ["id","event","eventId","listenerId","nodeIds","edgeIds","confidence","coverage","coverageReasons"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^op:[a-f0-9]{64}$"},
+        "event": {"type":"string"},
+        "eventId": {"type":"string"},
+        "listenerId": {"type":"string"},
+        "nodeIds": {"type":"array","items":{"type":"string"}},
+        "edgeIds": {"type":"array","items":{"type":"string","pattern":"^edge:[a-f0-9]{64}$"}},
+        "confidence": {"enum":["confirmed","conditional","unresolved"]},
+        "coverage": {"enum":["complete-within-scope","partial"]},
+        "coverageReasons": {"type":"array","items":{"type":"string"}}
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["id","code","severity","message","evidenceIds","relatedIds","stopReason"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^diag:[a-f0-9]{64}$"},
+        "code": {"type":"string","minLength":1},
+        "severity": {"enum":["info","warning","error"]},
+        "message": {"type":"string","minLength":1},
+        "evidenceIds": {"type":"array","items":{"type":"string","pattern":"^ev:[a-f0-9]{64}$"}},
+        "relatedIds": {"type":"array","items":{"type":"string"}},
+        "stopReason": {"type":["string","null"]}
+      }
+    },
+    "gap": {
+      "type": "object",
+      "required": ["id","code","message","relation","owner","candidates","evidenceIds","resolvedBy","resolvedReason"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^gap:[a-f0-9]{64}$"},
+        "code": {"type":"string"},
+        "message": {"type":"string"},
+        "relation": {"enum":["related","global-unknown","unrelated"]},
+        "owner": {"type":["string","null"]},
+        "candidates": {"type":"array","items":{"type":"string"}},
+        "evidenceIds": {"type":"array","items":{"type":"string","pattern":"^ev:[a-f0-9]{64}$"}},
+        "resolvedBy": {"type":["string","null"]},
+        "resolvedReason": {"type":["string","null"]}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["overall","paths","reasons","events","gaps","gapCounts"],
+      "additionalProperties": false,
+      "properties": {
+        "overall": {"enum":["complete-within-scope","partial"]},
+        "paths": {"enum":["complete-within-scope","partial"]},
+        "reasons": {"type":"array","items":{"type":"string"}},
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["event","operationId","coverage"],
+            "additionalProperties": false,
+            "properties": {
+              "event": {"type":"string"},
+              "operationId": {"type":"string","pattern":"^op:[a-f0-9]{64}$"},
+              "coverage": {"enum":["complete-within-scope","partial"]}
+            }
+          }
+        },
+        "gaps": {"type":"array","items":{"$ref":"#/definitions/gap"}},
+        "gapCounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["code","count"],
+            "additionalProperties": false,
+            "properties": {"code":{"type":"string"},"count":{"type":"integer","minimum":1}}
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": ["applied","truncations"],
+      "additionalProperties": false,
+      "properties": {
+        "applied": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name","limit","stops","unexplored"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type":"string"},
+              "limit": {"type":"integer","minimum":0},
+              "stops": {"type":"integer","minimum":0},
+              "unexplored": {"type":"integer","minimum":0}
+            }
+          }
+        },
+        "truncations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["limit","reason","nodeId","edgeId","evidenceIds"],
+            "additionalProperties": false,
+            "properties": {
+              "limit": {"type":"string"},
+              "reason": {"type":"string"},
+              "nodeId": {"type":["string","null"]},
+              "edgeId": {"type":["string","null"]},
+              "evidenceIds": {"type":"array","items":{"type":"string","pattern":"^ev:[a-f0-9]{64}$"}}
+            }
+          }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": [
+        "id",
+        "workspaceRoot",
+        "projectName",
+        "projectType",
+        "tsconfig",
+        "configHash",
+        "toolchain",
+        "entry",
+        "entryUnknown",
+        "excluded",
+        "unapplied"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+        "workspaceRoot": {"type":"string"},
+        "projectName": {"type":["string","null"]},
+        "projectType": {"enum":["application","library","explicit"]},
+        "tsconfig": {"type":"string"},
+        "configHash": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+        "toolchain": {
+          "type": "object",
+          "required": ["typescript","angularCompiler","ngmaze"],
+          "additionalProperties": false,
+          "properties": {"typescript":{"type":"string"},"angularCompiler":{"type":"string"},"ngmaze":{"type":"string"}}
+        },
+        "entry": {"type":"array","items":{"type":"string"}},
+        "entryUnknown": {"type":"boolean"},
+        "excluded": {"type":"array","items":{"type":"string"}},
+        "unapplied": {"type":"array","items":{"type":"string"}}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["id","contextId","class","ownerId","element","routePattern","events","partialReasons"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type":"string","pattern":"^cand:[a-f0-9]{64}$"},
+        "contextId": {"type":"string"},
+        "class": {"enum":["bootstrap","declaration","uninstantiated-fragment","unresolved-dynamic"]},
+        "ownerId": {"type":"string"},
+        "element": {"$ref":"#/definitions/span"},
+        "routePattern": {"type":["string","null"]},
+        "events": {"type":"array","items":{"type":"string"}},
+        "partialReasons": {"type":"array","items":{"type":"string"}}
+      }
+    },
+    "query": {
+      "type": "object",
+      "required": ["raw","target","filters","candidates","enumerationComplete"],
+      "additionalProperties": false,
+      "properties": {
+        "raw": {"type":"string"},
+        "target": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind","name","value"],
+              "additionalProperties": false,
+              "properties": {"kind":{"const":"attribute"},"name":{"type":"string","minLength":1},"value":{"type":"string"}}
+            },
+            {
+              "type": "object",
+              "required": ["kind","file","line"],
+              "additionalProperties": false,
+              "properties": {"kind":{"const":"source"},"file":{"type":"string"},"line":{"type":"integer","minimum":1}}
+            }
+          ]
+        },
+        "filters": {
+          "type": "object",
+          "required": ["project","tsconfig","through","route","candidate","event"],
+          "additionalProperties": false,
+          "properties": {
+            "project": {"type":["string","null"]},
+            "tsconfig": {"type":["string","null"]},
+            "through": {"type":["string","null"]},
+            "route": {"type":["string","null"]},
+            "candidate": {"type":["string","null"]},
+            "event": {"type":["string","null"]}
+          }
+        },
+        "candidates": {"type":"array","items":{"$ref":"#/definitions/candidate"}},
+        "enumerationComplete": {"type":"boolean"}
+      }
+    },
+    "selection": {
+      "type": "object",
+      "required": ["candidateId","contextId","ownerId","targetNodeId","element","routeIds","bootstrapId","events"],
+      "additionalProperties": false,
+      "properties": {
+        "candidateId": {"type":"string","pattern":"^cand:[a-f0-9]{64}$"},
+        "contextId": {"type":"string"},
+        "ownerId": {"type":"string"},
+        "targetNodeId": {"type":"string","pattern":"^occ:[a-f0-9]{64}$"},
+        "element": {
+          "type": "object",
+          "required": ["file","start","end","evidenceId"],
+          "additionalProperties": false,
+          "properties": {
+            "file": {"type":"string"},
+            "start": {"type":"integer","minimum":0},
+            "end": {"type":"integer","minimum":0},
+            "evidenceId": {"type":"string","pattern":"^ev:[a-f0-9]{64}$"}
+          }
+        },
+        "routeIds": {"type":"array","items":{"type":"string"}},
+        "bootstrapId": {"type":["string","null"]},
+        "events": {"type":"array","items":{"type":"string"}}
+      }
+    }
+  }
+}
