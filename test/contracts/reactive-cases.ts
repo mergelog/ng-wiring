@@ -67,6 +67,11 @@ export interface ReactiveCase {
   expectedDiagnostics: string[];
   /** Why no fixture covers this yet; required whenever `fixture` is null. */
   missingFixture: string | null;
+  /**
+   * A fixture that exists and shows the gap `missingFixture` names. It turns "not written yet" into a
+   * recorded result, so the case is not merely waiting but has a run that demonstrates what is missing.
+   */
+  demonstratedBy: FixtureRef | null;
 }
 
 const ANGULAR = '22.1.5';
@@ -74,12 +79,13 @@ const NGRX = '22.0.0';
 const RXJS = '7.8.2';
 
 type Optional = 'kind' | 'export' | 'member' | 'form' | 'fixture' | 'expectedEdges' | 'expectedNodes'
-| 'forbiddenEdges' | 'expectedDiagnostics' | 'missingFixture';
+| 'forbiddenEdges' | 'expectedDiagnostics' | 'missingFixture' | 'demonstratedBy';
 type Draft = Omit<ReactiveCase, Optional> & Partial<Pick<ReactiveCase, Optional>>;
 
 const entry = (draft: Draft): ReactiveCase => ({
   kind: 'detect', export: null, member: null, form: 'function', fixture: null, expectedEdges: [],
-  expectedNodes: [], forbiddenEdges: [], expectedDiagnostics: [], missingFixture: null, ...draft,
+  expectedNodes: [], forbiddenEdges: [], expectedDiagnostics: [], missingFixture: null,
+  demonstratedBy: null, ...draft,
 });
 
 const signalWrite = (target: string): FixtureRef => ({ id: 'signal-write', target });
@@ -87,6 +93,8 @@ const patchFixture: FixtureRef = { id: 'signal-store-patch', target: 'data-id=fi
 const dispatchFixture: FixtureRef = { id: 'store-dispatch', target: 'data-id=termField' };
 const eventsFixture: FixtureRef = { id: 'events-reducer', target: 'data-id=termField' };
 const unsupported = (target: string): FixtureRef => ({ id: 'unsupported-apis', target });
+const logFixture: FixtureRef = { id: 'real-log-store', target: 'data-id=refreshLogButton' };
+const settingsFixture: FixtureRef = { id: 'real-settings-store', target: 'data-id=loadScalarsButton' };
 
 const ledger: ReactiveCase[] = [
   // ---- R01 Angular Signal state source, read, write, read-only alias ------------------------------
@@ -180,7 +188,8 @@ const ledger: ReactiveCase[] = [
     missingFixture: 'extends 形態の fixture が未作成' }),
   entry({ contract: 'R05', id: 'R05/signalStoreFeature', package: '@ngrx/signals', export: 'signalStoreFeature',
     version: NGRX, expectation: '再利用 feature の合成順と member を対応付ける',
-    missingFixture: 'signalStoreFeature の fixture が未作成' }),
+    demonstratedBy: settingsFixture,
+    missingFixture: 'real-settings-store が composed feature の member を解決できないことを示した（R05 未達）' }),
   entry({ contract: 'R05', id: 'R05/withFeature', package: '@ngrx/signals', export: 'withFeature', version: NGRX,
     expectation: '遅延合成 feature を透明として通過させない',
     missingFixture: 'withFeature の fixture が未作成' }),
@@ -201,7 +210,8 @@ const ledger: ReactiveCase[] = [
     forbiddenEdges: [{ kind: 'reactive-link', to: 'store.setTerm', reason: 'Store method を effect 扱いにしない' }] }),
   entry({ contract: 'R06', id: 'R06/withComputed', package: '@ngrx/signals', export: 'withComputed', version: NGRX,
     expectation: '派生 member を reactive-link として残す',
-    missingFixture: 'withComputed の fixture が未作成' }),
+    demonstratedBy: settingsFixture,
+    missingFixture: 'real-log-store / real-settings-store で withComputed member が表示に接続されない（R06 未達）' }),
   entry({ contract: 'R06', id: 'R06/withLinkedState', package: '@ngrx/signals', export: 'withLinkedState',
     version: NGRX, expectation: 'linked state の再計算と明示 write を区別する',
     missingFixture: 'withLinkedState の fixture が未作成' }),
@@ -224,7 +234,8 @@ const ledger: ReactiveCase[] = [
     expectedEdges: ['state-write|input → onInput($event)|term', 'state-read|term|<span>'] }),
   entry({ contract: 'R07', id: 'R07/patchState.updater', package: '@ngrx/signals', export: 'patchState', form: 'form',
     version: NGRX, expectation: 'updater 関数の形態を部分オブジェクトと別に検知する',
-    missingFixture: 'updater 関数を渡す fixture が未作成' }),
+    demonstratedBy: settingsFixture,
+    missingFixture: 'real-settings-store の setProject に到達できず updater 形態を確認できない' }),
   entry({ contract: 'R07', id: 'R07/patchState.multiple', package: '@ngrx/signals', export: 'patchState', form: 'form',
     version: NGRX, expectation: '複数 updater を順に評価する',
     missingFixture: '複数 updater の fixture が未作成' }),
@@ -375,17 +386,20 @@ const ledger: ReactiveCase[] = [
     expectation: 'case reducer が受け取る event を列挙する', fixture: eventsFixture,
     expectedEdges: ['event-consume|[Search] termChanged|src/store.ts:9:15'] }),
   entry({ contract: 'R13', id: 'R13/Events.on', package: '@ngrx/signals/events', export: 'Events', member: 'on',
-    form: 'member', version: NGRX, expectation: '購読による受信を reducer と別に検知する',
-    missingFixture: 'Events.on の fixture が未作成' }),
+    form: 'member', version: NGRX, expectation: '購読による受信を reducer と別に検知する', fixture: logFixture,
+    expectedEdges: ['event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15'] }),
   entry({ contract: 'R13', id: 'R13/ReducerEvents.on', package: '@ngrx/signals/events', export: 'ReducerEvents',
     member: 'on', form: 'member', version: NGRX, expectation: 'Events より先に受け取る順序を残す',
     missingFixture: 'ReducerEvents.on の fixture が未作成' }),
   entry({ contract: 'R13', id: 'R13/withEventHandlers', package: '@ngrx/signals/events', export: 'withEventHandlers',
-    version: NGRX, expectation: '生成時の購読登録と void 副作用を検知する',
-    missingFixture: 'withEventHandlers の fixture が未作成' }),
+    version: NGRX, expectation: '生成時の購読登録と void 副作用を検知する', fixture: logFixture,
+    expectedEdges: ['event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15'],
+    forbiddenEdges: [{ kind: 'event-consume', to: 'src/log.store.ts:30:5',
+      reason: 'getLogs は resetLog の case reducer には届かない' }] }),
   entry({ contract: 'R13', id: 'R13/withEventHandlers.redelivery', package: '@ngrx/signals/events',
     export: 'withEventHandlers', form: 'form', version: NGRX, expectation: 'handler の出力 event を自動再配送する',
-    missingFixture: '再配送の fixture が未作成' }),
+    fixture: logFixture,
+    expectedEdges: ['event-dispatch|src/log.store.ts:43:15|[Experiment Output Log] setLog'] }),
 
   // ---- R14 delivery scope --------------------------------------------------------------------------
   entry({ contract: 'R14', id: 'R14/provideDispatcher', package: '@ngrx/signals/events', export: 'provideDispatcher',
@@ -412,18 +426,28 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R15', id: 'R15/log-store', package: '@ngrx/signals/events', export: 'injectDispatch',
     form: 'form', version: NGRX,
     expectation: 'ログ画面の injectDispatch→event→withReducer/withEventHandlers を実ソース由来 fixture で検証する',
-    missingFixture: '実ソース由来 fixture が未作成（P16-11）' }),
+    fixture: logFixture,
+    expectedEdges: ['event-dispatch|src/log.component.ts#ExperimentOutputLogComponent|[Experiment Output Log] getLogs',
+      'event-consume|[Experiment Output Log] getLogs|src/log.store.ts:31:5',
+      'event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15',
+      'state-write|src/log.store.ts:31:5|loading',
+      'action-dispatch|src/log.store.ts:43:15|src/view.events.ts#activateLoader'],
+    forbiddenEdges: [{ kind: 'action-consume', to: 'src/log.store.ts:31:5',
+      reason: 'SignalStore event を NgRx action bus 経由で reducer に届けない' }],
+    expectedDiagnostics: ['unsupported-store-feature'] }),
   entry({ contract: 'R15', id: 'R15/settings-store', package: '@ngrx/signals', export: 'withMethods', form: 'form',
     version: NGRX, expectation: '設定 Store の withMethods→lastValueFrom(forkJoin)→patchState を検証する',
     missingFixture: '実ソース由来 fixture が未作成（P16-11）' }),
   entry({ contract: 'R15', id: 'R15/rxjs.lastValueFrom', package: 'rxjs', export: 'lastValueFrom', version: RXJS,
     expectation: 'Promise 化した消費として購読開始を検知する',
-    missingFixture: 'lastValueFrom の fixture が未作成' }),
+    demonstratedBy: settingsFixture,
+    missingFixture: 'real-settings-store の method に到達できず lastValueFrom まで追えない' }),
   entry({ contract: 'R15', id: 'R15/rxjs.firstValueFrom', package: 'rxjs', export: 'firstValueFrom', version: RXJS,
     expectation: 'lastValueFrom と別形態として検知する',
     missingFixture: 'firstValueFrom の fixture が未作成' }),
   entry({ contract: 'R15', id: 'R15/rxjs.forkJoin', package: 'rxjs', export: 'forkJoin', version: RXJS,
-    expectation: '複数 Observable の合流を保持する', missingFixture: 'forkJoin の fixture が未作成' }),
+    expectation: '複数 Observable の合流を保持する', demonstratedBy: settingsFixture,
+    missingFixture: 'real-settings-store の method に到達できず forkJoin まで追えない' }),
   entry({ contract: 'R15', id: 'R15/rxjs.of', package: 'rxjs', export: 'of', version: RXJS,
     expectation: 'ObservableInput の生成として既知アダプタに含める', missingFixture: 'of の fixture が未作成' }),
   entry({ contract: 'R15', id: 'R15/rxjs.from', package: 'rxjs', export: 'from', version: RXJS,

@@ -294,6 +294,14 @@ export function assembleReport(input) {
         for (const directiveId of item.element?.directives ?? [])
             scopeFiles.add(directiveId.slice(0, directiveId.indexOf('#')));
     }
+    // A generated Store one of these components injects is a service of this selection.
+    for (const instance of stores.instances) {
+        if (![...scopeOwners].some(owner => sameOwnerId(owner, instance.owner)))
+            continue;
+        const declaration = stores.declarations.get(instance.declarationId);
+        if (declaration)
+            scopeFiles.add(declaration.source.slice(0, declaration.source.indexOf(':')));
+    }
     const sourceGaps = addDiagnostics({ analysis, builder, evidence, relative, scopeFiles, problems, stores });
     const incomplete = [
         ...analysis.mazeProblems.map(reason => ({ reason })),

@@ -98,6 +98,12 @@ test('every fixture the ledger names exists on disk', async () => {
   // The unfixtured cases are the recorded gap, not a silent omission.
   for (const item of unfixturedCases()) {
     assert(item.missingFixture.trim().length > 0, `${item.id} has no fixture and no reason`);
+    // A case a fixture already demonstrates names that fixture, so the gap is a result and not a plan.
+    if (item.demonstratedBy) {
+      const directory = path.join(fixtureRoot, item.demonstratedBy.id);
+      const found = await stat(directory).then(entry => entry.isDirectory(), () => false);
+      assert(found, `${item.id} names the missing fixture ${item.demonstratedBy.id}`);
+    }
   }
 });
 
