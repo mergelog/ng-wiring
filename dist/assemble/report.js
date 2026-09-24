@@ -580,9 +580,11 @@ function addOperations(input) {
             const scope = { nodes: scopeNodes, edges: scopeEdges };
             const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers, { outputElement: targetElement, catalog });
             const httpTrace = traceHttpFromMethod(context, httpCatalog, owner, method, { catalog, store: storeGraph, methods, stores, layers });
-            // Methods this operation entered, so a write only counts when the operation actually reached it.
-            const entered = new Set([method, ...storeTrace.steps.filter(step => step.kind === 'call')
-                    .map(step => step.target.slice(step.target.lastIndexOf('.') + 1))]);
+            // Store methods this operation actually entered. Only a call on a resolved receiver counts: the
+            // handler's own name must not stand in for a Store member that happens to share it.
+            const entered = new Set(storeTrace.steps
+                .filter(step => step.kind === 'call' && step.target.includes('.'))
+                .map(step => step.target.slice(step.target.lastIndexOf('.') + 1)));
             // The same, resolved to the class that owns each entered method: `field.method` names the class the
             // component holds in `field`, and a bare method name is the component's own.
             const enteredIn = storeTrace.steps.filter(step => step.kind === 'call').map(step => {

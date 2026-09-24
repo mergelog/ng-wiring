@@ -23,17 +23,29 @@ export function findPatchStateCalls(context: AnalysisContext): PatchStateCall[] 
     }
     return null;
   };
+  const objectKeys = (node: ts.Expression, into: string[]): void => {
+    const value = unwrap(t, node);
+    if (!t.isObjectLiteralExpression(value)) return;
+    for (const property of value.properties) {
+      const name = property.name;
+      if (name && (t.isIdentifier(name) || t.isStringLiteralLike(name))) into.push(name.text);
+    }
+  };
+  /** Each updater in argument order: a partial object, or a function returning one. */
   const keysOf = (call: ts.CallExpression): string[] => {
     const keys: string[] = [];
     for (const argument of call.arguments.slice(1)) {
       const value = unwrap(t, argument);
-      if (!t.isObjectLiteralExpression(value)) continue;
-      for (const property of value.properties) {
-        const name = property.name;
-        if (name && (t.isIdentifier(name) || t.isStringLiteralLike(name))) keys.push(name.text);
+      if (t.isArrowFunction(value) || t.isFunctionExpression(value)) {
+        const produced = t.isBlock(value.body)
+          ? value.body.statements.filter(t.isReturnStatement).flatMap(item => item.expression ? [item.expression] : [])
+          : [value.body];
+        for (const item of produced) objectKeys(item, keys);
+        continue;
       }
+      objectKeys(value, keys);
     }
-    return keys;
+    return [...new Set(keys)];
   };
   for (const file of context.sourceFiles) {
     const source = context.program.getSourceFile(file);

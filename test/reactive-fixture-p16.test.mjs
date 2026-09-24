@@ -241,3 +241,45 @@ test('ngrx-apis: a display fed by another slice is not attributed to this operat
   assert.deepEqual(edgeKeys(report).filter(key => key.startsWith('state-read|')), [],
     'a selector display was attributed to an operation that writes no state');
 });
+
+// R05-R07: a Store built from a reusable feature, and the state APIs beside it.
+test('signal-store-apis: a composed feature, an alias and the updater forms of patchState', async () => {
+  const viaAlias = await analyzeFixture('signal-store-apis', { target: 'data-id=setTermButton' });
+  const aliasKeys = edgeKeys(viaAlias.report);
+  // The state comes from the reusable feature, and the alias import is the same Store.
+  assert(aliasKeys.includes('call|src/catalog.component.ts#CatalogComponent|store.setTerm'));
+  assert(aliasKeys.includes('state-write|click → setTerm()|term'));
+  assert(aliasKeys.includes('state-read|term|<span>'));
+  // A `withProps` value is a value, not state.
+  assert.deepEqual(aliasKeys.filter(key => key.includes('pageSize')), [], aliasKeys.join('\n'));
+
+  const viaUpdaters = await analyzeFixture('signal-store-apis', { target: 'data-id=clearButton' });
+  const updaterKeys = edgeKeys(viaUpdaters.report);
+  // Two updaters in argument order, each naming the key it replaces and nothing else.
+  assert(updaterKeys.includes('state-write|click → clear()|term'));
+  assert(updaterKeys.includes('state-write|click → clear()|hits'));
+  assert.deepEqual(updaterKeys.filter(key => key.endsWith('|draft') && key.startsWith('state-write|')), [],
+    'a key no updater touches was reported as written');
+});
+
+test('signal-store-apis: a snapshot read is no dependency and a deep mutation is no write', async () => {
+  const snapshot = await analyzeFixture('signal-store-apis', { target: 'data-id=snapshotButton' });
+  const snapshotKeys = edgeKeys(snapshot.report);
+  assert(snapshotKeys.includes('state-write|click → snapshot()|seen'));
+  assert.deepEqual(snapshotKeys.filter(key => key.startsWith('reactive-link|filters|')), [],
+    'getState created a re-execution dependency');
+
+  const mutate = await analyzeFixture('signal-store-apis', { target: 'data-id=mutateButton' });
+  assert.deepEqual(edgeKeys(mutate.report).filter(key => key.startsWith('state-write|')), [],
+    'a deep mutation was read as a notification');
+});
+
+// R08: what is defined but never entered must not be reported as having run.
+test('signal-store-apis: an rxMethod that was never called writes nothing', async () => {
+  const { report } = await analyzeFixture('signal-store-apis', { target: 'data-id=loadValueButton' });
+  assert.deepEqual(edgeKeys(report).filter(key => key.endsWith('|hits')), [],
+    'an uncalled rxMethod was treated as running');
+  // The call this version cannot enter is a boundary, not a silent success.
+  assert(report.edges.some(edge => edge.kind === 'boundary' && edge.confidence === 'unresolved'));
+  assert.equal(report.status, 'partial');
+});
