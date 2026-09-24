@@ -28,8 +28,9 @@ jobs:
       - run: npm run check:install
 
   # §4.2 the supported systems are Linux/WSL, macOS and Windows, and A18 requires the pinned ngmaze bin
-  # to start on each of them. WSL is covered by the Linux runner and by the local run recorded in
-  # docs/performance.md.
+  # to start on each of them. WSL is covered by the Linux runner and by the local runs recorded in
+  # docs/performance.md. Only the smoke test runs here: the rest of the suite fixes POSIX paths in its
+  # expectations, so a red Windows job would not be a distribution failure.
   smoke:
     name: smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -44,4 +45,24 @@ jobs:
           node-version: 24.15.0
           cache: npm
       - run: npm ci
+      - run: npm run check:smoke
+
+  # §4.2 `engines` is `^22.22.3 || ^24.15.0 || >=26.0.0`. The `build` job covers the 24.15.0 of §2; this
+  # one runs the whole suite and the smoke test on the lowest supported version and on the newest
+  # supported line, so a version-dependent failure is a test failure and not only a smoke failure.
+  node-versions:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.22.3', '26.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
       - run: npm run check:smoke
