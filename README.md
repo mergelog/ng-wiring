@@ -1,8 +1,9 @@
 # ng-wiring
 
-Angular 22 source wiring analyzer. The implementation currently covers project
-setup, CLI contract primitives, and TypeScript workspace analysis through P2 in
-[x-tasks.md](x-tasks.md). Graph analysis and report rendering (P3–P14) are still
+Angular 22 source wiring analyzer. The implementation covers the library layers
+through P5 in [x-tasks.md](x-tasks.md): project contexts, the pinned ngmaze JSON
+adapter, Angular scope and element indexing, projection, and TemplateRef display
+paths. Route/bootstrap analysis, operation tracing, and report rendering are still
 under development. The command validates arguments and reports that the analysis
 backend is unavailable; it does not claim to produce a wiring report yet.
 
@@ -14,6 +15,5 @@ node dist/cli/index.js --help
 ```
 
 The planned command syntax and output contract are documented in
-[x-structure.md](x-structure.md). `src/workspace` can already create independent
-TypeScript Programs for Angular applications and explicit tsconfigs, include
-workspace import closure, and verify the analysis snapshot before output.
+[x-structure.md](x-structure.md). The P3–P5 APIs are library entry points until
+the later CLI and renderer phases connect them.

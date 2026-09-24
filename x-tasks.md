@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0 基盤は完了。ng-wiring 全体（投影・起動点・操作・状態/API の統合）は未実装（§1, §2）。
+現状: **実装中**。P0〜P5 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P6 以降の route/bootstrap、操作、モデル、renderer の統合が必要（§1, §2）。
 
 ## 進捗サマリ
 
@@ -14,8 +14,8 @@
 | P1 CLI 契約 | `src/cli` | 20 | 19 | P0 |
 | P2 解析コンテキストと workspace | `src/workspace` | 19 | 19 | P0 |
 | P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 12 | P2 |
-| P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 12 | P2, P3 |
-| P5 表示経路・投影・TemplateRef | `src/resolve/view` | 10 | 0 | P4 |
+| P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 13 | P2, P3 |
+| P5 表示経路・投影・TemplateRef | `src/resolve/view` | 10 | 10 | P4 |
 | P6 route と bootstrap | `src/resolve/view` | 10 | 0 | P4 |
 | P7 制御フローと有限化 | `src/resolve/view` | 10 | 0 | P5, P6 |
 | P8 リスナー・DOM 伝播・式 | `src/resolve/operation` | 14 | 0 | P4 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **69** | |
+| **合計** | | **237** | **80** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -122,23 +122,23 @@
 - [x] P4-07 属性一致（静的属性名とデコード済み値の完全一致。大小文字・空白・Unicode 正規化で対象を増減させない。`data-id="a"` と `data-id=a` は同一クエリ。空値許可、存在属性は `search-button=`）（§3.1）
 - [x] P4-08 `[attr.data-id]`・補間・host 属性・実行時属性は静的一致に含めず、検出範囲を診断（§3.1）
 - [x] P4-09 `--source` の span 判定（`[startOffset, endOffset)` の開始タグ span と重なる要素だけ。本文・閉じタグ・コメントだけの行は一致なし）（§3.1）
-- [~] P4-10 同一行に複数タグ、同一 HTML に複数所有者（ServingComponent / ServingLoadingComponent）の全組合せを候補化（§2, §3.1）
+- [x] P4-10 同一行に複数タグ、同一 HTML に複数所有者（ServingComponent / ServingLoadingComponent）の全組合せを候補化（§2, §3.1）
 - [x] P4-11 インラインテンプレートの cooked/raw offset 変換。変換できないときは行を推測せず診断（§3.1）
 - [x] P4-12 `@for` 内の位置はソース要素を表し、個々の行データを表さないことをモデルに反映（§3.1）
 - [x] P4-13 CSS selector・`:nth-child()`・`_ngcontent-*` を識別構文にしない（§3.1）
 
 ## P5 表示経路・投影・TemplateRef（`src/resolve/view`, §6.1）
 
-- [ ] P5-01 表示経路の構築（AST の包含、投影スロット、TemplateRef の生成先から作る。ngmaze の `template` 辺をそのまま表示親にしない）（§6.1）
-- [ ] P5-02 宣言元を別参照として保持し、多段投影の宣言元は各節から参照する枝にする（§6.1）
-- [ ] P5-03 子から root への `01, 02, …` 採番。別の挿入箇所は別 candidate（§6.1, §8）
-- [ ] P5-04 `ng-content` の照合（select、静的 ngProjectAs、既定スロット、fallback content。複数一致は宣言順で最初、判断不能時のみ未解決、該当スロット無しは「投影されない」診断で表示経路を作らない）（§6.1）
-- [ ] P5-05 投影先でも式の所有者と DI コンテキストを変更しない。`ng-content` を DOM 要素として数えない。表示条件と生成条件を別保持（§6.1）
-- [ ] P5-06 TemplateRef 追跡（`#ref`、view/content query、入力/プロパティ代入 → `NgTemplateOutlet`、`ViewContainerRef.createEmbeddedView`、既知の構造ディレクティブ）（§6.1）
-- [ ] P5-07 `*` マイクロシンタックスは Angular AST の展開結果を用い、`ng-container` / `ng-template` を実 DOM の祖先に数えない。宣言だけの fragment は未生成（§6.1）
-- [ ] P5-08 任意の独自ディレクティブの挿入先を推測しない（§6.1）
-- [ ] P5-09 fragment 内のスコープ（クラスメンバーは宣言元で評価、`let-` / `$implicit` は挿入時 context、`ngTemplateOutletInjector` の DI 変更は別扱い）（§6.1）
-- [ ] P5-10 dynamic creation（dialog、`createComponent`、`NgComponentOutlet`）は呼出元/生成元の枝として示し、描画コンテナ未確定なら表示上の親へ昇格しない。外部ライブラリのラッパーは外部境界（§6.1）
+- [x] P5-01 表示経路の構築（AST の包含、投影スロット、TemplateRef の生成先から作る。ngmaze の `template` 辺をそのまま表示親にしない）（§6.1）
+- [x] P5-02 宣言元を別参照として保持し、多段投影の宣言元は各節から参照する枝にする（§6.1）
+- [x] P5-03 子から root への `01, 02, …` 採番。別の挿入箇所は別 candidate（§6.1, §8）
+- [x] P5-04 `ng-content` の照合（select、静的 ngProjectAs、既定スロット、fallback content。複数一致は宣言順で最初、判断不能時のみ未解決、該当スロット無しは「投影されない」診断で表示経路を作らない）（§6.1）
+- [x] P5-05 投影先でも式の所有者と DI コンテキストを変更しない。`ng-content` を DOM 要素として数えない。表示条件と生成条件を別保持（§6.1）
+- [x] P5-06 TemplateRef 追跡（`#ref`、view/content query、入力/プロパティ代入 → `NgTemplateOutlet`、`ViewContainerRef.createEmbeddedView`、既知の構造ディレクティブ）（§6.1）
+- [x] P5-07 `*` マイクロシンタックスは Angular AST の展開結果を用い、`ng-container` / `ng-template` を実 DOM の祖先に数えない。宣言だけの fragment は未生成（§6.1）
+- [x] P5-08 任意の独自ディレクティブの挿入先を推測しない（§6.1）
+- [x] P5-09 fragment 内のスコープ（クラスメンバーは宣言元で評価、`let-` / `$implicit` は挿入時 context、`ngTemplateOutletInjector` の DI 変更は別扱い）（§6.1）
+- [x] P5-10 dynamic creation（dialog、`createComponent`、`NgComponentOutlet`）は呼出元/生成元の枝として示し、描画コンテナ未確定なら表示上の親へ昇格しない。外部ライブラリのラッパーは外部境界（§6.1）
 
 ## P6 route と bootstrap（`src/resolve/view`, §6.2）
 
