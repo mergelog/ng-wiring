@@ -26,11 +26,11 @@
 | P13 中間モデルと schema | `src/model`, `docs` | 15 | 15 | P5〜P12 |
 | P14 renderer とファイル名 | `src/render` | 22 | 22 | P13 |
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 6 | P13 |
-| P16 fixture・期待台帳・CI | `test/` | 15 | 2 | 各フェーズ並行 |
+| P16 fixture・期待台帳・CI | `test/` | 15 | 4 | 各フェーズ並行 |
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **205** | |
+| **合計** | | **237** | **207** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -328,8 +328,8 @@ P1-09 はこのフェーズで fixture が揃ったため `[~]` から `[x]` に
 - [ ] P16-06 CI で期待台帳 → 実装登録 → 実行された fixture 結果を突き合わせる（§10）
 - [ ] P16-07 CI 失敗条件（R01〜R15 の必須 API が unsupported、fixture が未登録/skip/todo、期待辺の欠落、禁止辺の出現、起点やソース根拠の誤り）（§10）
 - [ ] P16-08 R16 は所定の境界・partial・診断が出ることを合格条件にする。単語検出・件数一致・スナップショット更新を合格にしない（§10）
-- [ ] P16-09 effect/API が存在しない 4 ケースを独立した必須 fixture にする（`UI → signal.set/update → 表示`、`UI → SignalStore method → patchState → 表示`、`UI → Store.dispatch → reducer → selectSignal → 表示`、`UI → injectDispatch → withReducer → 表示`）（§10）
-- [ ] P16-10 別 fixture で `effect/handler → API → state 更新` を追加し、両方の経路が残ることを確認（§10）
+- [x] P16-09 effect/API が存在しない 4 ケースを独立した必須 fixture にする（`UI → signal.set/update → 表示`、`UI → SignalStore method → patchState → 表示`、`UI → Store.dispatch → reducer → selectSignal → 表示`、`UI → injectDispatch → withReducer → 表示`）（§10）
+- [x] P16-10 別 fixture で `effect/handler → API → state 更新` を追加し、両方の経路が残ることを確認（§10）
 - [ ] P16-11 実ソース由来 fixture（ログ Store、設定 Store）には未対応境界も期待結果に含める。最小 fixture の成功で外部 feature 対応を主張しない（§10）
 - [ ] P16-12 API/subcase の削除・unsupported 化は設計契約の変更としてレビューし、テストを通すために期待台帳を減らさない（§10）
 - [ ] P16-13 設計表の R ID と台帳の各 API/subcase の転記を実装レビューで照合（§10）

@@ -29,6 +29,7 @@ import { detail, edgeContracts, unresolvedDetail, type CandidateSummary, type De
   type WiringReport } from '../model/types.js';
 import { SourceEvidence } from './evidence.js';
 import { downwardEdgeKind, placeSteps, type PlacedStep } from './view-path.js';
+import { findPatchStateCalls, templateReads } from './reactive-calls.js';
 import { httpTraceEdges, reactiveStepEdges, storeTraceEdges, type TracedEdge } from './steps.js';
 import type { ContextAnalysis } from './analysis.js';
 
@@ -368,10 +369,17 @@ interface OperationInput {
 }
 
 /** A state value the operation touched, together with the member a template would read it through. */
-interface DisplayKey { ownerId: string | null; member: string; node: { kind: NodeKind; id: string; label: string } }
+interface DisplayKey {
+  ownerId: string | null;
+  member: string;
+  /** Set when the value is state of a generated Store, which a template reads through its holder. */
+  storeId?: string | null;
+  node: { kind: NodeKind; id: string; label: string };
+}
 
-const sameOwnerId = (reference: string, absolute: string | null): boolean =>
-  !!absolute && (absolute === reference || slash(absolute).endsWith(`/${reference}`));
+/** Layer owners are absolute paths, model owners are workspace relative; both name the same class. */
+const sameOwnerId = (reference: string, other: string | null | undefined): boolean =>
+  !!other && (other === reference || slash(other).endsWith(`/${reference}`));
 
 /**
  * §7 the operation half: the listeners of the selected element, what each handler reaches through the
@@ -405,15 +413,65 @@ function addOperations(input: OperationInput): void {
   const stores = catalogSignalStores(context);
   const methods = analyzeReactiveMethods(context, stores);
   const eventGraph = analyzeEvents(context, stores);
+  const patchStates = findPatchStateCalls(context);
+  /** The member a component holds an injected SignalStore in, so `store.key()` can be resolved. */
+  const storeMemberFor = (ownerId: string, declarationId: string): string | null => {
+    const instance = stores.instances.find(item => sameOwnerId(ownerId, item.owner) &&
+      item.declarationId === declarationId && item.created);
+    return instance ? memberNameAt(instance.source) : null;
+  };
 
-  const assigned = new Map<string, NodeKind>();
+  /** The full range of the call written at a recorded position, so a read inside it can be attributed. */
+  const callRangeAt = (location: string): { file: string; start: number; end: number } | null => {
+    const at = evidence.offsetOf(location);
+    if (!at) return null;
+    const source = context.program.getSourceFile(path.resolve(context.workspaceRoot, at.file));
+    if (!source) return null;
+    let found: ts.CallExpression | undefined;
+    const visit = (node: ts.Node): void => {
+      if (node.getEnd() <= at.offset || node.getStart(source) > at.offset) return;
+      if (t.isCallExpression(node) && node.getStart(source) === at.offset) found = node;
+      t.forEachChild(node, visit);
+    };
+    visit(source);
+    return found ? { file: at.file, start: found.getStart(source), end: found.getEnd() } : null;
+  };
+  const withinRange = (location: string, range: { file: string; start: number; end: number }): boolean => {
+    const at = evidence.offsetOf(location);
+    return !!at && at.file === range.file && at.offset >= range.start && at.offset < range.end;
+  };
+
+  // Layer ids carry the absolute workspace path; the model keeps workspace-relative ids only (§5).
+  const shorten = (value: string): string => slash(value).replaceAll(`${slash(context.workspaceRoot)}/`, '');
+  /**
+   * The displayed form of a layer id. `path:offset:name` becomes `path#name`, which is the id form §5
+   * uses for a symbol. The offset stays in the node id, so two same-named symbols in one file stay apart.
+   */
+  const displayId = (value: string): string =>
+    shorten(value).replace(/^(.+\.[cm]?tsx?):\d+:([A-Za-z_$][\w$]*)$/, '$1#$2');
   const nodeFor = (item: { kind: NodeKind; id: string; label: string; nodeId?: string }, evidenceId: string): string => {
     if (item.nodeId) return item.nodeId;
     // The kind is part of the symbol id so two layers naming the same text differently never collide.
-    const symbolId = `${item.kind}:${item.id}`;
-    assigned.set(symbolId, item.kind);
-    return builder.definition({ kind: item.kind, symbolId, evidenceIds: [evidenceId],
-      details: { name: detail(item.label), label: detail(item.label) } });
+    const label = displayId(item.label);
+    return builder.definition({ kind: item.kind, symbolId: `${item.kind}:${shorten(item.id)}`,
+      evidenceIds: [evidenceId], details: { name: detail(label), label: detail(label) } });
+  };
+  /** The member a `selectSignal`/`inject` result was assigned to, read from the declaration it sits in. */
+  const memberNameAt = (location: string): string | null => {
+    const at = evidence.offsetOf(location);
+    if (!at) return null;
+    const source = context.program.getSourceFile(path.resolve(context.workspaceRoot, at.file));
+    if (!source) return null;
+    let found: string | null = null;
+    const visit = (node: ts.Node): void => {
+      if (node.getEnd() <= at.offset || node.getStart(source) > at.offset) return;
+      if ((t.isPropertyDeclaration(node) || t.isVariableDeclaration(node)) && t.isIdentifier(node.name)) {
+        found = node.name.text;
+      }
+      t.forEachChild(node, visit);
+    };
+    visit(source);
+    return found;
   };
   /** Positions another layer already explained, so a later trace does not report them as unknown. */
   const resolvedAt = new Map<string, string>();
@@ -423,14 +481,16 @@ function addOperations(input: OperationInput): void {
       if (!evidenceId) { problems.push(`${edge.location} を根拠に解決できず ${edge.kind} を出力しない`); continue; }
       const from = nodeFor(edge.from, evidenceId);
       const to = edge.to.kind === 'boundary'
-        ? builder.boundary({ reason: edge.to.label, lastConfirmed: edge.from.id, evidenceIds: [evidenceId] })
+        ? builder.boundary({ reason: displayId(edge.to.label), lastConfirmed: displayId(edge.from.id), evidenceIds: [evidenceId] })
         : nodeFor(edge.to, evidenceId);
       const predicates = edge.conditions.map(text =>
         conditions.predicate({ expression: text, scope: edge.from.id, evidenceId }));
       const conditionId = predicates.length ? conditions.all(predicates) : null;
+      const details = Object.fromEntries(Object.entries(edge.details).map(([key, field]) =>
+        [key, field.value === null ? field : detail(displayId(field.value))]));
       const id = builder.edge({ kind: edge.kind, from, to, evidenceIds: [evidenceId],
         confidence: edge.kind === 'boundary' ? 'unresolved' : conditionId ? 'conditional' : 'confirmed',
-        origin: 'ng-wiring', conditionId, details: edge.details });
+        origin: 'ng-wiring', conditionId, details });
       if (edge.kind !== 'boundary' && !resolvedAt.has(edge.location)) resolvedAt.set(edge.location, id);
       into.nodes.add(from); into.nodes.add(to); into.edges.push(id);
     }
@@ -507,15 +567,21 @@ function addOperations(input: OperationInput): void {
         const at = evidence.offsetOf(location);
         return !!at && at.file === range.file && at.offset >= range.start && at.offset < range.end;
       };
-      // The reactive layer runs first so the NgRx and HTTP traces can be reconciled against what it resolved.
       const scope = { nodes: scopeNodes, edges: scopeEdges };
+      const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers,
+        { outputElement: targetElement, catalog });
+      const httpTrace = traceHttpFromMethod(context, httpCatalog, owner, method,
+        { catalog, store: storeGraph, methods, stores, layers });
+      // Methods this operation entered, so a Store write only counts when the operation reached it.
+      const entered = new Set<string>([method, ...storeTrace.steps.filter(step => step.kind === 'call')
+        .map(step => step.target.slice(step.target.lastIndexOf('.') + 1))]);
+      // The reactive layer runs first so the NgRx and HTTP traces can be reconciled against what it resolved.
       const keys = addReactiveWrites({ listenerNode, inside, signals, eventGraph, owners, materialize,
-        scope, storeGraph });
-      addDisplayReads({ analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope });
-      materialize(reconcile(storeTraceEdges(traceStoreDispatch(context, storeGraph, owner, method, layers,
-        { outputElement: targetElement, catalog })), ownerId), scope);
-      materialize(reconcile(httpTraceEdges(traceHttpFromMethod(context, httpCatalog, owner, method,
-        { catalog, store: storeGraph, methods, stores, layers })), ownerId), scope);
+        scope, storeGraph, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId });
+      addDisplayReads({ analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope,
+        storeMemberFor });
+      materialize(reconcile(storeTraceEdges(storeTrace), ownerId), scope);
+      materialize(reconcile(httpTraceEdges(httpTrace), ownerId), scope);
       if (!declaration) {
         builder.diagnostic({ code: 'handler-unresolved', severity: 'warning',
           message: `${ownerId} に ${method} の本体が無いため処理を追跡していない`,
@@ -545,13 +611,22 @@ interface ReactiveWriteInput {
   eventGraph: ReturnType<typeof analyzeEvents>;
   owners: readonly Declaration[];
   storeGraph: StoreGraph;
+  memberNameAt: (location: string) => string | null;
+  stores: ReturnType<typeof catalogSignalStores>;
+  patchStates: ReturnType<typeof findPatchStateCalls>;
+  /** Method names this operation entered, so an unreached Store method writes nothing here. */
+  entered: ReadonlySet<string>;
+  ownerId: string;
   materialize: (edges: readonly TracedEdge[], into: { nodes: Set<string>; edges: string[] }) => void;
   scope: { nodes: Set<string>; edges: string[] };
+  callRangeAt: (location: string) => { file: string; start: number; end: number } | null;
+  withinRange: (location: string, range: { file: string; start: number; end: number }) => boolean;
 }
 
 /** §7.6 the state this operation writes through Signal and SignalStore APIs, with no effect required. */
 function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
-  const { listenerNode, inside, signals, eventGraph, owners, storeGraph, materialize, scope } = input;
+  const { listenerNode, inside, signals, eventGraph, owners, storeGraph, materialize, scope,
+    callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId } = input;
   const keys: DisplayKey[] = [];
   const traced: TracedEdge[] = [];
   const listenerEnd = { kind: 'listener' as NodeKind, id: 'listener', label: 'listener', nodeId: listenerNode };
@@ -567,15 +642,21 @@ function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
       details: { writer: detail('listener'), state: detail(label),
         valueExpression: unresolvedDetail('更新値の式は signal 解析が記録していない') } });
     if (source) keys.push({ ownerId: source.state.instance, member: source.state.key ?? label, node });
-    // §7.6 a derived value keeps its own link; the write reaches it without an effect.
-    for (const link of signals.links.filter(item => item.from === write.sourceId || item.to === source?.state.key)) {
-      const derived = { kind: 'symbol' as NodeKind, id: `${link.capability}:${link.to ?? link.id}`, label: link.to ?? link.id };
+    // §7.6 a derived value keeps its own link; the write reaches it without an effect. The dependency is
+    // a read of this source inside the derived expression itself, not a name that happens to match.
+    for (const link of signals.links) {
+      const range = callRangeAt(link.location);
+      const dependsOn = link.from === write.sourceId || (!!range && !!write.sourceId &&
+        signals.reads.some(read => read.sourceId === write.sourceId && withinRange(read.location, range)));
+      if (!dependsOn) continue;
+      // A derived value holds a value the template reads, so it is a state node and not a plain symbol.
+      const derived = { kind: 'state' as NodeKind, id: `${link.capability}:${link.to ?? link.id}`, label: link.to ?? link.id };
       traced.push({ kind: 'reactive-link', from: node, to: derived, location: link.location,
         conditions: link.conditions, capability: link.capability,
         details: { source: detail(label), consumer: detail(link.to ?? link.id), operator: detail(link.capability),
           scheduling: detail('読み出し時に再計算') } });
       if (link.to) keys.push({ ownerId: source?.state.instance ?? null, member: link.to,
-        node: { kind: 'symbol', id: derived.id, label: derived.label } });
+        node: { kind: 'state', id: derived.id, label: derived.label } });
     }
   }
   // §7.6 SignalStore events: the dispatch site decides the bus instance, the consumers write the state.
@@ -585,15 +666,35 @@ function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
       consumer => consumer.owner ? [consumer.owner, ...ancestry] : ancestry);
     materialize(reactiveStepEdges(eventDeliverySteps(eventGraph, dispatch, delivery)), scope);
     for (const consumer of delivery.consumers) for (const key of consumer.writes) {
-      keys.push({ ownerId: consumer.owner, member: key,
+      keys.push({ ownerId: consumer.owner, member: key, storeId: consumer.storeId,
         node: { kind: 'state', id: [consumer.storeId ?? consumer.id, consumer.owner, key].filter(Boolean).join('.'), label: key } });
+    }
+  }
+  // §7.6 a Store method this operation called writes its state with patchState; no effect is involved.
+  for (const instance of stores.instances.filter(item => sameOwnerId(ownerId, item.owner) && item.created)) {
+    const declaration = stores.declarations.get(instance.declarationId);
+    const range = declaration ? callRangeAt(declaration.source) : null;
+    if (!declaration || !range) continue;
+    for (const patch of patchStates) {
+      if (!withinRange(patch.location, range)) continue;
+      if (!patch.member || !entered.has(patch.member)) continue;
+      const written = patch.keys.length ? patch.keys : declaration.stateKeys;
+      for (const key of written) {
+        const node = { kind: 'state' as NodeKind, id: `${declaration.id}.${key}`, label: key };
+        traced.push({ kind: 'state-write', from: listenerEnd, to: node, location: patch.location,
+          conditions: [...instance.conditions, ...(patch.keys.length ? [] : ['書き換え対象のキーを静的に確定できていない'])],
+          capability: 'signals/patchState',
+          details: { writer: detail(patch.member), state: detail(key),
+            valueExpression: unresolvedDetail('patchState の更新式は静的に確定していない') } });
+        keys.push({ ownerId: null, member: key, storeId: declaration.id, node });
+      }
     }
   }
   // §7.4 an NgRx selector consumed as a signal is read by the template through its component member.
   for (const consumer of storeGraph.consumers) {
-    const member = consumer.id.slice(consumer.id.lastIndexOf('.') + 1);
+    const member = memberNameAt(consumer.source);
     if (member) keys.push({ ownerId: consumer.owner, member,
-      node: { kind: 'state', id: consumer.selector, label: consumer.selector } });
+      node: { kind: 'state', id: consumer.id, label: member } });
   }
   materialize(traced, scope);
   return keys;
@@ -609,6 +710,7 @@ interface DisplayReadInput {
   keys: readonly DisplayKey[];
   placed: readonly PlacedStep[];
   scope: { nodes: Set<string>; edges: string[] };
+  storeMemberFor: (ownerId: string, declarationId: string) => string | null;
 }
 
 /**
@@ -616,7 +718,8 @@ interface DisplayReadInput {
  * connection is a resolved member reference and not a name that merely looks alike.
  */
 function addDisplayReads(input: DisplayReadInput): void {
-  const { analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope } = input;
+  const { analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope,
+    storeMemberFor } = input;
   if (!keys.length) return;
   const { context, catalog, index } = analysis;
   const ownerIds = [...new Set(placed.map(item => item.step.ownerId))];
@@ -625,10 +728,13 @@ function addDisplayReads(input: DisplayReadInput): void {
     for (const element of elements) {
       if (!element.node.inputs.length && !element.node.children.length) continue;
       const resolved = resolveTemplateExpressions(element, context, catalog, index);
-      for (const reference of resolved.references) {
-        if (reference.kind !== 'member') continue;
-        const match = keys.find(key => key.member === reference.name &&
-          (key.ownerId === null || key.ownerId === reference.origin || sameOwnerId(reference.origin, key.ownerId)));
+      const direct = new Set(resolved.references.filter(item => item.kind === 'member').map(item => item.name));
+      for (const read of templateReads(element, context)) {
+        // A bare member must have resolved against the owning class; a `store.key()` read must go
+        // through the member that holds the Store this state belongs to.
+        const match = keys.find(key => key.member === read.member && (read.receiver === null
+          ? direct.has(read.member) && (key.ownerId === null || sameOwnerId(ownerId, key.ownerId))
+          : !!key.storeId && storeMemberFor(ownerId, key.storeId) === read.receiver));
         if (!match) continue;
         const evidenceId = evidence.span(element.span, 'exact');
         if (!evidenceId) continue;
