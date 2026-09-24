@@ -92,6 +92,7 @@ const signalWrite = (target: string): FixtureRef => ({ id: 'signal-write', targe
 const signalApis = (target: string): FixtureRef => ({ id: 'signal-apis', target });
 const ngrxApis = (target: string): FixtureRef => ({ id: 'ngrx-apis', target });
 const storeApis = (target: string): FixtureRef => ({ id: 'signal-store-apis', target });
+const eventsApis = (target: string): FixtureRef => ({ id: 'events-apis', target });
 const patchFixture: FixtureRef = { id: 'signal-store-patch', target: 'data-id=filterField' };
 const dispatchFixture: FixtureRef = { id: 'store-dispatch', target: 'data-id=termField' };
 const eventsFixture: FixtureRef = { id: 'events-reducer', target: 'data-id=termField' };
@@ -429,7 +430,9 @@ const ledger: ReactiveCase[] = [
   // ---- R12 the event bus entry points --------------------------------------------------------------
   entry({ contract: 'R12', id: 'R12/event', package: '@ngrx/signals/events', export: 'event', version: NGRX,
     expectation: '単体 event creator を検知し、生成だけの event と送信を区別する',
-    missingFixture: 'event() 単体の fixture が未作成' }),
+    fixture: eventsApis('data-id=directButton'),
+    expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] row selected',
+      'event-consume|[Grid] row selected|src/grid.store.ts:11:5'] }),
   entry({ contract: 'R12', id: 'R12/eventGroup', package: '@ngrx/signals/events', export: 'eventGroup', version: NGRX,
     expectation: 'group の各 event を個別に対応付ける', fixture: eventsFixture,
     expectedEdges: ['event-dispatch|src/filter.ts#FilterComponent|[Search] termChanged'] }),
@@ -439,7 +442,9 @@ const ledger: ReactiveCase[] = [
     forbiddenEdges: [{ kind: 'action-dispatch', reason: 'SignalStore event を NgRx action bus に流さない' }] }),
   entry({ contract: 'R12', id: 'R12/Dispatcher.dispatch', package: '@ngrx/signals/events', export: 'Dispatcher',
     member: 'dispatch', form: 'member', version: NGRX, expectation: '直接送信を名前付き送信と別形態として検知する',
-    missingFixture: 'Dispatcher.dispatch の fixture が未作成' }),
+    fixture: eventsApis('data-id=directButton'),
+    expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] row selected',
+      'state-write|src/grid.store.ts:11:5|selected'] }),
 
   // ---- R13 event consumption -----------------------------------------------------------------------
   entry({ contract: 'R13', id: 'R13/withReducer', package: '@ngrx/signals/events', export: 'withReducer',
@@ -454,7 +459,9 @@ const ledger: ReactiveCase[] = [
     expectedEdges: ['event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15'] }),
   entry({ contract: 'R13', id: 'R13/ReducerEvents.on', package: '@ngrx/signals/events', export: 'ReducerEvents',
     member: 'on', form: 'member', version: NGRX, expectation: 'Events より先に受け取る順序を残す',
-    missingFixture: 'ReducerEvents.on の fixture が未作成' }),
+    fixture: eventsApis('data-id=directButton'),
+    expectedEdges: ['event-consume|[Grid] row selected|src/grid.store.ts:17:5',
+      'state-write|src/grid.store.ts:17:5|noted', 'state-read|noted|<span>'] }),
   entry({ contract: 'R13', id: 'R13/withEventHandlers', package: '@ngrx/signals/events', export: 'withEventHandlers',
     version: NGRX, expectation: '生成時の購読登録と void 副作用を検知する', fixture: logFixture,
     expectedEdges: ['event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15'],
@@ -468,23 +475,37 @@ const ledger: ReactiveCase[] = [
   // ---- R14 delivery scope --------------------------------------------------------------------------
   entry({ contract: 'R14', id: 'R14/provideDispatcher', package: '@ngrx/signals/events', export: 'provideDispatcher',
     version: NGRX, expectation: '新しい bus インスタンスの起点として扱う',
-    missingFixture: 'provideDispatcher の fixture が未作成' }),
+    fixture: eventsApis('data-id=pageButton'),
+    expectedEdges: ['event-consume|[Grid] pageChanged|src/grid.store.ts:10:5',
+      'state-write|src/grid.store.ts:10:5|page'] }),
   entry({ contract: 'R14', id: 'R14/scope.self', package: '@ngrx/signals/events', export: 'injectDispatch',
     form: 'option', version: NGRX, expectation: 'self scope をローカル bus に限定する',
-    missingFixture: 'self scope の fixture が未作成' }),
+    fixture: eventsApis('data-id=pageButton'),
+    expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] pageChanged',
+      'event-consume|[Grid] pageChanged|src/grid.store.ts:10:5'] }),
   entry({ contract: 'R14', id: 'R14/scope.parent', package: '@ngrx/signals/events', export: 'injectDispatch',
     form: 'option', version: NGRX, expectation: 'parent scope を注入された dispatcher の親に向ける',
-    missingFixture: 'parent scope の fixture が未作成' }),
+    fixture: eventsApis('data-id=parentButton'),
+    expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] pageChanged'],
+    forbiddenEdges: [{ kind: 'event-consume', to: 'src/grid.store.ts:10:5',
+      reason: 'parent scope の送信をローカル bus の consumer に届けない' }] }),
   entry({ contract: 'R14', id: 'R14/scope.global', package: '@ngrx/signals/events', export: 'injectDispatch',
     form: 'option', version: NGRX, expectation: 'global scope を root bus に向ける', fixture: eventsFixture,
     expectedEdges: ['event-consume|[Search] termChanged|src/store.ts:9:15'] }),
   entry({ contract: 'R14', id: 'R14/toScope', package: '@ngrx/signals/events', export: 'toScope', version: NGRX,
-    expectation: 'scope 設定付き送信を検知する', missingFixture: 'toScope の fixture が未作成' }),
+    expectation: 'scope 設定付き送信を検知する', fixture: eventsApis('data-id=scopedButton'),
+    expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] row selected'],
+    forbiddenEdges: [{ kind: 'event-consume', to: 'src/grid.store.ts:11:5',
+      reason: 'toScope(parent) の送信をローカル bus の consumer に届けない' }] }),
   entry({ contract: 'R14', id: 'R14/mapToScope', package: '@ngrx/signals/events', export: 'mapToScope', version: NGRX,
-    expectation: '演算子による scope 変更を検知する', missingFixture: 'mapToScope の fixture が未作成' }),
+    expectation: '演算子による scope 変更を検知する', demonstratedBy: eventsApis('data-id=scopedButton'),
+    missingFixture: 'events-apis は toScope までを覆う。演算子形態の mapToScope を使う handler fixture が未作成' }),
   entry({ contract: 'R14', kind: 'counter-example', id: 'R14/cross-bus', package: '@ngrx/signals/events', export: 'Dispatcher', form: 'form',
     version: NGRX, expectation: '異なる bus の同名 type を結ばず、明示 bridge のときだけ接続する',
-    missingFixture: '2 つの bus を持つ fixture が未作成' }),
+    fixture: eventsApis('data-id=globalButton'),
+    expectedEdges: ['event-dispatch|src/grid.component.ts#GridComponent|[Grid] filterCleared'],
+    forbiddenEdges: [{ kind: 'event-consume',
+      reason: '別 bus の同名 type を結ばない（明示 bridge があるときだけ接続する）' }] }),
 
   // ---- R15 the real-world composite cases and the RxJS consumption they need ------------------------
   entry({ contract: 'R15', id: 'R15/log-store', package: '@ngrx/signals/events', export: 'injectDispatch',

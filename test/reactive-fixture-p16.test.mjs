@@ -283,3 +283,50 @@ test('signal-store-apis: an rxMethod that was never called writes nothing', asyn
   assert(report.edges.some(edge => edge.kind === 'boundary' && edge.confidence === 'unresolved'));
   assert.equal(report.status, 'partial');
 });
+
+// R12-R14: the bus instance a scope names decides who receives, and same-named types do not cross.
+test('events-apis: self, parent and global scopes resolve to different bus instances', async () => {
+  const busOf = async (target) => {
+    const { report } = await analyzeFixture('events-apis', { target });
+    const dispatch = report.edges.find(edge => edge.kind === 'event-dispatch');
+    return {
+      bus: dispatch.details.busId.value, scope: dispatch.details.scope.value,
+      mode: dispatch.details.dispatchMode.value,
+      consumers: edgeKeys(report).filter(key => key.startsWith('event-consume|')),
+    };
+  };
+  // The panel provides the dispatcher, so a self-scoped dispatch is delivered on the panel's own bus.
+  const self = await busOf('data-id=pageButton');
+  assert.equal(self.scope, 'self');
+  assert.equal(self.bus, 'src/panel.component.ts#PanelComponent');
+  assert.deepEqual(self.consumers, ['event-consume|[Grid] pageChanged|src/grid.store.ts:10:5']);
+  assert.equal(self.mode, 'named-dispatcher');
+
+  // The same event type on the bus above it reaches no consumer of the local Store.
+  const parent = await busOf('data-id=parentButton');
+  assert.equal(parent.scope, 'parent');
+  assert.notEqual(parent.bus, self.bus);
+  assert.deepEqual(parent.consumers, [], 'a parent-scoped dispatch reached the local bus');
+
+  // Neither does the global one, and `toScope` configures the same thing at the direct entry point.
+  assert.deepEqual((await busOf('data-id=globalButton')).consumers, []);
+  const scoped = await busOf('data-id=scopedButton');
+  assert.equal(scoped.scope, 'parent');
+  assert.equal(scoped.mode, 'explicit');
+  assert.deepEqual(scoped.consumers, []);
+});
+
+test('events-apis: a single event creator reaches both reducers, ReducerEvents first', async () => {
+  const { report } = await analyzeFixture('events-apis', { target: 'data-id=directButton' });
+  const keys = edgeKeys(report);
+  assert(keys.includes('event-dispatch|src/grid.component.ts#GridComponent|[Grid] row selected'));
+  assert(keys.includes('event-consume|[Grid] row selected|src/grid.store.ts:11:5'));
+  assert(keys.includes('event-consume|[Grid] row selected|src/grid.store.ts:17:5'));
+  assert(keys.includes('state-write|src/grid.store.ts:11:5|selected'));
+  assert(keys.includes('state-write|src/grid.store.ts:17:5|noted'));
+  assert(keys.includes('state-read|noted|<span>'));
+  // The direct entry point is not the named one; both forms stay distinguishable.
+  assert.equal(report.edges.find(edge => edge.kind === 'event-dispatch').details.dispatchMode.value, 'explicit');
+  // An event this dispatch does not carry is never delivered.
+  assert(!keys.includes('event-consume|[Grid] pageChanged|src/grid.store.ts:10:5'));
+});

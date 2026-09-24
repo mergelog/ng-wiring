@@ -671,7 +671,9 @@ function addReactiveWrites(input) {
         }
     }
     // §7.6 SignalStore events: the dispatch site decides the bus instance, the consumers write the state.
-    const ancestry = owners.map(item => item.id);
+    // The graph names injector owners with absolute paths, so the ancestry is matched onto that spelling;
+    // otherwise a component that calls provideDispatcher would never be recognised as a bus instance.
+    const ancestry = owners.map(item => eventGraph.dispatcherOwners.find(owner => sameOwnerId(item.id, owner)) ?? item.id);
     for (const dispatch of eventGraph.dispatches.filter(item => inside(item.source))) {
         const delivery = resolveEventDelivery(eventGraph, dispatch, ancestry, consumer => consumer.owner ? [consumer.owner, ...ancestry] : ancestry);
         materialize(reactiveStepEdges(eventDeliverySteps(eventGraph, dispatch, delivery)), scope);
