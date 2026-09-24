@@ -18,9 +18,17 @@ is local when its owner, one of its candidates or its location belongs to the
 selection, an owner-less gap that nothing ties to it is listed as a gap of the
 whole analysis, the rest is counted per code, and a gap ng-wiring filled in
 itself keeps its record with the grounds for the fill-in.
-Assembling the analysis layers into that model is still under development: the
-command validates arguments and reports that the analysis backend is
-unavailable; it does not claim to produce a wiring report yet.
+`src/assemble` connects those layers to the CLI, so the command runs from a
+target element to a written report. What is still open is listed in
+[x-tasks.md](x-tasks.md): 28 of the 110 reactive contract subcases have no
+passing fixture yet, and P18 has not been accepted.
+
+## Running it
+
+ng-wiring is a single Node.js CLI. It needs no global installation and no
+browser extension: one `bin`, no install-time hook, and nothing outside the Node
+builtins and `ajv` in the built code. The supported Node versions are
+`^22.22.3 || ^24.15.0 || >=26.0.0` on Linux/WSL, macOS and Windows.
 
 ```sh
 npm ci
@@ -29,6 +37,14 @@ npm test
 node dist/cli/index.js --help
 ```
 
-The planned command syntax and output contract are documented in
-[x-structure.md](x-structure.md). The P3–P15 APIs are library entry points until
-the assembly phase connects them to the CLI.
+Installed into a workspace, the same command is `npx ng-wiring`:
+
+```sh
+npx ng-wiring 'data-id="searchInputField"' --project app --out-dir reports
+```
+
+The analysed workspace supplies its own toolchain. ng-wiring resolves
+TypeScript, `@angular/compiler` and `@angular/core` from the target's
+`node_modules` (§4.2) and never falls back to a copy of its own; the pinned
+ngmaze is ng-wiring's own dependency and runs as a separate process. The command
+syntax and the output contract are documented in [x-structure.md](x-structure.md).
