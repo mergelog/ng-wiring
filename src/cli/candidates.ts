@@ -25,7 +25,12 @@ export interface Candidate {
 }
 
 function pointCodeCompare(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+  const x = Array.from(a), y = Array.from(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const difference = x[i]!.codePointAt(0)! - y[i]!.codePointAt(0)!;
+    if (difference) return difference;
+  }
+  return x.length - y.length;
 }
 
 function normalizePath(input: string): string {
@@ -42,6 +47,7 @@ function comparePosition(a: SourcePosition, b: SourcePosition): number {
 }
 
 export function canonicalJson(value: unknown): string {
+  if (value === undefined) return 'null';
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   const object = value as Record<string, unknown>;
@@ -72,13 +78,24 @@ export function makeCandidate(tuple: CandidateTuple, details: Omit<Candidate, 't
 }
 
 export function sortCandidates(candidates: readonly Candidate[]): Candidate[] {
+  const comparePositions = (left: SourcePosition[], right: SourcePosition[]): number => {
+    for (let i = 0; i < Math.min(left.length, right.length); i++) {
+      const result = comparePosition(left[i]!, right[i]!);
+      if (result) return result;
+    }
+    return left.length - right.length;
+  };
   return [...candidates].sort((a, b) => {
     const x = a.tuple, y = b.tuple;
     return pointCodeCompare(x.contextId, y.contextId)
       || pointCodeCompare(x.ownerId, y.ownerId)
       || pointCodeCompare(x.element.path, y.element.path)
       || x.element.start - y.element.start || x.element.end - y.element.end
-      || pointCodeCompare(canonicalJson(x), canonicalJson(y));
+      || comparePositions(x.usages, y.usages)
+      || comparePositions(x.routes.map(r => r.definition), y.routes.map(r => r.definition))
+      || comparePositions(x.routes.flatMap(r => r.loaders), y.routes.flatMap(r => r.loaders))
+      || pointCodeCompare(x.bootstrapId ?? '', y.bootstrapId ?? '')
+      || comparePositions(x.insertion ? [x.insertion] : [], y.insertion ? [y.insertion] : []);
   });
 }
 

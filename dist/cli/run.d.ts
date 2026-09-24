@@ -8,8 +8,8 @@ export interface AnalysisResult {
     truncated: boolean;
 }
 export interface CliBackend {
-    analyze(options: CliOptions): Promise<AnalysisResult>;
-    write(candidate: Candidate, options: CliOptions): Promise<{
+    analyze(options: CliOptions, signal?: AbortSignal): Promise<AnalysisResult>;
+    write(candidate: Candidate, options: CliOptions, signal?: AbortSignal): Promise<{
         path: string;
         partial: boolean;
     }>;
@@ -24,4 +24,4 @@ export interface Io {
     };
 }
 export declare const help = "Usage: ng-wiring ATTRIBUTE=VALUE [options]\n       ng-wiring --source PATH:LINE [options]\nOptions: --project NAME | --tsconfig PATH, --through CLASS|PATH#CLASS,\n         --route PATH, --candidate NUMBER|cand:SHA256, --event NAME,\n         --out-dir DIR, --json, --help, --version\n";
-export declare function runCli(argv: readonly string[], backend: CliBackend, io: Io, cwd?: string): Promise<ExitCode>;
+export declare function runCli(argv: readonly string[], backend: CliBackend, io: Io, cwd?: string, signal?: AbortSignal): Promise<ExitCode>;
