@@ -22,7 +22,10 @@ test('the ledger transcribes every contract with its package, export, version an
     assert(item.package.length > 0, `${item.id} names no package`);
     assert(item.expectation.trim().length > 0, `${item.id} states no expectation`);
     assert(/^\d+\.\d+\.\d+$/.test(item.version), `${item.id} names no target version`);
-    assert(item.form !== 'module' ? item.export !== null : true, `${item.id} names no export`);
+    // A whole module, or a form that has no single export of its own, may leave `export` empty.
+    if (item.form !== 'module' && item.form !== 'form') {
+      assert(item.export !== null, `${item.id} names no export`);
+    }
     if (item.member !== null) assert(item.export !== null, `${item.id} has a member without an export`);
     // A case is either covered by a fixture or carries the reason it is not; never silently neither.
     assert.equal(item.fixture === null, item.missingFixture !== null,

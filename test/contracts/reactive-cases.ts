@@ -20,6 +20,13 @@ export const contractIds: readonly ContractId[] = ['R01', 'R02', 'R03', 'R04', '
 /** What kind of thing the subcase fixes: a call, a member, a configuration option, a whole module. */
 export type ApiForm = 'function' | 'member' | 'invoke' | 'class' | 'option' | 'module' | 'form';
 
+/**
+ * What the subcase asserts. `detect` requires a registered matcher and the expected relations;
+ * `counter-example` requires the absence a row asks for and registers nothing; `unsupported` requires
+ * the range to stay without a semantic model and to be diagnosed (§7.6 R16).
+ */
+export type CaseKind = 'detect' | 'counter-example' | 'unsupported';
+
 export interface FixtureRef {
   /** Directory under `test/fixtures`. */
   id: string;
@@ -38,6 +45,7 @@ export interface EdgePattern {
 
 export interface ReactiveCase {
   contract: ContractId;
+  kind: CaseKind;
   /** Unique id of the subcase, `R<nn>/<api or form>`. */
   id: string;
   /** What §7.6 requires of this API or form. */
@@ -65,14 +73,13 @@ const ANGULAR = '22.1.5';
 const NGRX = '22.0.0';
 const RXJS = '7.8.2';
 
-type Draft = Omit<ReactiveCase, 'export' | 'member' | 'form' | 'fixture' | 'expectedEdges' | 'expectedNodes'
-| 'forbiddenEdges' | 'expectedDiagnostics' | 'missingFixture'>
-& Partial<Pick<ReactiveCase, 'export' | 'member' | 'form' | 'fixture' | 'expectedEdges' | 'expectedNodes'
-| 'forbiddenEdges' | 'expectedDiagnostics' | 'missingFixture'>>;
+type Optional = 'kind' | 'export' | 'member' | 'form' | 'fixture' | 'expectedEdges' | 'expectedNodes'
+| 'forbiddenEdges' | 'expectedDiagnostics' | 'missingFixture';
+type Draft = Omit<ReactiveCase, Optional> & Partial<Pick<ReactiveCase, Optional>>;
 
 const entry = (draft: Draft): ReactiveCase => ({
-  export: null, member: null, form: 'function', fixture: null, expectedEdges: [], expectedNodes: [],
-  forbiddenEdges: [], expectedDiagnostics: [], missingFixture: null, ...draft,
+  kind: 'detect', export: null, member: null, form: 'function', fixture: null, expectedEdges: [],
+  expectedNodes: [], forbiddenEdges: [], expectedDiagnostics: [], missingFixture: null, ...draft,
 });
 
 const signalWrite = (target: string): FixtureRef => ({ id: 'signal-write', target });
@@ -138,7 +145,7 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R03', id: 'R03/EffectRef.destroy', package: '@angular/core', export: 'EffectRef',
     member: 'destroy', form: 'member', version: ANGULAR, expectation: '明示破棄を生存期間の終端として残す',
     missingFixture: 'EffectRef.destroy の fixture が未作成' }),
-  entry({ contract: 'R03', id: 'R03/effect.await-read', package: '@angular/core', export: 'effect', form: 'form',
+  entry({ contract: 'R03', kind: 'counter-example', id: 'R03/effect.await-read', package: '@angular/core', export: 'effect', form: 'form',
     version: ANGULAR, expectation: 'await 後の read を自動依存にしない',
     missingFixture: 'await を挟む effect の fixture が未作成' }),
 
@@ -203,7 +210,7 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R06', id: 'R06/withHooks', package: '@ngrx/signals', export: 'withHooks', version: NGRX,
     expectation: 'onInit は起動条件、onDestroy は終了条件として扱う',
     missingFixture: 'withHooks の fixture が未作成' }),
-  entry({ contract: 'R06', id: 'R06/withHooks.not-created', package: '@ngrx/signals', export: 'withHooks',
+  entry({ contract: 'R06', kind: 'counter-example', id: 'R06/withHooks.not-created', package: '@ngrx/signals', export: 'withHooks',
     form: 'form', version: NGRX, expectation: '未生成 Store の hook/handler を稼働中としない',
     missingFixture: 'provider だけで inject されない Store の fixture が未作成' }),
 
@@ -229,7 +236,7 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R07', id: 'R07/deepComputed', package: '@ngrx/signals', export: 'deepComputed', version: NGRX,
     expectation: '深いプロパティの派生を reactive-link として残す',
     missingFixture: 'deepComputed の fixture が未作成' }),
-  entry({ contract: 'R07', id: 'R07/deep-mutation', package: '@ngrx/signals', export: 'patchState', form: 'form',
+  entry({ contract: 'R07', kind: 'counter-example', id: 'R07/deep-mutation', package: '@ngrx/signals', export: 'patchState', form: 'form',
     version: NGRX, expectation: 'deep mutation を Signal の通知と同一視しない',
     missingFixture: 'deep mutation の反例 fixture が未作成' }),
 
@@ -243,7 +250,7 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R08', id: 'R08/rxMethod.observable', package: '@ngrx/signals/rxjs-interop', export: 'rxMethod',
     form: 'form', version: NGRX, expectation: 'Observable 引数の対応を rxMethod 固有として検知する',
     missingFixture: 'rxMethod(observable) の fixture が未作成' }),
-  entry({ contract: 'R08', id: 'R08/rxMethod.uncalled', package: '@ngrx/signals/rxjs-interop', export: 'rxMethod',
+  entry({ contract: 'R08', kind: 'counter-example', id: 'R08/rxMethod.uncalled', package: '@ngrx/signals/rxjs-interop', export: 'rxMethod',
     form: 'form', version: NGRX, expectation: '未呼出しの定義を稼働中としない',
     missingFixture: '未呼出し rxMethod の反例 fixture が未作成' }),
   entry({ contract: 'R08', id: 'R08/signalMethod.value', package: '@ngrx/signals', export: 'signalMethod',
@@ -252,7 +259,7 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R08', id: 'R08/signalMethod.signal', package: '@ngrx/signals', export: 'signalMethod',
     form: 'form', version: NGRX, expectation: 'Signal 引数の再実行を検知する',
     missingFixture: 'signalMethod(signal) の fixture が未作成' }),
-  entry({ contract: 'R08', id: 'R08/signalMethod.no-observable', package: '@ngrx/signals', export: 'signalMethod',
+  entry({ contract: 'R08', kind: 'counter-example', id: 'R08/signalMethod.no-observable', package: '@ngrx/signals', export: 'signalMethod',
     form: 'form', version: NGRX, expectation: 'rxMethod と同じ Observable 引数対応だと推定しない',
     missingFixture: 'signalMethod の Observable 非対応を示す反例 fixture が未作成' }),
 
@@ -302,7 +309,7 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R09', id: 'R09/StoreModule', package: '@ngrx/store', export: 'StoreModule', form: 'class',
     version: NGRX, expectation: 'NgModule 経由の登録も同じ前提条件として扱う',
     missingFixture: 'StoreModule.forRoot/forFeature の fixture が未作成' }),
-  entry({ contract: 'R09', id: 'R09/creator-call-only', package: '@ngrx/store', export: 'createAction', form: 'form',
+  entry({ contract: 'R09', kind: 'counter-example', id: 'R09/creator-call-only', package: '@ngrx/store', export: 'createAction', form: 'form',
     version: NGRX, expectation: 'creator の呼出しだけでは dispatch 辺を作らない', fixture: dispatchFixture,
     forbiddenEdges: [{ kind: 'action-dispatch', from: 'src/actions.ts#termChanged',
       reason: 'action creator の呼出し自体は送信ではない' }] }),
@@ -318,7 +325,7 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R10', id: 'R10/Store.next', package: '@ngrx/store', export: 'Store', member: 'next',
     form: 'member', version: NGRX, expectation: '当該 Store の送信 API として識別する',
     missingFixture: 'Store.next の fixture が未作成' }),
-  entry({ contract: 'R10', id: 'R10/Subject.next', package: 'rxjs', export: 'Subject', member: 'next',
+  entry({ contract: 'R10', kind: 'counter-example', id: 'R10/Subject.next', package: 'rxjs', export: 'Subject', member: 'next',
     form: 'form', version: RXJS, expectation: '一般の Subject.next を Store の dispatch と混同しない',
     missingFixture: 'Subject.next の反例 fixture が未作成' }),
 
@@ -396,7 +403,7 @@ const ledger: ReactiveCase[] = [
     expectation: 'scope 設定付き送信を検知する', missingFixture: 'toScope の fixture が未作成' }),
   entry({ contract: 'R14', id: 'R14/mapToScope', package: '@ngrx/signals/events', export: 'mapToScope', version: NGRX,
     expectation: '演算子による scope 変更を検知する', missingFixture: 'mapToScope の fixture が未作成' }),
-  entry({ contract: 'R14', id: 'R14/cross-bus', package: '@ngrx/signals/events', export: 'Dispatcher', form: 'form',
+  entry({ contract: 'R14', kind: 'counter-example', id: 'R14/cross-bus', package: '@ngrx/signals/events', export: 'Dispatcher', form: 'form',
     version: NGRX, expectation: '異なる bus の同名 type を結ばず、明示 bridge のときだけ接続する',
     missingFixture: '2 つの bus を持つ fixture が未作成' }),
 
@@ -431,36 +438,36 @@ const ledger: ReactiveCase[] = [
     missingFixture: 'mapResponse の fixture が未作成' }),
 
   // ---- R16 the ranges with no semantic model --------------------------------------------------------
-  entry({ contract: 'R16', id: 'R16/signals-entities', package: '@ngrx/signals/entities', form: 'module',
+  entry({ contract: 'R16', kind: 'unsupported', id: 'R16/signals-entities', package: '@ngrx/signals/entities', form: 'module',
     version: NGRX, expectation: 'import と使用箇所を検出して unsupported と根拠を出す',
     expectedDiagnostics: ['unsupported-reactive-api'],
     missingFixture: 'entities を使う fixture が未作成（P16-08）' }),
-  entry({ contract: 'R16', id: 'R16/signals-resource', package: '@ngrx/signals/resource', form: 'module',
+  entry({ contract: 'R16', kind: 'unsupported', id: 'R16/signals-resource', package: '@ngrx/signals/resource', form: 'module',
     version: NGRX, expectation: 'resource 拡張を unsupported として止める',
     expectedDiagnostics: ['unsupported-reactive-api'],
     missingFixture: 'resource を使う fixture が未作成' }),
-  entry({ contract: 'R16', id: 'R16/component-store', package: '@ngrx/component-store', form: 'module',
+  entry({ contract: 'R16', kind: 'unsupported', id: 'R16/component-store', package: '@ngrx/component-store', form: 'module',
     version: NGRX, expectation: '別の state system として SignalStore と誤認しない',
     expectedDiagnostics: ['unsupported-reactive-api'],
     missingFixture: 'ComponentStore を使う fixture が未作成' }),
-  entry({ contract: 'R16', id: 'R16/angular-resource', package: '@angular/core', export: 'resource', version: ANGULAR,
+  entry({ contract: 'R16', kind: 'unsupported', id: 'R16/angular-resource', package: '@angular/core', export: 'resource', version: ANGULAR,
     expectation: 'resource の読み込み/状態に意味モデルが無いことを診断する',
     expectedDiagnostics: ['unsupported-reactive-api'],
     missingFixture: 'resource を使う fixture が未作成' }),
-  entry({ contract: 'R16', id: 'R16/angular-rxResource', package: '@angular/core/rxjs-interop', export: 'rxResource',
+  entry({ contract: 'R16', kind: 'unsupported', id: 'R16/angular-rxResource', package: '@angular/core/rxjs-interop', export: 'rxResource',
     version: ANGULAR, expectation: 'rxResource を resource と別に診断する',
     expectedDiagnostics: ['unsupported-reactive-api'],
     missingFixture: 'rxResource を使う fixture が未作成' }),
-  entry({ contract: 'R16', id: 'R16/angular-httpResource', package: '@angular/common/http', export: 'httpResource',
+  entry({ contract: 'R16', kind: 'unsupported', id: 'R16/angular-httpResource', package: '@angular/common/http', export: 'httpResource',
     version: ANGULAR, expectation: 'httpResource を通信と状態の双方で unsupported として扱う',
     expectedDiagnostics: ['unsupported-reactive-api'],
     missingFixture: 'httpResource を使う fixture が未作成' }),
-  entry({ contract: 'R16', id: 'R16/signals-events-withEffects', package: '@ngrx/signals/events',
+  entry({ contract: 'R16', kind: 'unsupported', id: 'R16/signals-events-withEffects', package: '@ngrx/signals/events',
     export: 'withEffects', version: NGRX,
     expectation: '旧名称を公開 API として追加せず、未知の識別子として診断する',
     expectedDiagnostics: ['unsupported-reactive-api'],
     missingFixture: 'withEffects を書いた fixture が未作成' }),
-  entry({ contract: 'R16', id: 'R16/unknown-custom-feature', package: '@ngrx/signals', export: 'signalStoreFeature',
+  entry({ contract: 'R16', kind: 'unsupported', id: 'R16/unknown-custom-feature', package: '@ngrx/signals',
     form: 'form', version: NGRX,
     expectation: '既知 state/member を上書きし得る未知 feature は関連範囲を partial とし、透明扱いしない',
     expectedDiagnostics: ['unsupported-template'],
