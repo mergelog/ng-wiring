@@ -23,7 +23,8 @@
     "check:contracts": "node scripts/check-contracts.mjs",
     "check:dist": "node scripts/check-dist.mjs",
     "check:install": "node scripts/check-install.mjs",
-    "check:smoke": "node scripts/smoke-dist.mjs"
+    "check:smoke": "node scripts/smoke-dist.mjs",
+    "measure": "node scripts/measure-performance.mjs"
   },
   "dependencies": {
     "ajv": "8.17.1",

@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P16 を実施済みで、`ng-wiring` は候補選択から資料出力まで通る。残りは P17（配布・性能）、P18（実例シナリオ）と、P16 の台帳が示す R 契約 28 subcase の未達（P10〜P12 の解析側）である（§1, §2）。
+現状: **実装中**。P0〜P17 を実施済みで、`ng-wiring` は候補選択から資料出力まで通り、配布・インストール・対応 Node 版・性能の検査も入った。残りは P18（実例シナリオ）、P16 の台帳が示す R 契約 28 subcase の未達（P10〜P12 の解析側）、および P17 が測って残した 2 件（他 OS の CI 結果、実アプリで資料 1 本が 900 秒で完了しないこと）である（§1, §2）。
 
 ## 進捗サマリ
 
@@ -27,10 +27,10 @@
 | P14 renderer とファイル名 | `src/render` | 22 | 22 | P13 |
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 6 | P13 |
 | P16 fixture・期待台帳・CI | `test/` | 15 | 15 | 各フェーズ並行 |
-| P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
+| P17 配布・性能 | 配布・計測 | 7 | 5 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **218** | |
+| **合計** | | **237** | **223** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -354,7 +354,15 @@ P16 の作業中に他フェーズへ入れた修正: `src/resolve/operation/exp
 - [x] P17-04 アダプタ起動用依存と対象ソースの型解決を分離（§9）
 - [~] P17-05 Linux/WSL・macOS・Windows の配布スモークテスト（固定 ngmaze の bin 起動を含む）（§4.2, §10 A18）
 - [x] P17-06 対応 Node 版での実行確認（§4.2）
-- [ ] P17-07 性能測定（実アプリ + 大規模 fixture、cold/warm 差、ng-wiring と ngmaze 両プロセスの合算時間とピーク RSS）。単発参考値で済ませない（§2, §10 A18, 指摘 3-8）
+- [~] P17-07 性能測定（実アプリ + 大規模 fixture、cold/warm 差、ng-wiring と ngmaze 両プロセスの合算時間とピーク RSS）。単発参考値で済ませない（§2, §10 A18, 指摘 3-8）
+
+実装メモ: 配布の検査は 3 本に分かれる。`scripts/check-dist.mjs` は `dist` を消してから再ビルドし、追跡ツリーがそのまま戻ることを要求する。増分ビルドでは、ソースを消した・改名した後の古い出力が byte 一致のまま残るので検出できない。`scripts/check-install.mjs` は npm pack → 空 cache・空ディレクトリへの install → bin 実行 → クリーン npx → 資料生成までを 1 本で行う。ngmaze の固定 GitHub 依存の prepare ビルドもここを通る。`scripts/smoke-dist.mjs` は固定 ngmaze の bin を先に直接起動して JSON を確認してから ng-wiring を動かし、Markdown と JSON の両方が固定リビジョンと `ngmaze-verified` の辺を含むことを要求する。CI は build（ubuntu, Node 24.15.0）、install、smoke（ubuntu/macos/windows）、node-versions（22.22.3 と 26.x で全テスト + smoke）の 4 ジョブ。
+
+P17-04 では、設計上は分かれている依存が実装で混ざっていた箇所を塞いだ。ngmaze が `typescript` と `@angular/compiler` に依存するため、ng-wiring を入れた対象の `node_modules` にそれらが巻き上げられる。対象が宣言していない版で解析が通り資料まで出ていた（§4.2 が禁じる同梱版での無言継続）。`resolveToolchain` は対象またはその祖先の manifest が宣言しない toolchain を code 3 で拒否する。fixture は `node_modules` だけを張って manifest を持たなかったので、`test/fixtures/target.mjs` が manifest も書くようにした。ng-wiring 自身の runtime 依存も `ajv` と固定 ngmaze の 2 つだけにした。
+
+P17-05 と P17-07 は未達として残す。P17-05 は Linux/WSL で green、macOS と Windows は CI の matrix が回るまで主張しない。P17-06 は WSL 上で Node 22.22.3 / 24.15.0 / 26.10.0 の全テストと smoke が green。
+
+P17-07 の測定は [docs/performance.md](docs/performance.md) に記録した。生成 fixture 50/200/800/1600 ページと実アプリの候補列挙は cold/warm と両プロセスのピーク RSS まで取れたが、**実アプリで候補 1 件の資料を出す実行は 900 秒で完了しない**。同じ対象の候補列挙は 6.5 秒で終わるので、この時間は Program 生成や索引ではなく、選択 1 件に対する資料組み立て側にある。P17 の担当は測定までで、この費用は P5〜P13（経路展開・操作解析・組み立て）の問題として残る。
 
 ## P18 実例シナリオの受け入れ（検索 input、§8）
 
@@ -392,7 +400,7 @@ P16 の作業中に他フェーズへ入れた修正: `src/resolve/operation/exp
 | A15 | 有限化（同一クラス別出現を残す、合流を循環と誤認しない、循環・候補/深さ/状態数の上限で停止位置と partial、一意性を捏造しない） | [ ] | [ ] | [ ] |
 | A16 | renderer（全 kind の定型文、同一 IR の Markdown/JSON 一致、schema、confidence と coverage の独立、局所/全体 gap、リンク/span/特殊文字） | [ ] | [ ] | [ ] |
 | A17 | ファイル（合意形式、引用符/NFC 衝突/長名/同秒/大小文字/並行実行、排他作成、失敗時削除、stdout/stderr/終了コード） | [ ] | [ ] | [ ] |
-| A18 | 配布/性能（固定 ngmaze の bin を各 OS で起動、Node 対応版、クリーン npx、dist 一致、cold/warm 時間・両プロセスのピーク RSS） | [ ] | [ ] | [ ] |
+| A18 | 配布/性能（固定 ngmaze の bin を各 OS で起動、Node 対応版、クリーン npx、dist 一致、cold/warm 時間・両プロセスのピーク RSS） | [x] | [~] | [~] |
 | A19 | Angular Signal（R01〜R04 の各 API/subcase、effect のない state 更新、untracked、linkedSignal、interop/購読） | [x] | [~] | [~] |
 | A20 | SignalStore/SignalState（R05〜R08、生成 Store、feature 合成、patchState、hooks、rxMethod/signalMethod と未生成/未起動の反例） | [x] | [~] | [~] |
 | A21 | 通常の dispatch（R09〜R11、effect なしの reducer 経路、facade、関数 overload、next、dispatch:false 内の明示 dispatch） | [ ] | [ ] | [ ] |
@@ -405,6 +413,9 @@ P16 の作業中に他フェーズへ入れた修正: `src/resolve/operation/exp
 - A23: `test/fixtures/real-log-store` / `real-settings-store` / `unsupported-apis` と `test/real-source-p16.test.mjs` / `test/reactive-fixture-p16.test.mjs`。
 - A24: `test/contracts/reactive-cases.ts`（台帳）、`scripts/check-contracts.mjs`（照合）、CI の `npm run check:contracts`。
 - A14/A19/A20/A22 は P16 の fixture が一部の subcase を覆ったのみで、残りは台帳の `missingFixture` が示す。
+- A18: `test/distribution-p17.test.mjs`（独立 CLI・bin・dist 追跡・toolchain 分離）、`scripts/check-dist.mjs` /
+  `check-install.mjs` / `smoke-dist.mjs`、CI の install・smoke・node-versions ジョブ、
+  [docs/performance.md](docs/performance.md)。fixture と CI が `[~]` なのは P17-05 と P17-07 の未達による。
 
 ## 必須検知契約 R01〜R16
 

@@ -43,6 +43,10 @@ Installed into a workspace, the same command is `npx ng-wiring`:
 npx ng-wiring 'data-id="searchInputField"' --project app --out-dir reports
 ```
 
+Run times and peak memory for a real application and for generated workspaces
+of several sizes are recorded in [docs/performance.md](docs/performance.md),
+together with what that measurement could not obtain.
+
 The analysed workspace supplies its own toolchain. ng-wiring resolves
 TypeScript, `@angular/compiler` and `@angular/core` from the target's
 `node_modules` (§4.2) and never falls back to a copy of its own; the pinned
