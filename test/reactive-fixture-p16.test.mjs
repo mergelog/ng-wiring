@@ -330,3 +330,36 @@ test('events-apis: a single event creator reaches both reducers, ReducerEvents f
   // An event this dispatch does not carry is never delivered.
   assert(!keys.includes('event-consume|[Grid] pageChanged|src/grid.store.ts:10:5'));
 });
+
+// R15: the RxJS consumption APIs, and what each of them does and does not start.
+test('rxjs-consume: a Promise-consumed join starts both requests and a subscribe starts one', async () => {
+  const join = await analyzeFixture('rxjs-consume', { target: 'data-id=joinButton' });
+  const joinKeys = edgeKeys(join.report);
+  assert(joinKeys.includes('http-create|src/api.ts#MetricsApi|GET /api/metrics/experiments'));
+  assert(joinKeys.includes('http-create|src/api.ts#MetricsApi|GET /api/metrics/models'));
+  assert(joinKeys.includes('http-consume|GET /api/metrics/experiments|promise-consume'));
+  assert(joinKeys.includes('state-write|click → loadBoth()|total'));
+  assert(joinKeys.includes('state-read|total|<span>'));
+
+  // Only the request this starting point reaches is reported.
+  const first = await analyzeFixture('rxjs-consume', { target: 'data-id=firstButton' });
+  const firstKeys = edgeKeys(first.report);
+  assert(firstKeys.includes('http-consume|GET /api/metrics/experiments|promise-consume'));
+  assert.deepEqual(firstKeys.filter(key => key.includes('/api/metrics/models')), [],
+    'a request this operation never reaches was attributed to it');
+});
+
+test('rxjs-consume: the success and the failure handler each keep their own notification', async () => {
+  const { report } = await analyzeFixture('rxjs-consume', { target: 'data-id=tapButton' });
+  const keys = edgeKeys(report);
+  assert(keys.includes('http-consume|GET /api/metrics/tapped|subscribe'));
+  // tapResponse writes one state on success and another on failure; both branches survive.
+  assert(keys.includes('state-write|click → tapBoth()|total'));
+  assert(keys.includes('state-write|click → tapBoth()|failed'));
+
+  const mapped = await analyzeFixture('rxjs-consume', { target: 'data-id=mapButton' });
+  const mappedKeys = edgeKeys(mapped.report);
+  assert(mappedKeys.includes('state-write|click → mapBoth()|total'));
+  assert.deepEqual(mappedKeys.filter(key => key.endsWith('|failed')), [],
+    'the error branch of another operator was attributed to mapResponse');
+});
