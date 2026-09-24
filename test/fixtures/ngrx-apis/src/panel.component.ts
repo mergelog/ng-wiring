@@ -1,9 +1,9 @@
 import { Component, inject, signal } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { Subject } from 'rxjs';
-import { auditEvents, searchRequested, termChanged } from './actions';
+import { auditEvents, noteAdded, searchRequested, termChanged } from './actions';
 import { SearchFacade } from './facade';
-import { selectHits, selectOpened, selectTerm } from './reducer';
+import { notesFeature, selectHits, selectOpened, selectTerm } from './reducer';
 
 @Component({
   selector: 'app-search-panel',
@@ -15,9 +15,11 @@ import { selectHits, selectOpened, selectTerm } from './reducer';
     <button data-id="subjectButton" (click)="viaSubject()">subject</button>
     <button data-id="effectButton" (click)="runSearch()">run</button>
     <button data-id="groupButton" (click)="openPanel()">open</button>
+    <button data-id="featureButton" (click)="addNote()">note</button>
     <span class="term">{{ term() }}</span>
     <span class="hits">{{ hits() }}</span>
     <span class="opened">{{ opened() }}</span>
+    <span class="notes">{{ notes().length }}</span>
   `,
 })
 export class SearchPanelComponent {
@@ -28,6 +30,7 @@ export class SearchPanelComponent {
   readonly term = this.store.selectSignal(selectTerm);
   readonly hits = this.store.selectSignal(selectHits);
   readonly opened = this.store.selectSignal(selectOpened);
+  readonly notes = this.store.selectSignal(notesFeature.selectNotes);
   /** The Observable form of the same read, with a live subscription. */
   private readonly watching = this.store.select(selectTerm).subscribe(value => this.draft.set(value));
 
@@ -56,6 +59,10 @@ export class SearchPanelComponent {
 
   runSearch(): void {
     this.store.dispatch(searchRequested({ term: 'run' }));
+  }
+
+  addNote(): void {
+    this.store.dispatch(noteAdded({ text: 'first' }));
   }
 
   openPanel(): void {

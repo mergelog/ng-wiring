@@ -1,5 +1,5 @@
-import { createFeatureSelector, createReducer, createSelector, on } from '@ngrx/store';
-import { auditEvents, panelOpened, searchSucceeded, termChanged } from './actions';
+import { createFeature, createFeatureSelector, createReducer, createSelector, on } from '@ngrx/store';
+import { auditEvents, noteAdded, panelOpened, searchSucceeded, termChanged } from './actions';
 
 export interface SearchState { term: string; hits: number }
 export interface AuditState { opened: number }
@@ -18,6 +18,13 @@ export const auditReducer = createReducer(
   on(panelOpened, state => ({ ...state, opened: state.opened + 1 })),
   on(auditEvents.panelClosed, state => ({ ...state, opened: state.opened - 1 })),
 );
+
+/** The reducer sits inside an object literal, which is the form R09 also requires. */
+export const notesFeature = createFeature({
+  name: 'notes',
+  reducer: createReducer({ notes: [] as string[] },
+    on(noteAdded, (state, { text }) => ({ ...state, notes: [...state.notes, text] }))),
+});
 
 export const selectSearch = createFeatureSelector<SearchState>('search');
 export const selectTerm = createSelector(selectSearch, state => state.term);

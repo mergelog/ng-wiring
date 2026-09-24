@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P15 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には、各解析層から中間モデルへの組み立て（P16）が残っている（§1, §2）。
+現状: **実装中**。P0〜P16 を実施済みで、`ng-wiring` は候補選択から資料出力まで通る。残りは P17（配布・性能）、P18（実例シナリオ）と、P16 の台帳が示す R 契約 28 subcase の未達（P10〜P12 の解析側）である（§1, §2）。
 
 ## 進捗サマリ
 
@@ -26,11 +26,11 @@
 | P13 中間モデルと schema | `src/model`, `docs` | 15 | 15 | P5〜P12 |
 | P14 renderer とファイル名 | `src/render` | 22 | 22 | P13 |
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 6 | P13 |
-| P16 fixture・期待台帳・CI | `test/` | 15 | 14 | 各フェーズ並行 |
+| P16 fixture・期待台帳・CI | `test/` | 15 | 15 | 各フェーズ並行 |
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **217** | |
+| **合計** | | **237** | **218** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -326,7 +326,7 @@ P1-09 はこのフェーズで fixture が揃ったため `[~]` から `[x]` に
 - [x] P16-04 表の検知 API に加え、期待値欄の reducer/selector API と本文で追加した RxJS 消費 API も台帳対象にする（§10）
 - [x] P16-05 テスト対象を実装レジストリから生成しない構成にする（実装から漏れた API がテストからも消えるため）（§10）
 - [x] P16-06 CI で期待台帳 → 実装登録 → 実行された fixture 結果を突き合わせる（§10）
-- [~] P16-07 CI 失敗条件（R01〜R15 の必須 API が unsupported、fixture が未登録/skip/todo、期待辺の欠落、禁止辺の出現、起点やソース根拠の誤り）（§10）
+- [x] P16-07 CI 失敗条件（R01〜R15 の必須 API が unsupported、fixture が未登録/skip/todo、期待辺の欠落、禁止辺の出現、起点やソース根拠の誤り）（§10）
 - [x] P16-08 R16 は所定の境界・partial・診断が出ることを合格条件にする。単語検出・件数一致・スナップショット更新を合格にしない（§10）
 - [x] P16-09 effect/API が存在しない 4 ケースを独立した必須 fixture にする（`UI → signal.set/update → 表示`、`UI → SignalStore method → patchState → 表示`、`UI → Store.dispatch → reducer → selectSignal → 表示`、`UI → injectDispatch → withReducer → 表示`）（§10）
 - [x] P16-10 別 fixture で `effect/handler → API → state 更新` を追加し、両方の経路が残ることを確認（§10）
@@ -335,6 +335,16 @@ P1-09 はこのフェーズで fixture が揃ったため `[~]` から `[x]` に
 - [x] P16-13 設計表の R ID と台帳の各 API/subcase の転記を実装レビューで照合（§10）
 - [x] P16-14 検出した構文/型/設定エラーと関連する解析欠落を必ず出す（対象アプリ全体のビルド成功は合格条件にしない）（§10）
 - [x] P16-15 受け入れ条件 A01〜A24 は末尾の [A 対応表](#受け入れ条件-a01a24) で管理（§10）
+
+実装メモ: 各解析層から中間モデルへの組み立ては `src/assemble` に置いた。`analyzeWorkspace` が context ごとに catalog・ngmaze 基礎グラフ・テンプレート索引・route グラフ・候補を作り、`assembleReport` が選択候補 1 件を §5 のモデルへ正規化する。確定度・coverage・ID は `ReportBuilder` が決め、組み立て側では再計算しない。`createBackend` が `analyze` と `write` で同じ Program を使い回す。
+
+表示経路は `placeSteps` が ViewStep を occurrence ノードへ落とす。`component-use` と直後の `element` は同じ位置の 2 ステップなので 1 ノードに畳む（§5 の occurrence 鍵は relation を含まないため、畳まないと ID が衝突する）。route ノードは表示連鎖に入れず、`<router-outlet>` を持つ要素を表示親にする（§6.2）。bootstrap は `bootstrap`（application→component 宣言）と `display-parent` の 2 辺を出す。
+
+操作側は listener ごとに 1 operation を作り、reactive 層 → NgRx/HTTP trace の順に材料化する。片方が止まった位置を他方が解決していれば、境界ではなく `resolvedBy` 付きの未検出として記録する（§8, P15-06）。Store member と signal の write は「解決済み受信者への呼出しで実際に入った method」に限って帰属させる。ハンドラー名と同名の Store member を取り違えないための条件である。
+
+台帳 `test/contracts/reactive-cases.ts` は §7.6 の表からの手書き転記で、110 subcase を持つ。`scripts/check-contracts.mjs` が 台帳 → 実装レジストリ → fixture 実行結果 を突き合わせ、CI で失敗させる。2026-09-25 時点で 82 subcase が fixture 合格、28 subcase が未達で、いずれも「どの fixture のどの起点が何を示しているか」を `demonstratedBy` と `missingFixture` に持つ。未達の内訳は R08 が 6（rxMethod/signalMethod の本体に入れない）、R09/R10 が 7（createActionGroup、creator を介さない action object、`Store.next`、関数 overload の区別、`store.select().subscribe()` の稼働判定、`createFeature` 内の reducer）、R05/R06 が 6（extends・withFeature 越しの member 解決、provider 別インスタンス、生成 Store の withComputed/withLinkedState/withHooks）、R04 が 2（toSignal/toObservable の接続）、R07 が 2（watchState/deepComputed の接続）、R15 が 4（of/from/distinctUntilChanged の辺化、設定 Store の method 到達）、R14 が 1（mapToScope の fixture）。これらは P10〜P12 の解析側の未達であり、台帳を削って通すことはしない（§10, P16-12）。
+
+P16 の作業中に他フェーズへ入れた修正: `src/resolve/operation/expressions.ts` に補間式（`{{ }}`）の解決を追加した（§7.2, P8）。これが無いと state が画面に届く辺を一切作れない。`src/adapters/reactive/capabilities.ts` に `of` / `from` / `distinctUntilChanged` / `tapResponse` / `mapResponse` を登録し、`injectDispatch` / `Dispatcher.dispatch` の contracts に R14 を加えた（§7.6, P11）。いずれも意味モデルは既にあり、レジストリへの登録だけが漏れていた。
 
 ## P17 配布・性能（§9, §10）
 
@@ -402,22 +412,24 @@ P1-09 はこのフェーズで fixture が揃ったため `[~]` から `[x]` に
 
 | ID | 検知する API・形態 | matcher 実装 | 意味モデル | 台帳転記 | 全 subcase fixture |
 | --- | --- | --- | --- | --- | --- |
-| R01 | `signal`、read、`set/update/asReadonly`、別名・service/facade 経由 | [x] | [x] | [ ] | [ ] |
-| R02 | `computed/linkedSignal`、equal、条件付き read、`untracked` | [x] | [x] | [ ] | [ ] |
-| R03 | Angular `effect/afterRenderEffect`、cleanup/destroy | [x] | [x] | [ ] | [ ] |
-| R04 | `input/model`、`toSignal/toObservable`、`Store.selectSignal` | [x] | [x] | [ ] | [ ] |
-| R05 | `signalStore/signalStoreFeature/withFeature`、生成変数・extends・再利用 feature | [x] | [x] | [ ] | [ ] |
-| R06 | `withState/withComputed/withLinkedState/withProps/withMethods/withHooks` | [x] | [x] | [ ] | [ ] |
-| R07 | `signalState/patchState/getState/watchState/deepComputed`、state の深いプロパティ | [x] | [x] | [ ] | [ ] |
-| R08 | `rxMethod`、`signalMethod` | [x] | [x] | [ ] | [ ] |
-| R09 | `Store.dispatch(action)`、facade 経由、action object、`createAction/createActionGroup` | [ ] | [ ] | [ ] | [ ] |
-| R10 | `Store.dispatch(() => action)` と明示 injector、`Store.next(action)` | [ ] | [ ] | [ ] | [ ] |
-| R11 | NgRx `createEffect/ofType`、返却 action、手動 dispatch、`dispatch:false` | [x] | [x] | [ ] | [ ] |
-| R12 | SignalStore `event/eventGroup`、`injectDispatch`、`Dispatcher.dispatch` | [x] | [x] | [ ] | [ ] |
-| R13 | `withReducer/on`、`Events.on/ReducerEvents`、`withEventHandlers` | [x] | [x] | [ ] | [ ] |
-| R14 | `provideDispatcher`、self/parent/global、`toScope/mapToScope`、複数 Store | [x] | [x] | [ ] | [ ] |
-| R15 | 実アプリ由来の複合ケース（ログ画面の injectDispatch→event→withReducer/withEventHandlers、設定 Store の withMethods→lastValueFrom(forkJoin)→patchState） | [ ] | [ ] | [ ] | [ ] |
-| R16 | 未対応版・未知 custom feature・`@ngrx/signals/entities`/resource 等（Angular resource/rxResource/httpResource、NgRx ComponentStore、外部 toolkit を含む） | [x] | [x] | [ ] | [ ] |
+| R01 | `signal`、read、`set/update/asReadonly`、別名・service/facade 経由 | [x] | [x] | [x] | [x] |
+| R02 | `computed/linkedSignal`、equal、条件付き read、`untracked` | [x] | [x] | [x] | [x] |
+| R03 | Angular `effect/afterRenderEffect`、cleanup/destroy | [x] | [x] | [x] | [x] |
+| R04 | `input/model`、`toSignal/toObservable`、`Store.selectSignal` | [x] | [x] | [x] | [~] |
+| R05 | `signalStore/signalStoreFeature/withFeature`、生成変数・extends・再利用 feature | [x] | [x] | [x] | [~] |
+| R06 | `withState/withComputed/withLinkedState/withProps/withMethods/withHooks` | [x] | [x] | [x] | [~] |
+| R07 | `signalState/patchState/getState/watchState/deepComputed`、state の深いプロパティ | [x] | [x] | [x] | [~] |
+| R08 | `rxMethod`、`signalMethod` | [x] | [x] | [x] | [~] |
+| R09 | `Store.dispatch(action)`、facade 経由、action object、`createAction/createActionGroup` | [x] | [x] | [x] | [~] |
+| R10 | `Store.dispatch(() => action)` と明示 injector、`Store.next(action)` | [~] | [~] | [x] | [~] |
+| R11 | NgRx `createEffect/ofType`、返却 action、手動 dispatch、`dispatch:false` | [x] | [x] | [x] | [x] |
+| R12 | SignalStore `event/eventGroup`、`injectDispatch`、`Dispatcher.dispatch` | [x] | [x] | [x] | [x] |
+| R13 | `withReducer/on`、`Events.on/ReducerEvents`、`withEventHandlers` | [x] | [x] | [x] | [x] |
+| R14 | `provideDispatcher`、self/parent/global、`toScope/mapToScope`、複数 Store | [x] | [x] | [x] | [~] |
+| R15 | 実アプリ由来の複合ケース（ログ画面の injectDispatch→event→withReducer/withEventHandlers、設定 Store の withMethods→lastValueFrom(forkJoin)→patchState） | [~] | [~] | [x] | [~] |
+| R16 | 未対応版・未知 custom feature・`@ngrx/signals/entities`/resource 等（Angular resource/rxResource/httpResource、NgRx ComponentStore、外部 toolkit を含む） | [x] | [x] | [x] | [x] |
+
+`[~]` は一部の API/形態だけが通っている状態。台帳転記は全行 `[x]`（`test/contracts/reactive-cases.ts` に 110 subcase）で、fixture 列は `npm run check:contracts` の結果と対応する。2026-09-25 時点で 82 subcase 合格・28 subcase 未達。未達は全て台帳の `demonstratedBy` が示す fixture 起点で再現でき、内訳は P16 の実装メモに記した。
 
 ## 完了時の報告規約（§10）
 

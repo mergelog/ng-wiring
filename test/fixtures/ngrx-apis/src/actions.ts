@@ -4,6 +4,7 @@ export const termChanged = createAction('[Search] term changed', props<{ term: s
 export const searchRequested = createAction('[Search] requested', props<{ term: string }>());
 export const searchSucceeded = createAction('[Search] succeeded', props<{ hits: number }>());
 export const panelOpened = createAction('[Audit] panel opened');
+export const noteAdded = createAction('[Notes] added', props<{ text: string }>());
 
 export const auditEvents = createActionGroup({
   source: 'Audit',

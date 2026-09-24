@@ -98,8 +98,10 @@ test('every fixture the ledger names exists on disk', async () => {
   // The unfixtured cases are the recorded gap, not a silent omission.
   for (const item of unfixturedCases()) {
     assert(item.missingFixture.trim().length > 0, `${item.id} has no fixture and no reason`);
-    // A case a fixture already demonstrates names that fixture, so the gap is a result and not a plan.
-    if (item.demonstratedBy) {
+    // Every gap is a run, not a plan: some fixture must show what the case is waiting for.
+    assert(item.demonstratedBy !== null,
+      `${item.id} has no fixture and no run that demonstrates the gap: ${item.missingFixture}`);
+    {
       const directory = path.join(fixtureRoot, item.demonstratedBy.id);
       const found = await stat(directory).then(entry => entry.isDirectory(), () => false);
       assert(found, `${item.id} names the missing fixture ${item.demonstratedBy.id}`);
@@ -201,5 +203,36 @@ test('no subcase is dropped, and only R16 may be an unsupported range', () => {
   for (const item of reactiveCases()) {
     if (item.kind === 'unsupported') assert.equal(item.contract, 'R16', `${item.id} was moved to unsupported`);
     if (item.contract === 'R16') assert.equal(item.kind, 'unsupported', `${item.id} claims support`);
+  }
+});
+
+/** The R01–R16 table of x-tasks.md, which records how far each contract has got. */
+async function contractTable() {
+  const text = await readFile(path.join(repoRoot, 'x-tasks.md'), 'utf8');
+  const section = text.slice(text.indexOf('## 必須検知契約 R01〜R16'));
+  return section.split('\n').filter(line => /^\| R\d\d \|/.test(line)).map(row => {
+    const cells = row.split('|').map(cell => cell.trim());
+    return { id: cells[1], matcher: cells[3], model: cells[4], ledger: cells[5], fixture: cells[6] };
+  });
+}
+
+// P16-13: the contract table records the ledger and the fixture coverage, and the two must agree.
+test('the contract table agrees with the ledger and with the fixture coverage', async () => {
+  const rows = await contractTable();
+  assert.equal(rows.length, contractIds.length);
+  const states = ['[ ]', '[~]', '[x]'];
+  for (const row of rows) {
+    for (const [name, value] of [['matcher', row.matcher], ['model', row.model], ['ledger', row.ledger],
+      ['fixture', row.fixture]]) {
+      assert(states.includes(value), `${row.id} ${name} is ${value}`);
+    }
+    const cases = reactiveCases().filter(item => item.contract === row.id);
+    // The ledger column is a fact about the ledger, so it is read off the ledger.
+    assert.equal(row.ledger, cases.length > 0 ? '[x]' : '[ ]', `${row.id} ledger column is wrong`);
+    // The fixture column is a fact about the coverage of that row's subcases.
+    const covered = cases.filter(item => item.fixture !== null).length;
+    const expected = covered === 0 ? '[ ]' : covered === cases.length ? '[x]' : '[~]';
+    assert.equal(row.fixture, expected,
+      `${row.id} fixture column says ${row.fixture} while ${covered} of ${cases.length} subcases have one`);
   }
 });

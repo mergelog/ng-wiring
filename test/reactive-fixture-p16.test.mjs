@@ -410,3 +410,14 @@ test('interop-apis: the after-render phase and the explicit destroy stay on thei
   assert(text(changeDetection.conditionId).includes('explicitly destroyed at'),
     text(changeDetection.conditionId));
 });
+
+// R05/R06: a Store that is provided and never injected does not exist, so nothing of it may appear.
+test('signal-store-apis: a Store that was only provided is not running', async () => {
+  const { report } = await analyzeFixture('signal-store-apis', { target: 'data-id=shoutButton' });
+  const keys = edgeKeys(report);
+  assert.deepEqual(keys.filter(key => key.includes('idle') || key.includes('touch')), [],
+    'a Store that is only provided was treated as created');
+  // The class-extends form is catalogued, but its method call is where this version stops.
+  assert(report.edges.some(edge => edge.kind === 'boundary' && edge.confidence === 'unresolved'));
+  assert.equal(report.status, 'partial');
+});

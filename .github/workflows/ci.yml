@@ -12,5 +12,6 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run check:contracts
+      # `check:dist` runs first so a build mismatch is still reported when the contract check is red.
       - run: npm run check:dist
+      - run: npm run check:contracts
