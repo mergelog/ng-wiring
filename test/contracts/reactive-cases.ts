@@ -89,6 +89,7 @@ const entry = (draft: Draft): ReactiveCase => ({
 });
 
 const signalWrite = (target: string): FixtureRef => ({ id: 'signal-write', target });
+const signalApis = (target: string): FixtureRef => ({ id: 'signal-apis', target });
 const patchFixture: FixtureRef = { id: 'signal-store-patch', target: 'data-id=filterField' };
 const dispatchFixture: FixtureRef = { id: 'store-dispatch', target: 'data-id=termField' };
 const eventsFixture: FixtureRef = { id: 'events-reducer', target: 'data-id=termField' };
@@ -118,10 +119,12 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R01', id: 'R01/signal.asReadonly', package: '@angular/core', export: 'WritableSignal',
     member: 'asReadonly', form: 'member', version: ANGULAR,
     expectation: 'asReadonly の参照を同一状態の読み取り用参照として結ぶ',
-    missingFixture: 'read-only 参照を公開する fixture が未作成' }),
+    fixture: signalApis('data-id=termField'),
+    expectedEdges: ['reactive-link|term|currentTerm', 'state-read|currentTerm|<span>'] }),
   entry({ contract: 'R01', id: 'R01/signal.via-service', package: '@angular/core', export: 'signal', form: 'form',
     version: ANGULAR, expectation: '別名・service/facade 経由で参照された同じ signal を同一状態として結ぶ',
-    missingFixture: 'service 経由で signal を公開する fixture が未作成' }),
+    fixture: signalApis('data-id=termField'),
+    expectedEdges: ['call|src/term.component.ts#TermComponent|service.setTerm', 'state-read|currentTerm|<span>'] }),
 
   // ---- R02 derived values and the tracking rules ---------------------------------------------------
   entry({ contract: 'R02', id: 'R02/computed', package: '@angular/core', export: 'computed', version: ANGULAR,
@@ -130,13 +133,17 @@ const ledger: ReactiveCase[] = [
     expectedEdges: ['reactive-link|count|doubled', 'state-read|doubled|<span>'] }),
   entry({ contract: 'R02', id: 'R02/computed.equal', package: '@angular/core', export: 'computed', member: 'equal',
     form: 'option', version: ANGULAR, expectation: 'equal の比較関数を条件として残す',
-    missingFixture: 'equal を指定した computed の fixture が未作成' }),
+    fixture: signalApis('data-id=termField'),
+    expectedEdges: ['reactive-link|term|upper', 'state-read|upper|<span>'] }),
   entry({ contract: 'R02', id: 'R02/linkedSignal', package: '@angular/core', export: 'linkedSignal', version: ANGULAR,
     expectation: 'source 変化による再計算と明示 write の双方を検知する',
-    missingFixture: 'linkedSignal の fixture が未作成' }),
+    fixture: signalApis('data-id=draftButton'),
+    expectedEdges: ['state-write|click → stageDraft()|draft', 'state-read|draft|<span>'] }),
   entry({ contract: 'R02', id: 'R02/untracked', package: '@angular/core', export: 'untracked', version: ANGULAR,
     expectation: 'untracked 内の read を依存にせず、中の write/dispatch は残す',
-    missingFixture: 'untracked の fixture が未作成' }),
+    fixture: signalApis('data-id=silentButton'),
+    expectedEdges: ['state-write|click → countSilently()|hits', 'state-read|hits|<span>'],
+    forbiddenEdges: [{ kind: 'reactive-link', from: 'term', reason: 'untracked の read を再実行の依存にしない' }] }),
   entry({ contract: 'R02', id: 'R02/conditional-read', package: '@angular/core', export: 'computed', form: 'form',
     version: ANGULAR, expectation: '条件付き read の依存追加/除去を条件付きで表示する',
     missingFixture: '条件分岐で read が変わる fixture が未作成' }),
@@ -144,19 +151,22 @@ const ledger: ReactiveCase[] = [
   // ---- R03 effects, phase, teardown ----------------------------------------------------------------
   entry({ contract: 'R03', id: 'R03/effect', package: '@angular/core', export: 'effect', version: ANGULAR,
     expectation: '初回実行・依存変化を区別し、生成だけで全 callback を操作の結果にしない',
-    missingFixture: 'effect を使う fixture が未作成（R03 は必須対応のため未達）' }),
+    fixture: signalApis('data-id=termField'),
+    expectedEdges: ['reactive-link|term|angular/effect'] }),
   entry({ contract: 'R03', id: 'R03/afterRenderEffect', package: '@angular/core', export: 'afterRenderEffect',
     version: ANGULAR, expectation: '描画後 phase を effect と別に保持する',
     missingFixture: 'afterRenderEffect の fixture が未作成' }),
   entry({ contract: 'R03', id: 'R03/effect.onCleanup', package: '@angular/core', export: 'effect', member: 'onCleanup',
     form: 'option', version: ANGULAR, expectation: 'cleanup 登録を終了条件として残す',
-    missingFixture: 'onCleanup の fixture が未作成' }),
+    fixture: signalApis('data-id=termField'),
+    expectedEdges: ['reactive-link|term|angular/effect'] }),
   entry({ contract: 'R03', id: 'R03/EffectRef.destroy', package: '@angular/core', export: 'EffectRef',
     member: 'destroy', form: 'member', version: ANGULAR, expectation: '明示破棄を生存期間の終端として残す',
     missingFixture: 'EffectRef.destroy の fixture が未作成' }),
   entry({ contract: 'R03', kind: 'counter-example', id: 'R03/effect.await-read', package: '@angular/core', export: 'effect', form: 'form',
     version: ANGULAR, expectation: 'await 後の read を自動依存にしない',
-    missingFixture: 'await を挟む effect の fixture が未作成' }),
+    fixture: signalApis('data-id=silentButton'),
+    forbiddenEdges: [{ kind: 'reactive-link', to: 'angular/effect', reason: '追跡外の read を effect の依存にしない' }] }),
 
   // ---- R04 inputs, the RxJS interop boundary, the Store signal consumer -----------------------------
   entry({ contract: 'R04', id: 'R04/input', package: '@angular/core', export: 'input', version: ANGULAR,

@@ -20,7 +20,7 @@ import { detail, edgeContracts, unresolvedDetail } from '../model/types.js';
 import { SourceEvidence } from './evidence.js';
 import { downwardEdgeKind, placeSteps } from './view-path.js';
 import { findPatchStateCalls, templateReads } from './reactive-calls.js';
-import { httpTraceEdges, reactiveStepEdges, storeTraceEdges } from './steps.js';
+import { completeDetails, httpTraceEdges, reactiveStepEdges, storeTraceEdges } from './steps.js';
 const handlerMethod = (handler) => /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\(/.exec(handler)?.[1] ?? null;
 const allowed = (kind, from, to) => edgeContracts[kind].from.includes(from) && edgeContracts[kind].to.includes(to);
 /**
@@ -375,6 +375,42 @@ function addOperations(input) {
     const methods = analyzeReactiveMethods(context, stores);
     const eventGraph = analyzeEvents(context, stores);
     const patchStates = findPatchStateCalls(context);
+    /** The class and member a recorded position sits in, so a write inside a called method is attributed. */
+    const enclosingMemberAt = (location) => {
+        const at = evidence.offsetOf(location);
+        if (!at)
+            return null;
+        const source = context.program.getSourceFile(path.resolve(context.workspaceRoot, at.file));
+        if (!source)
+            return null;
+        let classId = null;
+        let member = null;
+        const visit = (node) => {
+            if (node.getEnd() <= at.offset || node.getStart(source) > at.offset)
+                return;
+            if (t.isClassDeclaration(node) && node.name)
+                classId = `${relative(source.fileName)}#${node.name.text}`;
+            if ((t.isMethodDeclaration(node) || t.isPropertyDeclaration(node) || t.isPropertyAssignment(node)) &&
+                (t.isIdentifier(node.name) || t.isStringLiteralLike(node.name)))
+                member = node.name.text;
+            t.forEachChild(node, visit);
+        };
+        visit(source);
+        return { classId, member };
+    };
+    /** The class a component member holds, so `service.value()` resolves to the class that declares it. */
+    const memberClassFor = (ownerId, member) => {
+        const declaration = catalog.declarations.get(ownerId);
+        if (!declaration)
+            return null;
+        const property = context.checker.getTypeAtLocation(declaration.node).getProperty(member);
+        if (!property)
+            return null;
+        const held = context.checker.getTypeOfSymbolAtLocation(property, declaration.node).getSymbol();
+        const node = held?.declarations?.find(item => t.isClassDeclaration(item));
+        return node && t.isClassDeclaration(node) && node.name
+            ? `${relative(node.getSourceFile().fileName)}#${node.name.text}` : null;
+    };
     /** The member a component holds an injected SignalStore in, so `store.key()` can be resolved. */
     const storeMemberFor = (ownerId, declarationId) => {
         const instance = stores.instances.find(item => sameOwnerId(ownerId, item.owner) &&
@@ -544,14 +580,28 @@ function addOperations(input) {
             const scope = { nodes: scopeNodes, edges: scopeEdges };
             const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers, { outputElement: targetElement, catalog });
             const httpTrace = traceHttpFromMethod(context, httpCatalog, owner, method, { catalog, store: storeGraph, methods, stores, layers });
-            // Methods this operation entered, so a Store write only counts when the operation reached it.
+            // Methods this operation entered, so a write only counts when the operation actually reached it.
             const entered = new Set([method, ...storeTrace.steps.filter(step => step.kind === 'call')
                     .map(step => step.target.slice(step.target.lastIndexOf('.') + 1))]);
+            // The same, resolved to the class that owns each entered method: `field.method` names the class the
+            // component holds in `field`, and a bare method name is the component's own.
+            const enteredIn = storeTrace.steps.filter(step => step.kind === 'call').map(step => {
+                const dot = step.target.lastIndexOf('.');
+                return dot < 0 ? { classId: ownerId, member: step.target }
+                    : { classId: memberClassFor(ownerId, step.target.slice(0, dot)), member: step.target.slice(dot + 1) };
+            });
+            const reached = (location) => {
+                if (inside(location))
+                    return true;
+                const at = enclosingMemberAt(location);
+                return !!at && enteredIn.some(item => item.member === at.member && !!item.classId &&
+                    sameOwnerId(item.classId, at.classId));
+            };
             // The reactive layer runs first so the NgRx and HTTP traces can be reconciled against what it resolved.
-            const keys = addReactiveWrites({ listenerNode, inside, signals, eventGraph, owners, materialize,
+            const keys = addReactiveWrites({ listenerNode, inside: reached, signals, eventGraph, owners, materialize,
                 scope, storeGraph, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId });
             addDisplayReads({ analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope,
-                storeMemberFor });
+                storeMemberFor, memberClassFor });
             materialize(reconcile(storeTraceEdges(storeTrace), ownerId), scope);
             materialize(reconcile(httpTraceEdges(httpTrace), ownerId), scope);
             if (!declaration) {
@@ -583,9 +633,11 @@ function addReactiveWrites(input) {
     const listenerEnd = { kind: 'listener', id: 'listener', label: 'listener', nodeId: listenerNode };
     for (const write of signals.writes.filter(item => inside(item.location))) {
         const source = signals.sources.find(item => item.id === write.sourceId);
+        // A derived value can be written explicitly as well; it is then named by the link that declares it.
+        const derivedTarget = source ? null : signals.links.find(item => item.id === write.sourceId);
         const stateId = source ? `${source.state.instance ?? source.state.declaration}.${source.state.key ?? ''}`
-            : write.id;
-        const label = source?.state.key ?? write.id;
+            : derivedTarget?.id ?? write.id;
+        const label = source?.state.key ?? derivedTarget?.to ?? write.id;
         const node = { kind: 'state', id: stateId, label };
         traced.push({ kind: 'state-write', from: listenerEnd, to: node, location: write.location,
             conditions: write.conditions, capability: write.capability,
@@ -593,6 +645,8 @@ function addReactiveWrites(input) {
                 valueExpression: unresolvedDetail('更新値の式は signal 解析が記録していない') } });
         if (source)
             keys.push({ ownerId: source.state.instance, member: source.state.key ?? label, node });
+        else if (derivedTarget?.to)
+            keys.push({ ownerId: null, member: derivedTarget.to, node });
         // §7.6 a derived value keeps its own link; the write reaches it without an effect. The dependency is
         // a read of this source inside the derived expression itself, not a name that happens to match.
         for (const link of signals.links) {
@@ -622,6 +676,28 @@ function addReactiveWrites(input) {
                 keys.push({ ownerId: consumer.owner, member: key, storeId: consumer.storeId,
                     node: { kind: 'state', id: [consumer.storeId ?? consumer.id, consumer.owner, key].filter(Boolean).join('.'), label: key } });
             }
+    }
+    // §7.6 an effect that tracks the written state re-runs; only a tracked read is such a dependency, so a
+    // read after an await or inside untracked never becomes one.
+    for (const write of signals.writes.filter(item => inside(item.location) && item.sourceId)) {
+        const source = signals.sources.find(item => item.id === write.sourceId);
+        const label = source?.state.key ?? write.id;
+        const stateNode = { kind: 'state',
+            id: source ? `${source.state.instance ?? source.state.declaration}.${source.state.key ?? ''}` : write.id,
+            label };
+        for (const effect of signals.effects) {
+            const tracked = effect.reads.some(id => signals.reads.some(read => read.id === id && read.sourceId === write.sourceId));
+            if (!tracked)
+                continue;
+            traced.push({ kind: 'reactive-link', from: stateNode,
+                to: { kind: 'effect', id: effect.id, label: effect.capability },
+                location: effect.location,
+                conditions: [...effect.lifetime, ...effect.cleanups.map(at => `cleanup registered at ${at}`),
+                    ...effect.destroys.map(at => `explicitly destroyed at ${at}`)],
+                capability: effect.capability,
+                details: completeDetails('reactive-link', { source: detail(label), consumer: detail(effect.capability),
+                    operator: detail(effect.capability), scheduling: detail(effect.phase) }) });
+        }
     }
     // §7.6 a Store method this operation called writes its state with patchState; no effect is involved.
     for (const instance of stores.instances.filter(item => sameOwnerId(ownerId, item.owner) && item.created)) {
@@ -661,7 +737,7 @@ function addReactiveWrites(input) {
  * connection is a resolved member reference and not a name that merely looks alike.
  */
 function addDisplayReads(input) {
-    const { analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope, storeMemberFor } = input;
+    const { analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope, storeMemberFor, memberClassFor } = input;
     if (!keys.length)
         return;
     const { context, catalog, index } = analysis;
@@ -678,7 +754,10 @@ function addDisplayReads(input) {
                 // through the member that holds the Store this state belongs to.
                 const match = keys.find(key => key.member === read.member && (read.receiver === null
                     ? direct.has(read.member) && (key.ownerId === null || sameOwnerId(ownerId, key.ownerId))
-                    : !!key.storeId && storeMemberFor(ownerId, key.storeId) === read.receiver));
+                    // A value held elsewhere is read through the member that holds it: a generated Store, or a
+                    // class this component injects and whose own declaration owns the state.
+                    : (!!key.storeId && storeMemberFor(ownerId, key.storeId) === read.receiver) ||
+                        (!!key.ownerId && sameOwnerId(memberClassFor(ownerId, read.receiver) ?? '', key.ownerId))));
                 if (!match)
                     continue;
                 const evidenceId = evidence.span(element.span, 'exact');

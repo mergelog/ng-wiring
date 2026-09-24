@@ -165,3 +165,38 @@ for (const item of unsupportedTargets) {
       .includes(edge.kind)), [], 'an unsupported range produced a state or delivery relation');
   });
 }
+
+// R02/R03: the tracking rules decide what re-runs, and a write is never dropped because of them.
+test('signal-apis: untracked reads are no dependency while the writes they guard remain', async () => {
+  const { report } = await analyzeFixture('signal-apis', { target: 'data-id=silentButton' });
+  const keys = edgeKeys(report);
+  assert(keys.includes('state-write|click → countSilently()|hits'));
+  assert(keys.includes('state-read|hits|<span>'));
+  // Reading `term` inside untracked must not make this operation a cause of anything that tracks it.
+  assert.deepEqual(keys.filter(key => key.startsWith('reactive-link|term|')), [], keys.join('\n'));
+});
+
+test('signal-apis: a derived value, a read-only alias and an effect each keep their own conditions', async () => {
+  const { report } = await analyzeFixture('signal-apis', { target: 'data-id=termField' });
+  const conditions = new Map(report.conditions.map(item => [item.id, item]));
+  const text = (id) => {
+    const condition = conditions.get(id);
+    if (!condition) return '';
+    if (condition.kind === 'predicate') return condition.expression;
+    if (condition.kind === 'all' || condition.kind === 'any') return condition.operandIds.map(text).join(' && ');
+    return condition.kind;
+  };
+  const linkTo = (name) => report.edges.find(edge => edge.kind === 'reactive-link' &&
+    edge.details.consumer?.value === name);
+  // A custom equal decides whether consumers re-run at all, and it is written out as it was read.
+  assert(text(linkTo('upper').conditionId).includes('equal:'), text(linkTo('upper').conditionId));
+  // A linked value is recomputed and can also be replaced by an explicit write.
+  assert(text(linkTo('draft').conditionId).includes('explicit write'), text(linkTo('draft').conditionId));
+  // A read-only alias is the same state, not a second one.
+  assert(text(linkTo('currentTerm').conditionId).includes('same state'));
+  // The effect keeps its lifetime and its registered cleanup.
+  const effect = linkTo('angular/effect');
+  assert.equal(report.nodes.find(node => node.id === effect.to).kind, 'effect');
+  assert(text(effect.conditionId).includes('cleanup registered at'), text(effect.conditionId));
+  assert.equal(effect.details.scheduling.value, 'change-detection');
+});
