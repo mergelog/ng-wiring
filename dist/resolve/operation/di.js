@@ -1,4 +1,5 @@
 import { getProperty, unwrap } from '../../index/catalog.js';
+import { StaticEvaluator } from '../../workspace/evaluate.js';
 import { location } from './reactive.js';
 const slash = (s) => s.replaceAll('\\', '/');
 function symbolOf(context, node) {
@@ -53,18 +54,47 @@ function providerOf(context, expression) {
             ['value', getProperty(t, node, 'useValue')], ['factory', getProperty(t, node, 'useFactory')]
         ];
         const [kind, value] = entries.find(([, entry]) => entry) ?? ['implicit', undefined];
-        const status = kind === 'factory' || !value || tokenId(context, token).startsWith('unresolved:') ? 'boundary' : 'resolved';
+        const valueKnown = kind !== 'value' || !!value && new StaticEvaluator(t, context.checker).evaluate(value).known;
+        const status = kind === 'factory' || !value || !valueKnown || tokenId(context, token).startsWith('unresolved:') ? 'boundary' : 'resolved';
         return { token: tokenId(context, token), kind, implementation: value ?
                 (kind === 'value' ? value.getText() : tokenId(context, value)) : null,
             source: location(context, node), multi, status,
             reason: kind === 'factory' ? 'provider factory return value is not statically executed' :
-                !value ? 'provider implementation is not statically known' : status === 'boundary' ? 'provider token is unresolved' : null };
+                !valueKnown ? 'useValue expression is not statically known' :
+                    !value ? 'provider implementation is not statically known' : status === 'boundary' ? 'provider token is unresolved' : null };
     }
     if (t.isCallExpression(node))
         return null;
     const token = tokenId(context, node);
     return { token, kind: 'class', implementation: token, source: location(context, node), multi: false,
         status: token.startsWith('unresolved:') ? 'boundary' : 'resolved', reason: token.startsWith('unresolved:') ? 'class provider is unresolved' : null };
+}
+function injectableScope(context, id) {
+    const t = context.toolchain.typescript;
+    for (const file of context.sourceFiles) {
+        const source = context.program.getSourceFile(file);
+        if (!source)
+            continue;
+        for (const node of source.statements) {
+            if (!t.isClassDeclaration(node) || !node.name || tokenId(context, node.name) !== id)
+                continue;
+            for (const decorator of t.getDecorators(node) ?? []) {
+                if (!t.isCallExpression(decorator.expression))
+                    continue;
+                const callee = decorator.expression.expression;
+                const symbol = symbolOf(context, callee);
+                if (symbol?.getName() !== 'Injectable' || !symbol.declarations?.some(part => slash(part.getSourceFile().fileName).includes('/node_modules/@angular/core/')))
+                    continue;
+                const config = decorator.expression.arguments[0];
+                if (config && t.isObjectLiteralExpression(config)) {
+                    const value = getProperty(t, config, 'providedIn');
+                    if (value && t.isStringLiteralLike(value))
+                        return value.text;
+                }
+            }
+        }
+    }
+    return null;
 }
 /** Layers are ordered from the injection site outward. An explicit template injector is inserted at the site. */
 export function resolveInjection(context, request, layers) {
@@ -73,11 +103,14 @@ export function resolveInjection(context, request, layers) {
     const reasons = [];
     const ordered = [...(request.templateInjector ? [request.templateInjector] : []), ...layers]
         .filter(layer => !request.projected || layer.visibleToContent !== false);
-    const applicable = request.skipSelf ? ordered.slice(1) : ordered;
+    const group = (layer) => ['view', 'component'].includes(layer.kind)
+        ? layer.id.replace(/:(view|component)$/, '') : layer.id;
+    const siteGroup = ordered[0] ? group(ordered[0]) : '';
+    const applicable = request.skipSelf ? ordered.filter(layer => group(layer) !== siteGroup) : ordered;
     const collected = [];
     let found = false;
-    for (const [index, layer] of applicable.entries()) {
-        if (request.self && index > 0)
+    for (const layer of applicable) {
+        if (request.self && group(layer) !== siteGroup)
             break;
         searched.push(layer.id);
         const layerBindings = [];
@@ -101,6 +134,8 @@ export function resolveInjection(context, request, layers) {
             }
         }
         if (layerBindings.some(item => !item.multi)) {
+            if (collected.some(item => item.multi))
+                reasons.push('mixed multi and single providers across injector layers');
             collected.length = 0;
             collected.push(...layerBindings);
             break;
@@ -111,22 +146,13 @@ export function resolveInjection(context, request, layers) {
     }
     if (!found && !request.self && !request.host) {
         const declaration = symbolOf(context, request.token)?.valueDeclaration;
-        if (declaration && context.toolchain.typescript.isClassDeclaration(declaration)) {
-            const t = context.toolchain.typescript;
-            for (const decorator of t.getDecorators(declaration) ?? []) {
-                if (!t.isCallExpression(decorator.expression))
-                    continue;
-                const arg = decorator.expression.arguments[0];
-                if (!arg || !t.isObjectLiteralExpression(arg))
-                    continue;
-                const providedIn = getProperty(t, arg, 'providedIn');
-                if (providedIn && t.isStringLiteralLike(providedIn) && ['root', 'platform', 'any'].includes(providedIn.text)) {
-                    collected.push({ token, kind: 'implicit', implementation: token, source: location(context, decorator),
-                        multi: false, status: providedIn.text === 'root' ? 'resolved' : 'boundary',
-                        reason: providedIn.text === 'root' ? null : `providedIn ${providedIn.text} has context-dependent lifetime` });
-                    found = true;
-                }
-            }
+        const providedIn = declaration && context.toolchain.typescript.isClassDeclaration(declaration)
+            ? injectableScope(context, token) : null;
+        if (providedIn && ['root', 'platform', 'any'].includes(providedIn)) {
+            collected.push({ token, kind: 'implicit', implementation: token, source: location(context, declaration ?? request.token),
+                multi: false, status: providedIn === 'root' ? 'resolved' : 'boundary',
+                reason: providedIn === 'root' ? null : `providedIn ${providedIn} has context-dependent lifetime` });
+            found = true;
         }
     }
     if (collected.some(item => item.multi) && collected.some(item => !item.multi))
@@ -158,6 +184,12 @@ export function resolveInjection(context, request, layers) {
                     if (target)
                         break;
                 }
+                if (!target && injectableScope(context, cursor) === 'root') {
+                    item.implementation = cursor;
+                    item.status = 'resolved';
+                    item.reason = null;
+                    break;
+                }
                 if (!target) {
                     item.status = 'boundary';
                     item.reason = 'useExisting target has no provider in the selected injector';
@@ -185,6 +217,19 @@ export function resolveInjection(context, request, layers) {
         }
     return { token, bindings: collected, status: !found ? (request.optional ? 'resolved' : 'missing') :
             reasons.length ? 'boundary' : 'resolved', reasons, searched };
+}
+/** A view placement may change display ancestry without changing the injector owner. */
+export function resolveInjectionAtViewStep(context, request, layers, step) {
+    const token = tokenId(context, request.token);
+    const ownerFound = layers.some(layer => layer.id === `${step.diOwnerId}:component` ||
+        layer.id === `${step.diOwnerId}:view`);
+    if (!ownerFound)
+        return { token, bindings: [], status: 'boundary', searched: [],
+            reasons: [`DI owner ${step.diOwnerId} is absent from the selected injector path`] };
+    if (step.diContextOverride && !request.templateInjector)
+        return { token, bindings: [], status: 'boundary',
+            searched: [], reasons: [`TemplateRef injector override ${step.diContextOverride} is not resolved`] };
+    return resolveInjection(context, request, layers);
 }
 /** Reads the public Angular inject options or constructor parameter decorators. */
 export function injectionRequestFor(context, node) {
@@ -231,7 +276,7 @@ export function componentInjectorLayers(owner, parents = [], rootProviders = [],
         return item && 'initializer' in item && item.initializer ? [item.initializer] : [];
     };
     const components = [owner, ...parents].flatMap((item, index) => [
-        { id: `${item.id}:view`, kind: 'view', providers: property(item, 'viewProviders'), visibleToContent: false, host: index === 0 },
+        { id: `${item.id}:view`, kind: 'view', providers: property(item, 'viewProviders'), visibleToContent: false },
         { id: `${item.id}:component`, kind: 'component', providers: property(item, 'providers'), host: index === 0 }
     ]);
     return [...components, { id: 'route', kind: 'route', providers: routeProviders },

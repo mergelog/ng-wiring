@@ -4,7 +4,7 @@ import type { Declaration } from '../../index/catalog.js';
 import { importedApi, inspectPipe, location, operatorSemantics, type OperatorRecord } from './reactive.js';
 
 export interface OperationStep {
-  kind: 'call' | 'state-write' | 'output-emit' | 'reactive-link' | 'subscription' | 'boundary';
+  kind: 'call' | 'state-write' | 'output-emit' | 'reactive-link' | 'subscription' | 'action-dispatch' | 'boundary';
   source: string;
   target: string;
   location: string;
@@ -144,6 +144,15 @@ export function traceOperation(context: AnalysisContext, owner: Declaration, met
       if (t.isPropertyAccessExpression(expr)) {
         const action = expr.name.text;
         const target = receiverName(context, expr.expression) ?? expr.expression.getText();
+        if (action === 'dispatch') {
+          const receiver = context.checker.getTypeAtLocation(expr.expression).getSymbol();
+          if (receiver?.getName() === 'Store' && receiver.declarations?.some(d =>
+            d.getSourceFile().fileName.replaceAll('\\','/').includes('/node_modules/@ngrx/store/'))) {
+            add('action-dispatch', target, node.arguments[0]?.getText() ?? 'unknown action', node, nextPath,
+              'sync', conditions, 'Store.dispatch reached on this operation path');
+            return;
+          }
+        }
         if (action === 'emit') {
           const type = context.checker.getTypeAtLocation(expr.expression);
           const angularEmitter = !!type.getSymbol()?.declarations?.some(d => d.getSourceFile().fileName.replaceAll('\\','/')

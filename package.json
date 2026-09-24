@@ -32,7 +32,10 @@
     "@angular/common": "22.1.5",
     "@angular/core": "22.1.5",
     "@angular/forms": "22.1.5",
+    "@ngrx/effects": "22.0.0",
     "@ngrx/operators": "22.0.0",
+    "@ngrx/signals": "22.0.0",
+    "@ngrx/store": "22.0.0",
     "@types/node": "24.10.0"
   }
 }

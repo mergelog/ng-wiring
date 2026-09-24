@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P9 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P10 以降の操作、モデル、renderer の統合が必要（§1, §2）。
+現状: **実装中**。P0〜P10 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P11 以降の操作、モデル、renderer の統合が必要（§1, §2）。
 
 ## 進捗サマリ
 
@@ -20,7 +20,7 @@
 | P7 制御フローと有限化 | `src/resolve/view` | 10 | 10 | P5, P6 |
 | P8 リスナー・DOM 伝播・式 | `src/resolve/operation` | 14 | 14 | P4 |
 | P9 入出力・状態・非同期 | `src/resolve/operation` | 11 | 11 | P8 |
-| P10 DI と NgRx Store | `src/resolve/operation` | 12 | 0 | P9 |
+| P10 DI と NgRx Store | `src/resolve/operation` | 12 | 12 | P9 |
 | P11 Signal・SignalStore・dispatch | `src/adapters/reactive` | 15 | 0 | P9, P10 |
 | P12 API・HTTP・型 | `src/resolve/operation` | 7 | 0 | P9 |
 | P13 中間モデルと schema | `src/model`, `docs` | 15 | 0 | P5〜P12 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **125** | |
+| **合計** | | **237** | **137** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -199,18 +199,18 @@
 
 ## P10 DI と NgRx Store（§7.4）
 
-- [ ] P10-01 injector 階層の解決（選択 bootstrap/route/component の injector、providers/viewProviders、providedIn、useClass/useExisting/useValue/useFactory、multi、optional/self/skipSelf/host）。型注釈だけで具象を確定しない（§7.4）
-- [ ] P10-02 投影/TemplateRef と injector の文脈の区別。factory 戻り値・上書き・複数実装が一意にならなければ token で停止（§7.4）
-- [ ] P10-03 Store/feature/effect の登録解決（`provideStore/provideState/provideEffects`、`StoreModule.forRoot/forFeature`、`EffectsModule.forRoot/forFeature`、lazy route 登録、生存期間）。ファイルに effect 宣言があるだけでは有効としない（§7.4）
-- [ ] P10-04 **dispatch の検知に effect の存在を要求しない**。UI/コンポーネント/サービス/facade/SignalStore method からの dispatch と、`dispatch → reducer → select/selectSignal → 表示` を必須経路として実装（§7.4）
-- [ ] P10-05 action は creator のシンボルと type 値を記録。別 creator が同じ静的 type を持つ場合は衝突を診断して候補を残す。動的 type を名前の類似で解決しない（§7.4）
-- [ ] P10-06 成功/失敗 action は emit/return が確認できた分だけ次段へ追い、返却値の自動 dispatch 設定と `dispatch:false`、functional effect を条件に反映（§7.4）
-- [ ] P10-07 因果境界の実装（前向き追跡：同期/非同期呼出し・値の書き込み・output・dispatch・確認済み購読先）（§7.4）
-- [ ] P10-08 reducer の書き込み → selector/computed 依存 → 既存の購読/テンプレート消費。「state が変化したから必ず emit」とせず投影値・比較・購読状態を条件化（§7.4）
-- [ ] P10-09 変化の証拠がない read は参考入力とし、withLatestFrom/concatLatestFrom の既存値を過去の API へ逆接続しない。背景データ源は直接の selector/input/signal 定義までの別欄（§7.4）
-- [ ] P10-10 flow の有限化（イベントごと最大 10,000 展開状態、call stack 深さ 64、状態キーに symbol/call site・receiver・使用コンテキスト・起点イベント・抽象引数）（§7.4）
-- [ ] P10-11 現在の枝での同一キー再訪のみ循環境界とし、他の枝からの再到達は memoized 結果の別到達辺として再利用（§7.4, 2回目レビュー 1）
-- [ ] P10-12 停止理由の記録（未解決関数、外部実装、未知演算子、上限）。未知の先を架空の因果でつながない（§7.4）
+- [x] P10-01 injector 階層の解決（選択 bootstrap/route/component の injector、providers/viewProviders、providedIn、useClass/useExisting/useValue/useFactory、multi、optional/self/skipSelf/host）。型注釈だけで具象を確定しない（§7.4）
+- [x] P10-02 投影/TemplateRef と injector の文脈の区別。factory 戻り値・上書き・複数実装が一意にならなければ token で停止（§7.4）
+- [x] P10-03 Store/feature/effect の登録解決（`provideStore/provideState/provideEffects`、`StoreModule.forRoot/forFeature`、`EffectsModule.forRoot/forFeature`、lazy route 登録、生存期間）。ファイルに effect 宣言があるだけでは有効としない（§7.4）
+- [x] P10-04 **dispatch の検知に effect の存在を要求しない**。UI/コンポーネント/サービス/facade/SignalStore method からの dispatch と、`dispatch → reducer → select/selectSignal → 表示` を必須経路として実装（§7.4）
+- [x] P10-05 action は creator のシンボルと type 値を記録。別 creator が同じ静的 type を持つ場合は衝突を診断して候補を残す。動的 type を名前の類似で解決しない（§7.4）
+- [x] P10-06 成功/失敗 action は emit/return が確認できた分だけ次段へ追い、返却値の自動 dispatch 設定と `dispatch:false`、functional effect を条件に反映（§7.4）
+- [x] P10-07 因果境界の実装（前向き追跡：同期/非同期呼出し・値の書き込み・output・dispatch・確認済み購読先）（§7.4）
+- [x] P10-08 reducer の書き込み → selector/computed 依存 → 既存の購読/テンプレート消費。「state が変化したから必ず emit」とせず投影値・比較・購読状態を条件化（§7.4）
+- [x] P10-09 変化の証拠がない read は参考入力とし、withLatestFrom/concatLatestFrom の既存値を過去の API へ逆接続しない。背景データ源は直接の selector/input/signal 定義までの別欄（§7.4）
+- [x] P10-10 flow の有限化（イベントごと最大 10,000 展開状態、call stack 深さ 64、状態キーに symbol/call site・receiver・使用コンテキスト・起点イベント・抽象引数）（§7.4）
+- [x] P10-11 現在の枝での同一キー再訪のみ循環境界とし、他の枝からの再到達は memoized 結果の別到達辺として再利用（§7.4, 2回目レビュー 1）
+- [x] P10-12 停止理由の記録（未解決関数、外部実装、未知演算子、上限）。未知の先を架空の因果でつながない（§7.4）
 
 ## P11 Signal・SignalStore・dispatch の共通実装（`src/adapters/reactive`, §7.6）
 

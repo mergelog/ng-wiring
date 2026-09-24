@@ -1,6 +1,7 @@
 import type ts from 'typescript';
 import type { AnalysisContext } from '../../workspace/context.js';
 import type { Declaration } from '../../index/catalog.js';
+import type { ViewStep } from '../view/index.js';
 export type ProviderKind = 'class' | 'existing' | 'value' | 'factory' | 'implicit';
 export interface ProviderBinding {
     token: string;
@@ -37,6 +38,8 @@ export interface InjectionResolution {
 export declare function tokenId(context: AnalysisContext, node: ts.Node): string;
 /** Layers are ordered from the injection site outward. An explicit template injector is inserted at the site. */
 export declare function resolveInjection(context: AnalysisContext, request: InjectionRequest, layers: InjectorLayer[]): InjectionResolution;
+/** A view placement may change display ancestry without changing the injector owner. */
+export declare function resolveInjectionAtViewStep(context: AnalysisContext, request: InjectionRequest, layers: InjectorLayer[], step: ViewStep): InjectionResolution;
 /** Reads the public Angular inject options or constructor parameter decorators. */
 export declare function injectionRequestFor(context: AnalysisContext, node: ts.CallExpression | ts.ParameterDeclaration): InjectionRequest | null;
 export declare function componentInjectorLayers(owner: Declaration, parents?: Declaration[], rootProviders?: ts.Expression[], routeProviders?: ts.Expression[]): InjectorLayer[];

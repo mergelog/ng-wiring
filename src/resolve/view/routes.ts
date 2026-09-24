@@ -161,7 +161,7 @@ function moduleDefaultExport(context: AnalysisContext, call: ts.CallExpression):
 }
 
 /** `() => import('…').then(m => m.X)`, `async () => (await import('…')).X`, `() => X`, `() => import('…')`. */
-function lazyTarget(context: AnalysisContext, expression: ts.Expression, depth = 0): ts.Declaration | undefined {
+export function lazyTarget(context: AnalysisContext, expression: ts.Expression, depth = 0): ts.Declaration | undefined {
   const t = context.toolchain.typescript;
   if (depth > 8) return undefined;
   const node = unwrap(t, expression);

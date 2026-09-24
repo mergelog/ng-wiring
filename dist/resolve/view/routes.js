@@ -93,7 +93,7 @@ function moduleDefaultExport(context, call) {
     return target?.valueDeclaration ?? target?.declarations?.[0];
 }
 /** `() => import('…').then(m => m.X)`, `async () => (await import('…')).X`, `() => X`, `() => import('…')`. */
-function lazyTarget(context, expression, depth = 0) {
+export function lazyTarget(context, expression, depth = 0) {
     const t = context.toolchain.typescript;
     if (depth > 8)
         return undefined;

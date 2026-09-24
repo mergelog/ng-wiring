@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveToolchain } from '../dist/workspace/toolchain.js';
 import { createContext, selectProjects } from '../dist/workspace/context.js';
 import { buildCatalog } from '../dist/index/catalog.js';
-import { componentInjectorLayers, resolveInjection, injectionRequestFor } from '../dist/resolve/operation/index.js';
+import { componentInjectorLayers, resolveInjection, resolveInjectionAtViewStep, injectionRequestFor } from '../dist/resolve/operation/index.js';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 async function fixture(source, check) {
@@ -59,6 +59,14 @@ export const routeProviders=[{provide:Service,useClass:RouteService}];
   const multi = resolveInjection(context,{token:token('LOGS')},layers);
   assert.equal(multi.bindings.length,3);
   assert.equal(resolveInjection(context,{token:token('LOGS'),projected:true},layers).bindings.length,2);
+  assert.equal(resolveInjection(context,{token:token('LOGS'),self:true},layers).bindings.length,2);
+  assert.equal(resolveInjection(context,{token:token('LOGS'),skipSelf:true},layers).bindings.length,1);
+  assert.equal(resolveInjection(context,{token:token('LOGS'),host:true},layers).bindings.length,2);
+  const projectedStep={relation:'projection-slot',diOwnerId:owner.id,diContextOverride:null};
+  assert.equal(resolveInjectionAtViewStep(context,{token:token('Service')},layers,projectedStep).bindings[0].implementation,
+    view.bindings[0].implementation);
+  assert.equal(resolveInjectionAtViewStep(context,{token:token('Service')},layers,
+    {...projectedStep,diOwnerId:'other'}).status,'boundary');
 }));
 
 test('unknown factory and absent provider stop at the token; optional may be null', async () => fixture(`
@@ -83,8 +91,9 @@ export class Root { optional=inject(Other,{optional:true}); }
 }));
 
 test('useExisting follows a visible provider, while a template injector has its own context', async () => fixture(`
-import {Component} from '@angular/core';
+import {Component,Injectable} from '@angular/core';
 export class Service {}
+@Injectable({providedIn:'root'})
 export class Replacement extends Service {}
 @Component({selector:'app-root',template:'',providers:[{provide:Service,useExisting:Replacement}]}) export class Root {}
 export const rootProviders=[Replacement];
@@ -98,6 +107,33 @@ export const templateProviders=[{provide:Service,useClass:Replacement}];
   const owner=[...catalog.declarations.values()].find(d=>d.className==='Root');
   const layers=componentInjectorLayers(owner,[],[variable('rootProviders')]);
   assert(resolveInjection(context,{token},layers).bindings[0].implementation.endsWith(':Replacement'));
+  assert.equal(resolveInjection(context,{token},componentInjectorLayers(owner)).status,'resolved');
   const templateInjector={id:'explicit-template',kind:'template',providers:[variable('templateProviders')]};
   assert.equal(resolveInjection(context,{token,templateInjector},layers).searched[0],'explicit-template');
+  const insertion={relation:'template-insertion',diOwnerId:owner.id,diContextOverride:'customInjector'};
+  assert.equal(resolveInjectionAtViewStep(context,{token},layers,insertion).status,'boundary');
+  assert.equal(resolveInjectionAtViewStep(context,{token,templateInjector},layers,insertion).status,'resolved');
+}));
+
+test('constructor decorators and inject options retain hierarchy flags; dynamic values remain boundaries', async () => fixture(`
+import {Component,Inject,Self,SkipSelf,Host,Optional,InjectionToken,inject} from '@angular/core';
+export const TOKEN=new InjectionToken<string>('token');
+export function dynamic(){return Math.random().toString();}
+@Component({selector:'app-root',template:'',providers:[{provide:TOKEN,useValue:dynamic()}]})
+export class Root {
+  field=inject(TOKEN,{optional:true,self:true});
+  constructor(@Inject(TOKEN) @Optional() @Host() readonly value:string) {}
+}
+`, (context,catalog) => {
+  const t=context.toolchain.typescript;
+  const owner=[...catalog.declarations.values()].find(d=>d.className==='Root');
+  const field=owner.node.members.find(m=>t.isPropertyDeclaration(m));
+  const ctor=owner.node.members.find(t.isConstructorDeclaration);
+  const first=injectionRequestFor(context,field.initializer);
+  const second=injectionRequestFor(context,ctor.parameters[0]);
+  assert.equal(first.self,true);
+  assert.equal(first.optional,true);
+  assert.equal(second.host,true);
+  assert.equal(second.optional,true);
+  assert.equal(resolveInjection(context,first,componentInjectorLayers(owner)).status,'boundary');
 }));

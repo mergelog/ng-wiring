@@ -1,3 +1,4 @@
+import type ts from 'typescript';
 import type { AnalysisContext } from '../../workspace/context.js';
 import type { Catalog } from '../../index/catalog.js';
 import type { IndexedElement, Span, TemplateIndex } from '../../index/templates.js';
@@ -60,6 +61,8 @@ export interface RouteGraph {
     diagnostics: string[];
     gaps: string[];
 }
+/** `() => import('…').then(m => m.X)`, `async () => (await import('…')).X`, `() => X`, `() => import('…')`. */
+export declare function lazyTarget(context: AnalysisContext, expression: ts.Expression, depth?: number): ts.Declaration | undefined;
 export declare function buildRouteGraph(context: AnalysisContext, catalog: Catalog, maze?: MazeGraph): RouteGraph;
 export type OutletPlacement = {
     kind: 'outlet';

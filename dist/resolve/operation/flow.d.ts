@@ -2,7 +2,7 @@ import type { AnalysisContext } from '../../workspace/context.js';
 import type { Declaration } from '../../index/catalog.js';
 import { type OperatorRecord } from './reactive.js';
 export interface OperationStep {
-    kind: 'call' | 'state-write' | 'output-emit' | 'reactive-link' | 'subscription' | 'boundary';
+    kind: 'call' | 'state-write' | 'output-emit' | 'reactive-link' | 'subscription' | 'action-dispatch' | 'boundary';
     source: string;
     target: string;
     location: string;
