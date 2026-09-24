@@ -13,8 +13,8 @@
 | P0 プロジェクト基盤 | package/dist/依存固定 | 7 | 7 | — |
 | P1 CLI 契約 | `src/cli` | 20 | 19 | P0 |
 | P2 解析コンテキストと workspace | `src/workspace` | 19 | 19 | P0 |
-| P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 9 | P2 |
-| P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 0 | P2, P3 |
+| P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 12 | P2 |
+| P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 12 | P2, P3 |
 | P5 表示経路・投影・TemplateRef | `src/resolve/view` | 10 | 0 | P4 |
 | P6 route と bootstrap | `src/resolve/view` | 10 | 0 | P4 |
 | P7 制御フローと有限化 | `src/resolve/view` | 10 | 0 | P5, P6 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **54** | |
+| **合計** | | **237** | **69** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -103,29 +103,29 @@
 - [x] P3-03 `spawn(process.execPath, [binPath, ...args], {shell:false, cwd: workspaceRoot})` で起動。PATH 上の別 ngmaze や Windows `.cmd` shim に依存しない（§4.3）
 - [x] P3-04 引数生成の 2 形態（`--project <絶対> --angular-project <name> --json` / `--project <絶対> --tsconfig <絶対> --json`）。component クエリ・`--all`・`--with-routes` は渡さない（§4.3）
 - [x] P3-05 契約検証（v0.1.0、固定リビジョン、スキーマハッシュ、`docs/ngmaze.schema.json` と JSON 契約を境界にする。内部モジュールを import しない）（§4.3）
-- [~] P3-06 照合項目（workspaceRoot/analysisRoot の realpath、primary + 付加 tsconfig、project 集合、TS/compiler の版と source、ComponentId のパス）。meta だけで完全一致の証明としない（§4.3）
+- [x] P3-06 照合項目（workspaceRoot/analysisRoot の realpath、primary + 付加 tsconfig、project 集合、TS/compiler の版と source、ComponentId のパス）。meta だけで完全一致の証明としない（§4.3）
 - [x] P3-07 不一致時は結合せず code 3。bundled へ fallback した ngmaze の結果も拒否（§4.2, §4.3）
 - [x] P3-08 受領データの利用（`result.components`（templateFile/templateKind 含む）、`edges`、`routes`、`routeEdges`、`externalUsages`、`ambiguousUsages`、`global.diagnostics`、`global.detectionGaps`）（§4.3）
 - [x] P3-09 project 集合の期待値比較（project 指定は 1 件、明示 tsconfig は ngmaze の発見集合。後者を使用アプリ集合と読み替えない）（§4.3）
 - [x] P3-10 プロセス制御（120 秒で終了、stdout は 64 MiB 上限のストリーム収集、超過・異常終了・不正 JSON・stderr・`error` を診断、非ゼロ終了を成功 JSON として消費しない、複数 context は直列実行して Program を解放）（§4.3）
-- [~] P3-11 受領辺の自前 AST/span 照合と `origin: ngmaze` / `origin: ng-wiring` の付与（§4.3）
-- [~] P3-12 欠落補完（report-widgets のように import で到達した共有部品が省かれる場合を自前カタログで補う。別アプリの全体解析の辺をコピーしない）（§4.3, 指摘 1-3）
+- [x] P3-11 受領辺の自前 AST/span 照合と `origin: ngmaze` / `origin: ng-wiring` の付与（§4.3）
+- [x] P3-12 欠落補完（report-widgets のように import で到達した共有部品が省かれる場合を自前カタログで補う。別アプリの全体解析の辺をコピーしない）（§4.3, 指摘 1-3）
 
 ## P4 索引と Angular スコープ解決（`src/index`, `src/resolve/scope`, §4.3, §3.1）
 
-- [ ] P4-01 component/directive/pipe カタログ（`ComponentId = workspace相対TSパス#ClassName`、内部キー `(contextId, ComponentId)`。selector/className をキーにしない）（§5）
-- [ ] P4-02 独立 scope resolver（standalone の imports、NgModule の declarations/imports/exports、継承した入出力、公開 `.d.ts` メタデータをシンボルで解決）（§4.3）
-- [ ] P4-03 Angular compiler の selector matcher を使用元の有効スコープにだけ適用（§4.3）
-- [ ] P4-04 component は唯一の対象と確認できたときだけ辺を作り、directive は一致した全宣言を保持（§4.3, 2回目レビュー 2）
-- [ ] P4-05 静的 hostDirectives と公開 input/output alias を適用 directive に含める。未知 metadata・動的 hostDirectives・スコープ循環は未解決（§4.3）
-- [ ] P4-06 要素抽出（`parseTemplate` で属性・イベント・位置を取得。HTML の正規表現を主解析にしない）（§2, §3.1）
-- [ ] P4-07 属性一致（静的属性名とデコード済み値の完全一致。大小文字・空白・Unicode 正規化で対象を増減させない。`data-id="a"` と `data-id=a` は同一クエリ。空値許可、存在属性は `search-button=`）（§3.1）
-- [ ] P4-08 `[attr.data-id]`・補間・host 属性・実行時属性は静的一致に含めず、検出範囲を診断（§3.1）
-- [ ] P4-09 `--source` の span 判定（`[startOffset, endOffset)` の開始タグ span と重なる要素だけ。本文・閉じタグ・コメントだけの行は一致なし）（§3.1）
-- [ ] P4-10 同一行に複数タグ、同一 HTML に複数所有者（ServingComponent / ServingLoadingComponent）の全組合せを候補化（§2, §3.1）
-- [ ] P4-11 インラインテンプレートの cooked/raw offset 変換。変換できないときは行を推測せず診断（§3.1）
-- [ ] P4-12 `@for` 内の位置はソース要素を表し、個々の行データを表さないことをモデルに反映（§3.1）
-- [ ] P4-13 CSS selector・`:nth-child()`・`_ngcontent-*` を識別構文にしない（§3.1）
+- [x] P4-01 component/directive/pipe カタログ（`ComponentId = workspace相対TSパス#ClassName`、内部キー `(contextId, ComponentId)`。selector/className をキーにしない）（§5）
+- [x] P4-02 独立 scope resolver（standalone の imports、NgModule の declarations/imports/exports、継承した入出力、公開 `.d.ts` メタデータをシンボルで解決）（§4.3）
+- [x] P4-03 Angular compiler の selector matcher を使用元の有効スコープにだけ適用（§4.3）
+- [x] P4-04 component は唯一の対象と確認できたときだけ辺を作り、directive は一致した全宣言を保持（§4.3, 2回目レビュー 2）
+- [x] P4-05 静的 hostDirectives と公開 input/output alias を適用 directive に含める。未知 metadata・動的 hostDirectives・スコープ循環は未解決（§4.3）
+- [x] P4-06 要素抽出（`parseTemplate` で属性・イベント・位置を取得。HTML の正規表現を主解析にしない）（§2, §3.1）
+- [x] P4-07 属性一致（静的属性名とデコード済み値の完全一致。大小文字・空白・Unicode 正規化で対象を増減させない。`data-id="a"` と `data-id=a` は同一クエリ。空値許可、存在属性は `search-button=`）（§3.1）
+- [x] P4-08 `[attr.data-id]`・補間・host 属性・実行時属性は静的一致に含めず、検出範囲を診断（§3.1）
+- [x] P4-09 `--source` の span 判定（`[startOffset, endOffset)` の開始タグ span と重なる要素だけ。本文・閉じタグ・コメントだけの行は一致なし）（§3.1）
+- [~] P4-10 同一行に複数タグ、同一 HTML に複数所有者（ServingComponent / ServingLoadingComponent）の全組合せを候補化（§2, §3.1）
+- [x] P4-11 インラインテンプレートの cooked/raw offset 変換。変換できないときは行を推測せず診断（§3.1）
+- [x] P4-12 `@for` 内の位置はソース要素を表し、個々の行データを表さないことをモデルに反映（§3.1）
+- [x] P4-13 CSS selector・`:nth-child()`・`_ngcontent-*` を識別構文にしない（§3.1）
 
 ## P5 表示経路・投影・TemplateRef（`src/resolve/view`, §6.1）
 

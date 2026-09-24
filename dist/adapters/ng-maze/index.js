@@ -6,7 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv } from 'ajv';
 import { UsageError } from '../../cli/arguments.js';
-import { discoverProjects } from '../../workspace/context.js';
+import { discoverProjects, verifyContextSnapshot } from '../../workspace/context.js';
+import { verifyCodeEdge } from './verify.js';
 const REVISION = '6da35347018531df30659d34e66a11d1bfcc3f22';
 const SCHEMA_HASH = 'b6b9484cf3ba22d35e43c37660f181f15a31e022789c97d6e66233d56a227075';
 const MAX_OUTPUT = 64 * 1024 * 1024;
@@ -101,7 +102,31 @@ export async function invokeNgmaze(context, binPath, signal) {
 async function sameRealPath(left, right) {
     return await realpath(left).catch(() => '') === await realpath(right).catch(() => undefined);
 }
+async function preflightToolchain(context) {
+    for (const selected of [context.toolchain.ts, context.toolchain.compiler]) {
+        let directory = context.workspaceRoot;
+        let found;
+        for (;;) {
+            const candidate = path.join(directory, 'node_modules', ...selected.name.split('/'), 'package.json');
+            if (await stat(candidate).then(s => s.isFile(), () => false)) {
+                found = candidate;
+                break;
+            }
+            const parent = path.dirname(directory);
+            if (parent === directory)
+                break;
+            directory = parent;
+        }
+        if (!found || !await sameRealPath(found, selected.packageFile)) {
+            throw new UsageError(`ngmaze would resolve a different ${selected.name} package`);
+        }
+    }
+}
 export async function readNgmaze(context, signal) {
+    const discovered = await discoverProjects(context.workspaceRoot, context.toolchain);
+    for (const project of discovered)
+        await context.snapshot.recordIfExists(project.tsconfig);
+    await preflightToolchain(context);
     const located = await locateNgmaze();
     const { stdout, stderr } = await invokeNgmaze(context, located.binPath, signal);
     let document;
@@ -126,7 +151,6 @@ export async function readNgmaze(context, signal) {
         meta.typescriptVersion !== context.toolchain.ts.version || meta.angularCompilerVersion !== context.toolchain.compiler.version) {
         throw new UsageError('ngmaze used a different or bundled toolchain');
     }
-    const discovered = await discoverProjects(context.workspaceRoot, context.toolchain);
     const projects = context.projectName ? [context.projectName] : discovered.map(project => project.name);
     if (meta.angularProjects.length !== projects.length ||
         [...meta.angularProjects].sort().some((name, index) => name !== [...projects].sort()[index])) {
@@ -146,8 +170,8 @@ export async function readNgmaze(context, signal) {
         if (context.projectName && !await Promise.all(discovered.map(project => sameRealPath(project.tsconfig, absolute))).then(matches => matches.some(Boolean))) {
             throw new UsageError(`ngmaze merged an unknown tsconfig: ${config}`);
         }
-        await context.snapshot.recordIfExists(absolute);
     }
+    await verifyContextSnapshot(context);
     const allowed = new Set(context.sourceFiles.map(file => slash(path.relative(context.workspaceRoot, file))));
     const validId = (id) => {
         const match = /^(.+\.[cm]?tsx?)#([^/#]+)$/.exec(id);
@@ -165,11 +189,20 @@ export async function readNgmaze(context, signal) {
     const validEdges = (edges) => edges
         .filter(edge => known.has(edge.from) && known.has(edge.to) && checkLocation(edge.location))
         .map(edge => ({ ...edge, origin: 'ngmaze' }));
-    const edges = validEdges(data.result.edges);
-    const routeEdges = validEdges(data.result.routeEdges);
+    const scopedEdges = validEdges(data.result.edges);
+    const scopedRouteEdges = validEdges(data.result.routeEdges);
+    const edges = scopedEdges.filter(edge => edge.kind === 'template' ||
+        edge.kind === 'ng-component-outlet' || verifyCodeEdge(context, edge));
+    const routeEdges = scopedRouteEdges.filter(edge => verifyCodeEdge(context, edge));
+    const rejected = [...scopedEdges.filter(edge => !edges.includes(edge)),
+        ...scopedRouteEdges.filter(edge => !routeEdges.includes(edge))];
     omissions.push(...data.result.edges.filter(edge => !edges.some(e => e.from === edge.from && e.to === edge.to && e.location.file === edge.location.file && e.location.line === edge.location.line)).map(edge => `${edge.from}->${edge.to}`));
+    omissions.push(...data.result.routeEdges.filter(edge => !routeEdges.some(e => e.from === edge.from && e.to === edge.to && e.location.file === edge.location.file && e.location.line === edge.location.line)).map(edge => `route:${edge.from}->${edge.to}`));
     return { components, edges, routeEdges, routes: data.result.routes.filter(route => known.has(route.target) && checkLocation(route.location)),
         externalUsages: data.result.externalUsages, ambiguousUsages: data.result.ambiguousUsages,
-        diagnostics: [...data.global.diagnostics, ...(stderr.trim() ? [{ code: 'ngmaze-stderr', message: stderr.trim(), file: '', location: { file: '', line: 1, column: 1, precision: 'approximate' }, owner: null }] : [])],
+        diagnostics: [...data.global.diagnostics, ...rejected.map(edge => ({ code: 'ngmaze-edge-unverified',
+                message: `Received ${edge.kind} edge was not confirmed by the local Program`, file: edge.location.file,
+                location: edge.location, owner: edge.from })),
+            ...(stderr.trim() ? [{ code: 'ngmaze-stderr', message: stderr.trim(), file: '', location: { file: '', line: 1, column: 1, precision: 'approximate' }, owner: null }] : [])],
         detectionGaps: data.global.detectionGaps, omissions };
 }

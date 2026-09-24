@@ -47,6 +47,13 @@ export interface MazeDiagnostic {
 export interface MazeGap extends MazeDiagnostic {
     candidates: string[];
 }
+export interface MazeExternalUsage {
+    callerKind: 'class' | 'function' | 'file';
+    callerName: string;
+    target: string;
+    kind: string;
+    location: MazeLocation;
+}
 export interface MazeDocument {
     ngmazeVersion: string;
     meta: {
@@ -68,7 +75,7 @@ export interface MazeDocument {
         edges: MazeEdge[];
         routeEdges: MazeEdge[];
         routes: MazeRoute[];
-        externalUsages: unknown[];
+        externalUsages: MazeExternalUsage[];
         ambiguousUsages: unknown[];
     };
     error: null | {
@@ -85,7 +92,7 @@ export interface MazeGraph {
         origin: 'ngmaze';
     })[];
     routes: MazeRoute[];
-    externalUsages: unknown[];
+    externalUsages: MazeExternalUsage[];
     ambiguousUsages: unknown[];
     diagnostics: MazeDiagnostic[];
     detectionGaps: MazeGap[];
