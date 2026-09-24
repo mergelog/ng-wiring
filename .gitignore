@@ -26,3 +26,6 @@ yarn-debug.log*
 yarn-error.log*
 
 x-memo*
+
+# Claude Code local settings
+.claude/settings.local.json
