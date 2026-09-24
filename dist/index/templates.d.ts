@@ -20,7 +20,11 @@ export interface IndexedElement {
     boundExpressions: Map<string, string>;
     boundSpans: Map<string, Span>;
     events: string[];
+    eventHandlers: string[];
+    eventStops: boolean[];
+    eventSpans: (Span | null)[];
     references: string[];
+    lexical: Map<string, LexicalBinding>;
     repeated: boolean;
     parent: IndexedElement | null;
     fallbackSlot: IndexedSlot | null;
@@ -31,6 +35,11 @@ export interface IndexedElement {
     origin: 'ngmaze' | 'ng-wiring' | null;
     gaps: string[];
     controlFlow: ControlFlowFrame[];
+}
+export interface LexicalBinding {
+    kind: 'let' | 'loop' | 'fragment' | 'reference';
+    value: string;
+    element: IndexedElement | null;
 }
 export interface IndexedSlot {
     owner: Declaration;

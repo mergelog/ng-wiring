@@ -75,6 +75,21 @@ function selectorFor(context, element) {
 }
 export async function indexTemplates(context, catalog, maze) {
     const ng = context.toolchain.angularCompiler;
+    const stopsPropagation = (handler) => {
+        let stops = false;
+        const visitor = new class extends ng.RecursiveAstVisitor {
+            visitCall(ast, ctx) {
+                const callee = ast.receiver;
+                if (callee instanceof ng.PropertyRead && ['stopPropagation', 'stopImmediatePropagation'].includes(callee.name) &&
+                    callee.receiver instanceof ng.PropertyRead && callee.receiver.name === '$event' &&
+                    callee.receiver.receiver instanceof ng.ImplicitReceiver)
+                    stops = true;
+                return super.visitCall(ast, ctx);
+            }
+        }();
+        handler.visit(visitor);
+        return stops;
+    };
     const scopes = new ScopeResolver(catalog);
     const elements = [];
     const slots = [];
@@ -141,8 +156,25 @@ export async function indexTemplates(context, catalog, maze) {
             }
         }
         const ownerElements = [];
-        const walk = (nodes, parent, frames, fallbackSlot) => {
+        const walk = (nodes, parent, frames, fallbackSlot, inherited = new Map(), newView = true) => {
             const repeated = frames.some(frame => frame.repeated);
+            const lexical = newView ? new Map(inherited) : inherited;
+            // References are visible within their view even before their element in source order.
+            // Embedded templates and control-flow blocks start a distinct lexical view.
+            const collectRefs = (items) => {
+                for (const item of items) {
+                    if (item instanceof ng.TmplAstElement || item instanceof ng.TmplAstTemplate) {
+                        for (const ref of item.references)
+                            if (!lexical.has(ref.name))
+                                lexical.set(ref.name, { kind: 'reference', value: ref.value, element: null });
+                        if (item instanceof ng.TmplAstElement)
+                            collectRefs(item.children);
+                    }
+                    else if (item instanceof ng.TmplAstContent)
+                        collectRefs(item.children);
+                }
+            };
+            collectRefs(nodes);
             for (const node of nodes) {
                 let current = parent;
                 let localFallback = fallbackSlot;
@@ -219,7 +251,10 @@ export async function indexTemplates(context, catalog, maze) {
                                 return span ? [[input.name, span]] : [];
                             })),
                             events: node.outputs.map(output => output.name),
-                            references: node.references.map(ref => ref.name), repeated, parent, fallbackSlot: localFallback,
+                            eventHandlers: node.outputs.map(output => source.slice(output.handlerSpan.start.offset, output.handlerSpan.end.offset)),
+                            eventStops: node.outputs.map(output => stopsPropagation(output.handler)),
+                            eventSpans: node.outputs.map(output => map(output.sourceSpan.start.offset, output.sourceSpan.end.offset)),
+                            references: node.references.map(ref => ref.name), lexical: new Map(lexical), repeated, parent, fallbackSlot: localFallback,
                             component, directives: [...new Set(directives)],
                             appliedInputs, appliedOutputs,
                             origin: component ? mazeEdge ? 'ngmaze' : 'ng-wiring' : null, gaps,
@@ -228,9 +263,16 @@ export async function indexTemplates(context, catalog, maze) {
                         elements.push(indexed);
                         ownerElements.push(indexed);
                         current = indexed;
+                        for (const ref of node.references) {
+                            const binding = lexical.get(ref.name)?.kind === 'reference' ? lexical.get(ref.name) :
+                                { kind: 'reference', value: ref.value, element: null };
+                            binding.element = indexed;
+                            lexical.set(ref.name, binding);
+                            indexed.lexical.set(ref.name, binding);
+                        }
                     }
                 }
-                descend(node, current, frames, localFallback);
+                descend(node, current, frames, localFallback, lexical);
             }
         };
         const at = (node) => `${owner.id}@${node.sourceSpan.start.offset}`;
@@ -262,23 +304,26 @@ export async function indexTemplates(context, catalog, maze) {
                 }
             return result;
         };
-        const descend = (node, current, frames, fallbackSlot) => {
+        const descend = (node, current, frames, fallbackSlot, lexical) => {
             if (node instanceof ng.TmplAstTemplate) {
+                const fragment = new Map(lexical);
+                for (const variable of node.variables)
+                    fragment.set(variable.name, { kind: 'fragment', value: variable.value, element: current });
                 const loop = node.templateAttrs.find(attribute => attribute.name === 'ngForOf') ??
                     node.templateAttrs.find(attribute => attribute.name === 'ngFor');
                 if (!loop) {
-                    walk(node.children, current, frames, fallbackSlot);
+                    walk(node.children, current, frames, fallbackSlot, fragment);
                     return;
                 }
                 const value = loop.valueSpan ?? loop.sourceSpan;
                 const subject = source.slice(value.start.offset, value.end.offset);
                 walk(node.children, current, [...frames, frame({ kind: 'for', id: `for:${at(node)}`, label: `*ngFor (${subject})`,
                         condition: `${subject} has at least one item`, repeated: true,
-                        notes: ['the iteration count is unknown and an individual row is not identified'] }, node)], fallbackSlot);
+                        notes: ['the iteration count is unknown and an individual row is not identified'] }, node)], fallbackSlot, fragment);
                 return;
             }
             if (node instanceof ng.TmplAstElement || node instanceof ng.TmplAstContent) {
-                walk(node.children, current, frames, fallbackSlot);
+                walk(node.children, current, frames, fallbackSlot, lexical, false);
                 return;
             }
             if (node instanceof ng.TmplAstIfBlock) {
@@ -288,9 +333,12 @@ export async function indexTemplates(context, catalog, maze) {
                     // Every branch carries the negation of the branches declared before it (§6.3).
                     const condition = [...preceding.map(item => `!(${item})`), ...(own ? [`(${own})`] : [])].join(' && ') || 'true';
                     const alias = branch.expressionAlias?.name ?? null;
+                    const branchScope = new Map(lexical);
+                    if (alias)
+                        branchScope.set(alias, { kind: 'let', value: own ?? '', element: null });
                     walk(branch.children, current, [...frames, frame({ kind: 'if', id: `if:${at(node)}#${order}`,
                             label: order === 0 ? `@if (${own ?? 'true'})` : own ? `@else if (${own})` : '@else', condition, alias,
-                            notes: alias ? [`@if alias ${alias} holds the evaluated condition value`] : [] }, branch)], fallbackSlot);
+                            notes: alias ? [`@if alias ${alias} holds the evaluated condition value`] : [] }, branch)], fallbackSlot, branchScope);
                     if (own)
                         preceding.push(own);
                 }
@@ -300,14 +348,18 @@ export async function indexTemplates(context, catalog, maze) {
                 const subject = expressionText(node.expression) ?? '(collection expression unresolved)';
                 const track = expressionText(node.trackBy);
                 const item = node.item?.name ?? '$implicit';
+                const loopScope = new Map(lexical);
+                loopScope.set(item, { kind: 'loop', value: '$implicit', element: null });
+                for (const variable of node.contextVariables)
+                    loopScope.set(variable.name, { kind: 'loop', value: variable.value, element: null });
                 walk(node.children, current, [...frames, frame({ kind: 'for', id: `for:${at(node)}`,
                         label: `@for (${item} of ${subject}${track ? `; track ${track}` : ''})`,
                         condition: `${subject} has at least one item`, repeated: true, alias: item,
-                        notes: ['the iteration count is unknown and an individual row is not identified'] }, node)], fallbackSlot);
+                        notes: ['the iteration count is unknown and an individual row is not identified'] }, node)], fallbackSlot, loopScope);
                 // @empty is the complementary branch and is not repeated: the empty collection is kept as its own case.
                 if (node.empty)
                     walk(node.empty.children, current, [...frames, frame({ kind: 'for-empty', id: `for-empty:${at(node)}`,
-                            label: '@empty', condition: `${subject} is empty` }, node.empty)], fallbackSlot);
+                            label: '@empty', condition: `${subject} is empty` }, node.empty)], fallbackSlot, lexical);
                 return;
             }
             if (node instanceof ng.TmplAstSwitchBlock) {
@@ -321,7 +373,7 @@ export async function indexTemplates(context, catalog, maze) {
                     walk(group.children, current, [...frames, frame({ kind: 'switch', id: `switch:${at(node)}#${order}`,
                             label: fallback ? `@switch (${subject}) @default` : `@switch (${subject}) @case (${matched.join(', ')})`,
                             condition: fallback ? `${subject} matches no @case (${declared.join(', ') || 'none declared'})` :
-                                matched.map(value => `${subject} === ${value}`).join(' || ') }, group)], fallbackSlot);
+                                matched.map(value => `${subject} === ${value}`).join(' || ') }, group)], fallbackSlot, lexical);
                 }
                 for (const unknown of node.unknownBlocks ?? [])
                     markUnsupported(unknown, `@${unknown.name}`, 'unknown block inside @switch');
@@ -344,21 +396,22 @@ export async function indexTemplates(context, catalog, maze) {
                     loadingAfterMs: node.loading?.afterTime ?? null, loadingMinimumMs: node.loading?.minimumTime ?? null };
                 const phase = (name, label, condition, extra, target) => frame({ kind: 'defer', id: `${defer.id}#${name}`, label, condition, phase: name,
                     notes: [...notes, ...extra], defer }, target);
-                walk(node.children, current, [...frames, phase('main', `@defer (${started})`, `@defer ${defer.id} has started (${started})`, [], node)], fallbackSlot);
+                walk(node.children, current, [...frames, phase('main', `@defer (${started})`, `@defer ${defer.id} has started (${started})`, [], node)], fallbackSlot, lexical);
                 if (node.placeholder)
                     walk(node.placeholder.children, current, [...frames, phase('placeholder', '@placeholder', `@defer ${defer.id} has not started`, defer.placeholderMinimumMs === null ? [] :
-                            [`@placeholder stays for at least ${defer.placeholderMinimumMs}ms`], node.placeholder)], fallbackSlot);
+                            [`@placeholder stays for at least ${defer.placeholderMinimumMs}ms`], node.placeholder)], fallbackSlot, lexical);
                 if (node.loading)
                     walk(node.loading.children, current, [...frames, phase('loading', '@loading', `@defer ${defer.id} has started and its dependencies are still loading`, [...defer.loadingAfterMs === null ? [] : [`@loading appears after ${defer.loadingAfterMs}ms`],
-                            ...defer.loadingMinimumMs === null ? [] : [`@loading stays for at least ${defer.loadingMinimumMs}ms`]], node.loading)], fallbackSlot);
+                            ...defer.loadingMinimumMs === null ? [] : [`@loading stays for at least ${defer.loadingMinimumMs}ms`]], node.loading)], fallbackSlot, lexical);
                 if (node.error)
-                    walk(node.error.children, current, [...frames, phase('error', '@error', `@defer ${defer.id} failed to load its dependencies`, [], node.error)], fallbackSlot);
+                    walk(node.error.children, current, [...frames, phase('error', '@error', `@defer ${defer.id} failed to load its dependencies`, [], node.error)], fallbackSlot, lexical);
                 return;
             }
             // @let defines a value in the surrounding scope; it is not a display branch (§6.3).
             if (node instanceof ng.TmplAstLetDeclaration) {
                 lets.push({ owner, name: node.name, span: map(node.sourceSpan.start.offset, node.sourceSpan.end.offset),
                     value: source.slice(node.valueSpan.start.offset, node.valueSpan.end.offset) });
+                lexical.set(node.name, { kind: 'let', value: source.slice(node.valueSpan.start.offset, node.valueSpan.end.offset), element: null });
                 return;
             }
             if (node instanceof ng.TmplAstText || node instanceof ng.TmplAstBoundText)

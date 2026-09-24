@@ -25,6 +25,7 @@ export interface Declaration {
 export interface ExternalDeclaration {
   id: string; kind: DeclarationKind; selector: string | null; standalone: boolean;
   declarations: string[]; imports: string[]; exports: string[];
+  exportAs: string[];
   inputs: Map<string, string>; outputs: Map<string, string>;
 }
 export interface Catalog { declarations: Map<string, Declaration>; external: Map<string, ExternalDeclaration>;
@@ -288,6 +289,9 @@ export async function buildCatalog(context: AnalysisContext): Promise<Catalog> {
       return result;
     };
     external.set(id, { id, kind, selector, standalone, declarations, imports, exports,
+      exportAs: args[2] && t.isTupleTypeNode(args[2]) ? args[2].elements.filter(t.isLiteralTypeNode)
+        .flatMap(part => t.isStringLiteral(part.literal) ? [part.literal.text] : []) :
+        args[2] && t.isLiteralTypeNode(args[2]) && t.isStringLiteral(args[2].literal) ? [args[2].literal.text] : [],
       inputs: aliasMap(args[3]), outputs: aliasMap(args[4]) });
     queue.push(...[...declarations, ...imports, ...exports].filter(ref => ref.startsWith('external:')));
   }

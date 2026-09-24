@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P7 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P8 以降の操作、モデル、renderer の統合が必要（§1, §2）。
+現状: **実装中**。P0〜P8 のライブラリ機能は実装・fixture 合格。CLI からの経路出力には P9 以降の操作、モデル、renderer の統合が必要（§1, §2）。
 
 ## 進捗サマリ
 
@@ -18,7 +18,7 @@
 | P5 表示経路・投影・TemplateRef | `src/resolve/view` | 10 | 10 | P4 |
 | P6 route と bootstrap | `src/resolve/view` | 10 | 10 | P4 |
 | P7 制御フローと有限化 | `src/resolve/view` | 10 | 10 | P5, P6 |
-| P8 リスナー・DOM 伝播・式 | `src/resolve/operation` | 14 | 0 | P4 |
+| P8 リスナー・DOM 伝播・式 | `src/resolve/operation` | 14 | 14 | P4 |
 | P9 入出力・状態・非同期 | `src/resolve/operation` | 11 | 0 | P8 |
 | P10 DI と NgRx Store | `src/resolve/operation` | 12 | 0 | P9 |
 | P11 Signal・SignalStore・dispatch | `src/adapters/reactive` | 15 | 0 | P9, P10 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **100** | |
+| **合計** | | **237** | **114** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -168,20 +168,20 @@
 
 ## P8 リスナー・DOM 伝播・テンプレート式（`src/resolve/operation`, §7.1, §7.2）
 
-- [ ] P8-01 Angular スコープで component/directive の output（alias と継承）を解決。emit は購読関係で DOM をバブルさせない（祖先の `(smHesitate)` / `(valueChanged)` を UI イベントの伝播先にしない）（§7.1）
-- [ ] P8-02 DOM event の経路を独立評価。同名の output があっても DOM 経路を全削除しない（§7.1, 指摘 2-4）
-- [ ] P8-03 バージョン管理した標準 UI event 表（bubbles/composed）。初期必須は click/dblclick/input/change/keydown/keyup/mouseover/mouseout/focusin/focusout + 非バブルの focus/blur/mouseenter/mouseleave（§7.1）
-- [ ] P8-04 非バブル event は対象自身のリスナーのみ追う。capture 登録が明示解決できれば別経路。未知 CustomEvent は bubbles/composed 不明なら unresolved（§7.1）
-- [ ] P8-05 伝播抑止の条件化（stopPropagation/stopImmediatePropagation、キー修飾子、disabled、shadow DOM の retargeting、DOM 配置の未知）。preventDefault や `return false` を伝播停止と同一視しない（§7.1）
-- [ ] P8-06 `window:` / `document:` を global listener として明示し、祖先要素を捏造しない（§7.1）
-- [ ] P8-07 イベント間の自動派生（click→submit、focus()→focusin 等）は conditional/境界に留める（§7.1）
-- [ ] P8-08 選択要素・リスナー要素・event source・修飾子・購読先を別フィールドに保持（§7.1）
-- [ ] P8-09 Angular lexical scope の構築（`@let`、ループ/fragment 変数、`#ref`、`$event`、pipe、メンバーを解決してから TS シンボルへ結ぶ。Angular AST を TypeChecker に直接渡さない）（§7.2）
-- [ ] P8-10 `#ref` の種別判定（`exportAs` は directive、component host 上の裸 ref は component、通常要素は DOM 要素）（§7.2）
-- [ ] P8-11 ローカル変数の隠蔽と明示 `this`、`public`/`protected`/継承/アクセス可能性の検査。private を名前解決の代用にしない（§7.2, 指摘 3-3）
-- [ ] P8-12 query 解決（viewChild/contentChild、read、子 view/投影範囲、条件、複数一致、任意性。非 required の undefined、`.required` でも表示失敗の可能性を残す）（§7.2）
-- [ ] P8-13 呼出し解決（callee と receiver のシンボル・値の由来を呼出箇所ごとに。継承/override・関数値・union・computed property・any は境界。メソッド名や返却型だけで別インスタンスへ接続しない）（§7.2）
-- [ ] P8-14 型診断があっても構文上確認できる関係は診断付きで残し、実行可能とは保証しない（§7.2）
+- [x] P8-01 Angular スコープで component/directive の output（alias と継承）を解決。emit は購読関係で DOM をバブルさせない（祖先の `(smHesitate)` / `(valueChanged)` を UI イベントの伝播先にしない）（§7.1）
+- [x] P8-02 DOM event の経路を独立評価。同名の output があっても DOM 経路を全削除しない（§7.1, 指摘 2-4）
+- [x] P8-03 バージョン管理した標準 UI event 表（bubbles/composed）。初期必須は click/dblclick/input/change/keydown/keyup/mouseover/mouseout/focusin/focusout + 非バブルの focus/blur/mouseenter/mouseleave（§7.1）
+- [x] P8-04 非バブル event は対象自身のリスナーのみ追う。capture 登録が明示解決できれば別経路。未知 CustomEvent は bubbles/composed 不明なら unresolved（§7.1）
+- [x] P8-05 伝播抑止の条件化（stopPropagation/stopImmediatePropagation、キー修飾子、disabled、shadow DOM の retargeting、DOM 配置の未知）。preventDefault や `return false` を伝播停止と同一視しない（§7.1）
+- [x] P8-06 `window:` / `document:` を global listener として明示し、祖先要素を捏造しない（§7.1）
+- [x] P8-07 イベント間の自動派生（click→submit、focus()→focusin 等）は conditional/境界に留める（§7.1）
+- [x] P8-08 選択要素・リスナー要素・event source・修飾子・購読先を別フィールドに保持（§7.1）
+- [x] P8-09 Angular lexical scope の構築（`@let`、ループ/fragment 変数、`#ref`、`$event`、pipe、メンバーを解決してから TS シンボルへ結ぶ。Angular AST を TypeChecker に直接渡さない）（§7.2）
+- [x] P8-10 `#ref` の種別判定（`exportAs` は directive、component host 上の裸 ref は component、通常要素は DOM 要素）（§7.2）
+- [x] P8-11 ローカル変数の隠蔽と明示 `this`、`public`/`protected`/継承/アクセス可能性の検査。private を名前解決の代用にしない（§7.2, 指摘 3-3）
+- [x] P8-12 query 解決（viewChild/contentChild、read、子 view/投影範囲、条件、複数一致、任意性。非 required の undefined、`.required` でも表示失敗の可能性を残す）（§7.2）
+- [x] P8-13 呼出し解決（callee と receiver のシンボル・値の由来を呼出箇所ごとに。継承/override・関数値・union・computed property・any は境界。メソッド名や返却型だけで別インスタンスへ接続しない）（§7.2）
+- [x] P8-14 型診断があっても構文上確認できる関係は診断付きで残し、実行可能とは保証しない（§7.2）
 
 ## P9 入出力・状態・非同期（§7.3）
 

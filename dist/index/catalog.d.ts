@@ -35,6 +35,7 @@ export interface ExternalDeclaration {
     declarations: string[];
     imports: string[];
     exports: string[];
+    exportAs: string[];
     inputs: Map<string, string>;
     outputs: Map<string, string>;
 }
