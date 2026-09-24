@@ -26,7 +26,9 @@ export async function runCli(argv, backend, io, cwd = process.cwd(), signal) {
         const result = await backend.analyze(options, signal);
         if (signal?.aborted)
             return 130;
-        const candidates = filterCandidates(result.candidates, options);
+        const filtered = filterCandidates(result.candidates, options);
+        const truncated = result.truncated || filtered.length > 1_000;
+        const candidates = filtered.slice(0, 1_000);
         if (!candidates.length) {
             io.stderr.write(result.targetDetectionIncomplete ? 'Target detection incomplete\n' : 'No matching target\n');
             return result.targetDetectionIncomplete ? 5 : 1;
@@ -36,15 +38,15 @@ export async function runCli(argv, backend, io, cwd = process.cwd(), signal) {
             selected = selectCandidate(candidates, options.candidate);
         }
         catch (error) {
-            if (result.truncated && error instanceof UsageError)
+            if (truncated && error instanceof UsageError)
                 throw new UsageError(`${error.message}. Narrow with --through, --route, or --project`);
             throw error;
         }
-        if (result.truncated && !options.candidate)
+        if (truncated && !options.candidate)
             selected = undefined;
         if (!selected) {
-            io.stderr.write(`${formatCandidateList(candidates, result.truncated)}\n`);
-            if (io.stdin.isTTY && io.stderr.isTTY && !result.truncated) {
+            io.stderr.write(`${formatCandidateList(candidates, truncated)}\n`);
+            if (io.stdin.isTTY && io.stderr.isTTY && !truncated) {
                 const rl = createInterface({ input: io.stdin, output: io.stderr, terminal: true });
                 try {
                     io.stderr.write('Select candidate number or ID: ');

@@ -100,6 +100,23 @@ test('truncated enumeration prevents automatic selection and explains missing ID
   assert.match(second.output().stderr, /Narrow with --through/);
 });
 
+test('candidate cap is applied after route filtering', async () => {
+  const all = Array.from({ length: 1_001 }, (_, i) => candidate(i + 1));
+  all[1000] = { ...all[1000], routePattern: '/unique' };
+  const { io, output } = capturedIo();
+  assert.equal(await runCli(['x=y'], {
+    async analyze() { return { candidates: all, truncated: false, targetDetectionIncomplete: false }; },
+    async write() { throw Error('must not write'); },
+  }, io), 2);
+  assert.match(output().stderr, /Candidate enumeration was truncated/);
+  const narrowed = capturedIo();
+  assert.equal(await runCli(['x=y', '--route', '/unique'], {
+    async analyze() { return { candidates: all, truncated: false, targetDetectionIncomplete: false }; },
+    async write() { return { path: '/tmp/unique.md', partial: false }; },
+  }, narrowed.io), 0);
+  assert.equal(narrowed.output().stdout, '/tmp/unique.md\n');
+});
+
 test('TTY EOF returns selection code and SIGINT never reports a path', async () => {
   const { io } = capturedIo();
   const input = new PassThrough();
