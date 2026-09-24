@@ -1,3 +1,4 @@
+import { linkTargetWorkspace, writeTargetManifest } from './fixtures/target.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
@@ -13,7 +14,7 @@ const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 async function fixture(fn) {
   const root = await mkdtemp(path.join(tmpdir(), 'ngwi-workspace-'));
   try {
-    await symlink(path.join(repo, 'node_modules'), path.join(root, 'node_modules'), 'dir');
+    await linkTargetWorkspace(root);
     await mkdir(path.join(root, 'src'));
     await writeFile(path.join(root, 'angular.json'), JSON.stringify({ projects: {
       app: { projectType: 'application', root: '', targets: { build: { builder: '@angular/build:application',
@@ -137,6 +138,7 @@ test('unsupported compiler version is rejected while reactive version is reporte
   try {
     await mkdir(path.join(root, 'node_modules/@angular'), { recursive: true });
     await mkdir(path.join(root, 'node_modules/@ngrx'), { recursive: true });
+    await writeTargetManifest(root);
     await symlink(path.join(repo, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
     await symlink(path.join(repo, 'node_modules/@angular/compiler'), path.join(root, 'node_modules/@angular/compiler'), 'dir');
     await mkdir(path.join(root, 'node_modules/@angular/core'));

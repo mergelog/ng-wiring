@@ -1,3 +1,4 @@
+import { writeTargetManifest } from './fixtures/target.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, symlink, rm, writeFile } from 'node:fs/promises';
@@ -34,6 +35,7 @@ async function workspace(files) {
     await symlink(path.join(repo, 'node_modules/@angular', name), path.join(root, 'node_modules/@angular', name), 'dir');
   }
   await symlink(path.join(repo, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
+  await writeTargetManifest(root);
   for (const [name, types] of [['router', ROUTER_TYPES], ['platform-browser', PLATFORM_TYPES]]) {
     await mkdir(path.join(root, 'node_modules/@angular', name));
     await writeFile(path.join(root, 'node_modules/@angular', name, 'package.json'),

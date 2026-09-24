@@ -1,3 +1,4 @@
+import { linkTargetWorkspace, writeTargetManifest } from './fixtures/target.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, symlink, rm, writeFile } from 'node:fs/promises';
@@ -14,7 +15,7 @@ async function fixture(fn, setup) {
   const root = await mkdtemp(path.join(tmpdir(), 'ngwi-index-'));
   try {
     await mkdir(path.join(root, 'src'));
-    await symlink(path.join(repo, 'node_modules'), path.join(root, 'node_modules'), 'dir');
+    await linkTargetWorkspace(root);
     await writeFile(path.join(root, 'angular.json'), JSON.stringify({ projects: { app: { projectType: 'application', root: '',
       targets: { build: { options: { tsConfig: 'tsconfig.app.json', browser: 'src/main.ts' } } } } } }));
     await writeFile(path.join(root, 'tsconfig.app.json'), JSON.stringify({ compilerOptions: {
@@ -83,6 +84,7 @@ test('published d.ts directive metadata contributes to NgModule export scope', a
     await mkdir(path.join(root, 'node_modules/public-lib'));
     for (const name of ['core', 'compiler']) await symlink(path.join(repo, 'node_modules/@angular', name), path.join(root, 'node_modules/@angular', name), 'dir');
     await symlink(path.join(repo, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
+    await writeTargetManifest(root);
     await writeFile(path.join(root, 'node_modules/public-lib/package.json'), JSON.stringify({ name: 'public-lib', version: '1.0.0', types: './index.d.ts' }));
     await writeFile(path.join(root, 'node_modules/public-lib/index.d.ts'), "import * as i0 from '@angular/core'; export declare class PublicDirective { static ɵdir: i0.ɵɵDirectiveDeclaration<PublicDirective, '[public]', never, {field:'alias'}, {}, never, never, true>; } export declare class PublicModule { static ɵmod: i0.ɵɵNgModuleDeclaration<PublicModule, never, never, [typeof PublicDirective]>; }\n");
     await writeFile(path.join(root, 'angular.json'), JSON.stringify({ projects: { app: { projectType: 'application', root: '', targets: { build: { options: { tsConfig: 'tsconfig.app.json', browser: 'src/main.ts' } } } } } }));

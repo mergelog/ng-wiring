@@ -1,3 +1,4 @@
+import { linkTargetWorkspace } from './fixtures/target.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, symlink, rm, writeFile } from 'node:fs/promises';
@@ -15,7 +16,7 @@ async function fixture(files, check) {
   const root = await mkdtemp(path.join(tmpdir(), 'ngwi-p12f-'));
   try {
     await mkdir(path.join(root, 'src'));
-    await symlink(path.join(repo, 'node_modules'), path.join(root, 'node_modules'), 'dir');
+    await linkTargetWorkspace(root);
     await writeFile(path.join(root, 'angular.json'), JSON.stringify({ projects: { app: { projectType: 'application', root: '',
       targets: { build: { options: { tsConfig: 'tsconfig.app.json', browser: 'src/main.ts' } } } } } }));
     await writeFile(path.join(root, 'tsconfig.app.json'), JSON.stringify({ compilerOptions: {

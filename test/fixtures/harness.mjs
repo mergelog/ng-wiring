@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseAttribute, parseSource } from '../../dist/cli/arguments.js';
+import { linkTargetWorkspace } from './target.mjs';
 import { analyzeWorkspace, assembleReport, contextOf } from '../../dist/assemble/index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -10,15 +11,15 @@ export const repoRoot = path.dirname(path.dirname(here));
 export const fixtureRoot = here;
 
 /**
- * §10 a fixture is a checked-in workspace. It is copied to a temporary root with `node_modules` linked
- * to this repository, so the run resolves the pinned TypeScript and Angular the analysis requires and
- * no output lands next to the committed sources.
+ * §10 a fixture is a checked-in workspace. It is copied to a temporary root that declares its toolchain
+ * and links `node_modules` to this repository, so the run resolves the pinned TypeScript and Angular
+ * the analysis requires and no output lands next to the committed sources.
  */
 export async function withFixture(name, run) {
   const root = await mkdtemp(path.join(tmpdir(), `ngwi-fx-${name}-`));
   try {
     await cp(path.join(fixtureRoot, name), root, { recursive: true });
-    await symlink(path.join(repoRoot, 'node_modules'), path.join(root, 'node_modules'), 'dir');
+    await linkTargetWorkspace(root);
     return await run(root);
   } finally {
     await rm(root, { recursive: true, force: true });

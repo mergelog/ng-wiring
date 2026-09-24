@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFile } from 'node:child_process';
 import { builtinModules } from 'node:module';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { locateNgmaze, NGMAZE_REVISION } from '../dist/adapters/ng-maze/index.js';
+import { resolveToolchain } from '../dist/workspace/toolchain.js';
+import { writeTargetManifest } from './fixtures/target.mjs';
 
 const run = promisify(execFile);
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -101,4 +104,53 @@ test('every built file is tracked for distribution (P17-02)', async () => {
   for (const file of tracked) {
     if (file.endsWith('.js')) assert(built.includes(file), `${file} is tracked but no longer built`);
   }
+});
+
+/**
+ * §9 the dependencies that start the adapter are ng-wiring's own; the toolchain that types the target
+ * sources is the target's. ng-wiring therefore declares neither TypeScript nor the Angular compiler at
+ * run time: the pinned ngmaze is a process it starts, and `ajv` only validates that process's JSON.
+ */
+test('the runtime dependencies are the adapter, not a toolchain (P17-04)', () => {
+  assert.deepEqual(Object.keys(manifest.dependencies).sort(), ['ajv', 'ngmaze']);
+  assert.equal(manifest.dependencies.ngmaze, `github:mergelog/ng-maze#${NGMAZE_REVISION}`);
+  for (const name of ['typescript', '@angular/compiler', '@angular/core']) {
+    assert.equal(manifest.dependencies[name], undefined, `${name} would be shipped as a runtime dependency`);
+    assert(manifest.devDependencies[name], `${name} is still needed to build and to run the fixtures`);
+  }
+});
+
+test('the ngmaze adapter is located in ng-wiring, not in the analysed workspace (P17-04)', async () => {
+  const located = await locateNgmaze();
+  assert.equal(located.root, await realpath(path.join(repo, 'node_modules/ngmaze')));
+  assert(located.binPath.startsWith(located.root + path.sep));
+  const target = await mkdtemp(path.join(tmpdir(), 'ngwi-no-maze-'));
+  try {
+    // A workspace without ngmaze installed still gets the pinned one: it is not the target's dependency.
+    await writeTargetManifest(target);
+    assert.equal((await locateNgmaze()).binPath, located.binPath);
+  } finally { await rm(target, { recursive: true, force: true }); }
+});
+
+/**
+ * §4.2 the run refuses a toolchain the workspace does not own. Installing ng-wiring hoists its ngmaze's
+ * `typescript` and `@angular/compiler` into the target `node_modules`, where they sit at the same paths
+ * a workspace's own copies would; only the manifest separates them.
+ */
+test('a toolchain the workspace never declared is refused (P17-04)', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'ngwi-hoisted-'));
+  try {
+    await symlink(path.join(repo, 'node_modules'), path.join(root, 'node_modules'), 'dir');
+    await writeTargetManifest(root, { 'some-app-dependency': '1.0.0' });
+    await assert.rejects(resolveToolchain(root), /typescript is in the target node_modules but no manifest/);
+    await writeTargetManifest(root, { typescript: '6.0.3', '@angular/compiler': '22.1.5', '@angular/core': '22.1.5' });
+    const toolchain = await resolveToolchain(root);
+    assert.equal(toolchain.ts.version, '6.0.3');
+    assert(toolchain.ts.packageFile.startsWith(await realpath(path.join(repo, 'node_modules')) + path.sep));
+    // The reactive packages are installed in that same tree, and stay out of the report until declared.
+    assert.deepEqual(toolchain.reactive, []);
+    await writeTargetManifest(root);
+    assert.deepEqual((await resolveToolchain(root)).reactive.map(item => item.name),
+      ['@ngrx/store', '@ngrx/effects', '@ngrx/signals', 'rxjs']);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

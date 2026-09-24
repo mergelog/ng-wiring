@@ -1,3 +1,4 @@
+import { linkTargetWorkspace } from './fixtures/target.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, symlink, rm, readFile, writeFile } from 'node:fs/promises';
@@ -27,7 +28,7 @@ test('pinned ngmaze JSON is checked and scoped to the selected Program', async (
     await writeFile(path.join(root, 'src/root.ts'), "import {Component} from '@angular/core'; import {Child} from './child'; @Component({selector:'app-root', template:'<app-child></app-child><ng-container [ngComponentOutlet]=\"dynamic\"></ng-container>', imports:[Child]}) export class Root { dynamic=Child; create(){ this.createComponent(Child); } createComponent(_:unknown){} }\n");
     await writeFile(path.join(root, 'src/child.ts'), "import {Component} from '@angular/core'; @Component({selector:'app-child', template:'<button data-id=go></button>'}) export class Child {}\n");
     await writeFile(path.join(root, 'src/orphan.ts'), "import {Component} from '@angular/core'; @Component({selector:'orphan', template:''}) export class Orphan {}\n");
-    await symlink(path.join(repo, 'node_modules'), path.join(root, 'node_modules'), 'dir');
+    await linkTargetWorkspace(root);
     const toolchain = await resolveToolchain(root);
     const project = (await selectProjects(root, toolchain))[0];
     const context = await createContext({ workspaceRoot: root, project, toolchain });
