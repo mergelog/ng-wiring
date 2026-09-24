@@ -230,6 +230,8 @@
 - [x] P11-14 `withEffects` のような古い名称を公開 API として追加せず、実際の exports を基準にする（§7.6）
 - [x] P11-15 R01〜R16 の個別実装は末尾の [R 対応表](#必須検知契約-r01r16) で管理（§7.6）
 
+実装メモ: P11 完了後に `rxMethod` の呼出し判定（R08）を P12 で厳格化した。下の [P12 の実装メモ](#p12-apihttp型75) を参照。
+
 ## P12 API・HTTP・型（§7.5）
 
 - [x] P12-01 サービス→生成クライアント→共通ラッパー→HTTP の段階解決（HTTP method、URL の静的部分/式、request 引数、response 型）（§7.5）
@@ -239,6 +241,8 @@
 - [x] P12-05 Promise API は呼出し時の開始と `await`/`then` の結果を分ける（§7.5）
 - [x] P12-06 interceptor・キャッシュ・retry・share/replay・取消しを枝として示し、未知なら HTTP 境界の診断。購読の発見だけで「必ず1回通信」と書かない（§7.5）
 - [x] P12-07 API 名や factory 宣言の発見だけを通信開始としない（登録・インスタンス生成・入力/トリガーからの到達を確認）（§7.5）
+
+実装メモ: P12-07 の fixture（rxMethod の未呼出し判定）で P11 の誤検知が出たため、`src/adapters/reactive/methods.ts` の `signals/rxMethod` 名前フォールバックを厳格化した（コミット 3a41f6b）。ソース内に自前の宣言を持つメンバー呼出し（例: 生成クライアントの `client.search(...)`）は、同名の Store メソッド `search: rxMethod(...)` の呼出しとは見なさない。P11 の判定を変える修正なので、R08 の subcase fixture（P16-03）を書く際はこの区別を期待値に含めること。
 
 ## P13 中間モデルと schema（`src/model`, §5）
 
