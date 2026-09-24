@@ -1,0 +1,125 @@
+import { createHash } from 'node:crypto';
+import { UsageError } from './arguments.js';
+
+export type CandidateClass = 'bootstrap' | 'declaration' | 'uninstantiated-fragment' | 'unresolved-dynamic';
+export interface SourcePosition { path: string; line: number; column: number; offset: number }
+export interface CandidateTuple {
+  contextId: string;
+  ownerId: string;
+  element: { path: string; start: number; end: number };
+  usages: SourcePosition[];
+  routes: { definition: SourcePosition; loaders: SourcePosition[] }[];
+  bootstrapId: string | null;
+  insertion: SourcePosition | null;
+}
+export interface Candidate {
+  tuple: CandidateTuple;
+  snapshotId: string;
+  class: CandidateClass;
+  parentIds: string[];
+  routePattern: string | null;
+  events: string[];
+  partialReasons: string[];
+  eventFilterReason?: string;
+  id: string;
+}
+
+function pointCodeCompare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function normalizePath(input: string): string {
+  return input.replaceAll('\\', '/');
+}
+
+function positionKey(position: SourcePosition): [string, number, number, number] {
+  return [normalizePath(position.path), position.line, position.column, position.offset];
+}
+
+function comparePosition(a: SourcePosition, b: SourcePosition): number {
+  const x = positionKey(a), y = positionKey(b);
+  return pointCodeCompare(x[0], y[0]) || x[1] - y[1] || x[2] - y[2] || x[3] - y[3];
+}
+
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object).sort(pointCodeCompare).map(key => `${JSON.stringify(key)}:${canonicalJson(object[key] ?? null)}`).join(',')}}`;
+}
+
+export function makeCandidate(tuple: CandidateTuple, details: Omit<Candidate, 'tuple' | 'id'>): Candidate {
+  const paths = [tuple.ownerId.split('#')[0]!, tuple.element.path,
+    ...tuple.usages.map(p => p.path), ...tuple.routes.flatMap(r => [r.definition.path, ...r.loaders.map(p => p.path)]),
+    ...(tuple.insertion ? [tuple.insertion.path] : [])];
+  if (paths.some(p => p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p))) {
+    throw new UsageError('Candidate identity paths must be workspace-relative');
+  }
+  const stableTuple: CandidateTuple = {
+    contextId: tuple.contextId,
+    ownerId: normalizePath(tuple.ownerId),
+    element: { ...tuple.element, path: normalizePath(tuple.element.path) },
+    usages: [...tuple.usages].sort(comparePosition).map(p => ({ ...p, path: normalizePath(p.path) })),
+    routes: [...tuple.routes].map(route => ({
+      definition: { ...route.definition, path: normalizePath(route.definition.path) },
+      loaders: [...route.loaders].sort(comparePosition).map(p => ({ ...p, path: normalizePath(p.path) })),
+    })).sort((a, b) => comparePosition(a.definition, b.definition)),
+    bootstrapId: tuple.bootstrapId && normalizePath(tuple.bootstrapId),
+    insertion: tuple.insertion && { ...tuple.insertion, path: normalizePath(tuple.insertion.path) },
+  };
+  const hash = createHash('sha256').update(canonicalJson(stableTuple), 'utf8').digest('hex');
+  return { ...details, tuple: stableTuple, id: `cand:${hash}` };
+}
+
+export function sortCandidates(candidates: readonly Candidate[]): Candidate[] {
+  return [...candidates].sort((a, b) => {
+    const x = a.tuple, y = b.tuple;
+    return pointCodeCompare(x.contextId, y.contextId)
+      || pointCodeCompare(x.ownerId, y.ownerId)
+      || pointCodeCompare(x.element.path, y.element.path)
+      || x.element.start - y.element.start || x.element.end - y.element.end
+      || pointCodeCompare(canonicalJson(x), canonicalJson(y));
+  });
+}
+
+export function matchesEvent(requested: string, actual: string): boolean {
+  const normalize = (value: string) => value.trim().toLowerCase();
+  const query = normalize(requested), event = normalize(actual);
+  return query.includes('.') ? event === query : event === query || event.startsWith(`${query}.`);
+}
+
+export function filterCandidates(candidates: readonly Candidate[], options: {
+  through?: string; route?: string; event?: string;
+}): Candidate[] {
+  let selected = [...candidates];
+  if (options.through) {
+    const through = normalizePath(options.through);
+    if (!through.includes('#')) {
+      const ids = new Set(selected.flatMap(c => c.parentIds).filter(id => id.endsWith(`#${through}`)));
+      if (ids.size > 1) throw new UsageError(`Ambiguous --through ${through}: ${[...ids].sort(pointCodeCompare).join(', ')}`);
+      selected = selected.filter(c => c.parentIds.some(id => id.endsWith(`#${through}`)));
+    } else selected = selected.filter(c => c.parentIds.map(normalizePath).includes(through));
+  }
+  if (options.route !== undefined) selected = selected.filter(c => c.routePattern === options.route);
+  // Event filtering selects listener paths; an element with no matching listener
+  // remains reportable so the renderer can explain the missing listener.
+  if (options.event) selected = selected.map(c => ({ ...c,
+    events: c.events.filter(name => matchesEvent(options.event!, name)),
+    eventFilterReason: c.events.some(name => matchesEvent(options.event!, name))
+      ? undefined : `No listener matched ${options.event}`,
+  }));
+  return sortCandidates(selected);
+}
+
+export function selectCandidate(candidates: readonly Candidate[], selector?: string): Candidate | undefined {
+  if (selector === undefined) return candidates.length === 1 ? candidates[0] : undefined;
+  const item = selector.startsWith('cand:') ? candidates.find(c => c.id === selector) : candidates[Number(selector) - 1];
+  if (!item) throw new UsageError(`Candidate ${selector} is outside the discovered candidates`);
+  return item;
+}
+
+export function formatCandidateList(candidates: readonly Candidate[], truncated = false): string {
+  const lines = candidates.map((c, i) => `${i + 1}. ${c.id} [${c.class}] ${c.tuple.ownerId} ${c.tuple.element.path}:${c.tuple.element.start}`);
+  if (truncated) lines.push('Candidate enumeration was truncated. Narrow with --through, --route, or --project.');
+  return lines.join('\n');
+}

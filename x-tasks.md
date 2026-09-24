@@ -11,7 +11,7 @@
 | フェーズ | 主な対象 | 項目数 | 完了 | 前提 |
 | --- | --- | --- | --- | --- |
 | P0 プロジェクト基盤 | package/dist/依存固定 | 7 | 7 | — |
-| P1 CLI 契約 | `src/cli` | 20 | 0 | P0 |
+| P1 CLI 契約 | `src/cli` | 20 | 11 | P0 |
 | P2 解析コンテキストと workspace | `src/workspace` | 19 | 0 | P0 |
 | P3 ngmaze アダプタ | `src/adapters/ng-maze` | 12 | 0 | P2 |
 | P4 索引と Angular スコープ解決 | `src/index`, `src/resolve/scope` | 13 | 0 | P2, P3 |
@@ -30,7 +30,7 @@
 | P17 配布・性能 | 配布・計測 | 7 | 0 | P14, P16 |
 | P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 0 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **7** | |
+| **合計** | | **237** | **18** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -53,26 +53,26 @@
 
 ## P1 CLI 契約（`src/cli`, §3）
 
-- [ ] P1-01 位置引数 `属性名=値` のパーサ。最初の `=` で分割、空の属性名はエラー、値全体を囲む一致した引用符 1 組のみ除去、内部の引用符は残す、raw 引数も保存（§3.1, §3.4-1）
-- [ ] P1-02 `--source <path>:<line>`。末尾 `:<正整数>` を分離して Windows ドライブ表記と衝突させない。属性指定と排他（§3.1）
-- [ ] P1-03 `--project` / `--tsconfig` の排他を ngmaze 起動前に自前検証（§3.1, 指摘 1-2）
-- [ ] P1-04 `--through <ClassName|path#ClassName>`。複数 ComponentId に解決したら識別子一覧を返して再指定を要求（§3.1）
-- [ ] P1-05 `--route <path>` の完全一致絞り込み（実 URL・query・fragment・glob として解釈しない）（§3.1）
-- [ ] P1-06 `--candidate <番号|cand:ID>`。1 始まり番号または SHA-256 全桁、範囲外・不存在はエラー（§3.1）
-- [ ] P1-07 `--event <name>` の正規化（`keydown` は `keydown.enter` 等を含む、修飾子付きは完全一致、該当なしでも理由付き資料を出す）（§3.1）
-- [ ] P1-08 `--out-dir <dir>`（未存在なら作成、ソースリンクの基準にする）（§3.1）
-- [ ] P1-09 `--json`（ファイルを 1 個だけ作り、stdout に JSON 本文を流さない）（§3.1）
-- [ ] P1-10 `--help` / `--version` は stdout に案内を出して code 0、対象引数不要（§3.3）
-- [ ] P1-11 未知/重複した単値オプション、対象指定なし/両方指定を code 3（§3.3）
-- [ ] P1-12 終了コード 0/1/2/3/4/5/130 と判定順（引数・設定 → 致命的失敗 → 対象なし（欠落なら 5、他は 1）→ 選択要求 2 → 出力成功時 0/5）（§3.3）
-- [ ] P1-13 stdout は完成ファイルの絶対パス 1 行のみ、診断・候補・進捗は stderr（§3.3）
-- [ ] P1-14 相対パスの基準分離（tsconfig/out-dir は実行ディレクトリ、source/ComponentId は workspace root）（§3.1）
-- [ ] P1-15 candidate の識別 tuple（context + 所有者 + span + 使用箇所列 + route 定義/loader 列 + bootstrap + 投影先）と canonical JSON → SHA-256。日時・OS 固有絶対ルートを含めない（§3.2）
-- [ ] P1-16 `snapshotId` を candidate ID とは別に保持（§3.2）
-- [ ] P1-17 候補の安定順序（`/` 区切りワークスペース相対、Unicode code point と数値位置、locale 非依存）（§3.2）
-- [ ] P1-18 対話選択（stdin と stderr がともに TTY のときだけ stderr に一覧とプロンプト、stdout がパイプでも可、EOF は code 2、非対話は ID 付き一覧を出して資料を作らない）（§3.2, §3.3）
-- [ ] P1-19 候補の分類表示（bootstrap 到達済み / 宣言・使用のみ / 未生成 TemplateRef / 動的配置未解決）と、不完全候補の明示選択（§3.2）
-- [ ] P1-20 列挙上限に達した場合は自動選択を禁止し、候補ゼロを一意と扱わない。省略された ID の指定は through/route/project による絞り込みを案内（§3.2）
+- [x] P1-01 位置引数 `属性名=値` のパーサ。最初の `=` で分割、空の属性名はエラー、値全体を囲む一致した引用符 1 組のみ除去、内部の引用符は残す、raw 引数も保存（§3.1, §3.4-1）
+- [x] P1-02 `--source <path>:<line>`。末尾 `:<正整数>` を分離して Windows ドライブ表記と衝突させない。属性指定と排他（§3.1）
+- [x] P1-03 `--project` / `--tsconfig` の排他を ngmaze 起動前に自前検証（§3.1, 指摘 1-2）
+- [x] P1-04 `--through <ClassName|path#ClassName>`。複数 ComponentId に解決したら識別子一覧を返して再指定を要求（§3.1）
+- [x] P1-05 `--route <path>` の完全一致絞り込み（実 URL・query・fragment・glob として解釈しない）（§3.1）
+- [x] P1-06 `--candidate <番号|cand:ID>`。1 始まり番号または SHA-256 全桁、範囲外・不存在はエラー（§3.1）
+- [x] P1-07 `--event <name>` の正規化（`keydown` は `keydown.enter` 等を含む、修飾子付きは完全一致、該当なしでも理由付き資料を出す）（§3.1）
+- [~] P1-08 `--out-dir <dir>`（未存在なら作成、ソースリンクの基準にする）（§3.1）
+- [~] P1-09 `--json`（ファイルを 1 個だけ作り、stdout に JSON 本文を流さない）（§3.1）
+- [x] P1-10 `--help` / `--version` は stdout に案内を出して code 0、対象引数不要（§3.3）
+- [x] P1-11 未知/重複した単値オプション、対象指定なし/両方指定を code 3（§3.3）
+- [~] P1-12 終了コード 0/1/2/3/4/5/130 と判定順（引数・設定 → 致命的失敗 → 対象なし（欠落なら 5、他は 1）→ 選択要求 2 → 出力成功時 0/5）（§3.3）
+- [~] P1-13 stdout は完成ファイルの絶対パス 1 行のみ、診断・候補・進捗は stderr（§3.3）
+- [~] P1-14 相対パスの基準分離（tsconfig/out-dir は実行ディレクトリ、source/ComponentId は workspace root）（§3.1）
+- [x] P1-15 candidate の識別 tuple（context + 所有者 + span + 使用箇所列 + route 定義/loader 列 + bootstrap + 投影先）と canonical JSON → SHA-256。日時・OS 固有絶対ルートを含めない（§3.2）
+- [~] P1-16 `snapshotId` を candidate ID とは別に保持（§3.2）
+- [x] P1-17 候補の安定順序（`/` 区切りワークスペース相対、Unicode code point と数値位置、locale 非依存）（§3.2）
+- [~] P1-18 対話選択（stdin と stderr がともに TTY のときだけ stderr に一覧とプロンプト、stdout がパイプでも可、EOF は code 2、非対話は ID 付き一覧を出して資料を作らない）（§3.2, §3.3）
+- [~] P1-19 候補の分類表示（bootstrap 到達済み / 宣言・使用のみ / 未生成 TemplateRef / 動的配置未解決）と、不完全候補の明示選択（§3.2）
+- [~] P1-20 列挙上限に達した場合は自動選択を禁止し、候補ゼロを一意と扱わない。省略された ID の指定は through/route/project による絞り込みを案内（§3.2）
 
 ## P2 解析コンテキストと workspace（`src/workspace`, §4.1, §4.2）
 
