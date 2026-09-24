@@ -21,7 +21,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
-    "check:dist": "npm run build && git diff --exit-code -- dist && test -z \"$(git ls-files --others --exclude-standard dist)\""
+    "check:dist": "node scripts/check-dist.mjs"
   },
   "dependencies": {
     "@angular/compiler": "22.1.5",
