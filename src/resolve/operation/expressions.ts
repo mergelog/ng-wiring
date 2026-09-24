@@ -228,6 +228,12 @@ export function resolveTemplateExpressions(element: IndexedElement, context: Ana
   for (const input of element.node.inputs) analyze(input.value);
   eventContext = true;
   for (const output of element.node.outputs) analyze(output.handler);
+  // §7.2 an interpolation is how a value reaches the screen, so the element's own text is resolved too.
+  // Only direct children: text inside a child element belongs to that element's own resolution.
+  eventContext = false;
+  for (const child of element.node.children) {
+    if (child instanceof ng.TmplAstBoundText) analyze(child.value);
+  }
   diagnostics.push(...typeDiagnostics);
   return { references, calls, queries, diagnostics };
 }

@@ -8,7 +8,9 @@ import { Ajv } from 'ajv';
 import { UsageError } from '../../cli/arguments.js';
 import { discoverProjects, verifyContextSnapshot } from '../../workspace/context.js';
 import { verifyCodeEdge } from './verify.js';
-const REVISION = '6da35347018531df30659d34e66a11d1bfcc3f22';
+/** The pinned ngmaze revision (§9); reports name it as the graph source. */
+export const NGMAZE_REVISION = '6da35347018531df30659d34e66a11d1bfcc3f22';
+const REVISION = NGMAZE_REVISION;
 const SCHEMA_HASH = 'b6b9484cf3ba22d35e43c37660f181f15a31e022789c97d6e66233d56a227075';
 const MAX_OUTPUT = 64 * 1024 * 1024;
 const TIMEOUT_MS = 120_000;
