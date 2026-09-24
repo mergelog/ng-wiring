@@ -9,7 +9,7 @@
  * with the toolchain undeclared is refused even though the packages sit in its `node_modules` (P17-03).
  */
 import { spawnSync } from 'node:child_process';
-import { cp, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,6 +59,14 @@ try {
 
   const version = step('ng-wiring --version', bin, ['--version'], { cwd: target });
   check(version.stdout.trim() === '0.1.0', `unexpected --version output: ${version.stdout.trim()}`);
+
+  // §10 A18 also asks for a clean npx: a directory with no installation, and a cache of its own.
+  const npxRoot = path.join(root, 'npx');
+  await mkdir(npxRoot, { recursive: true });
+  const npx = step('npx from an empty cache', npm, ['exec', '--yes', '--cache', path.join(root, 'npx-cache'),
+    '--package', path.join(root, tarball), '--', 'ng-wiring', '--version'], { cwd: npxRoot });
+  check(npx.status === 0, `npx exited ${npx.status}: ${npx.stderr}`);
+  check(npx.stdout.includes('0.1.0'), `unexpected npx output: ${npx.stdout.trim()}`);
 
   const report = step('ng-wiring on the installed workspace', bin,
     ['data-id="searchInputField"', '--project', 'app', '--candidate', '2', '--out-dir', 'out'], { cwd: target });
