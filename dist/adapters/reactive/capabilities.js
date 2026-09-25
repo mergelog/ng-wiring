@@ -164,7 +164,7 @@ const registry = [
         module: EVENTS, export: 'toScope', framework: 'signal-store' }),
     entry({ matcherId: 'signals-events/mapToScope', semanticId: 'event-dispatch:scope-operator', contracts: ['R14'],
         module: EVENTS, export: 'mapToScope', framework: 'signal-store' }),
-    // R15 the RxJS consumption APIs the real-world composite cases depend on.
+    // R15 the RxJS consumption APIs used by the composite examples.
     entry({ matcherId: 'rxjs/lastValueFrom', semanticId: 'call:promise-consume', contracts: ['R15'], module: 'rxjs',
         export: 'lastValueFrom' }),
     entry({ matcherId: 'rxjs/firstValueFrom', semanticId: 'call:promise-consume', contracts: ['R15'], module: 'rxjs',

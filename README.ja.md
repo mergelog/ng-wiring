@@ -33,6 +33,7 @@ Node.js `^22.22.3`、`^24.15.0`、または `>=26.0.0` が必要です。Linux/W
 ```sh
 npm ci
 npm run build
+npm test
 node dist/cli/index.js --help
 ```
 

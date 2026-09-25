@@ -58,7 +58,7 @@ The default Markdown is a short root-to-operation map with source links. Use
 `--detail` for the previous full report, or `--belowData` to start the short map
 at the selected event. `--json` keeps the normalized intermediate model.
 
-Optional local workspace measurements read `.env`. Copy `.env.example` to
+Optional workspace integration tests read `.env`. Copy `.env.example` to
 `.env` and set `NGWI_TEST_PROJECT_PATH`, `NGWI_TEST_PROJECT`, and
 `NGWI_TEST_TARGET`; `.env` is ignored by git. `npm test` then runs an optional
 workspace smoke check; set `NGWI_TEST_CANDIDATE` to also generate a full report.

@@ -309,9 +309,9 @@ test('a local application config factory connects its lazy route to the selected
       " import {RouterOutlet} from '@angular/router';"),
     'src/form.ts': component('app-form', 'Form', '<input data-id=targetInput>'),
     'src/top.routes.ts': "import {Routes} from '@angular/router'; import {Shell} from './shell';\n" +
-      "export const routes: Routes = [{path: '', component: Shell, children: [{path: 'tasks', loadChildren: () => import('./task.routes').then(m => m.routes)}]}];\n",
+      "export const routes: Routes = [{path: '', component: Shell, children: [{path: 'items', loadChildren: () => import('./task.routes').then(m => m.routes)}]}];\n",
     'src/task.routes.ts': "import {Routes} from '@angular/router'; import {Form} from './form';\n" +
-      "export const routes: Routes = [{path: ':id', children: [{path: 'hyper-params', component: Form}]}];\n",
+      "export const routes: Routes = [{path: ':id', children: [{path: 'details', component: Form}]}];\n",
   });
   try {
     const graph = buildRouteGraph(context, catalog);

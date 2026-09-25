@@ -38,7 +38,7 @@ test('configured Angular workspace can resolve a target candidate', {
     assert.equal(result.error, undefined, result.error?.message);
     if (!candidate) {
       assert.equal(result.status, 2, `${result.stderr}\n${result.stdout}`);
-      assert.match(result.stdout, /cand:/, 'the target query should return candidates');
+      assert.match(`${result.stdout}\n${result.stderr}`, /cand:/, 'the target query should return candidates');
     } else {
       assert([0, 5].includes(result.status), `${result.stderr}\n${result.stdout}`);
       assert((await readdir(outputDir)).some(name => name.endsWith('.md')),

@@ -552,7 +552,7 @@ test('--json writes exactly one file that differs only in its extension', async 
 test('a name that differs only in case counts as a collision', async () => {
   const directory = await temp();
   const { report } = buildReport();
-  await writeFile(path.join(directory, 'NGWI-searchcomponent.DATA-ID=searchinputfield-260924.130024.md'), 'taken');
+  await writeFile(path.join(directory, 'NGWI-searchcomponent.DATA-ID=targetinput-260924.130024.md'), 'taken');
   const result = await produceReport({ report, outDir: directory, json: false, startedAt, name: nameInput });
   assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=targetInput-c1-260924.130024.md');
 });
