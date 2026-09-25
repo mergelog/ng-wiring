@@ -8,8 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { resolveToolchain } from '../dist/workspace/toolchain.js';
 import { createContext, selectProjects } from '../dist/workspace/context.js';
 import { buildCatalog } from '../dist/index/catalog.js';
-import { analyzeHttp, analyzeHttpFlows, traceHttpFromMethod, analyzeStore } from '../dist/resolve/operation/index.js';
-import { analyzeReactiveMethods, catalogSignalStores } from '../dist/adapters/reactive/index.js';
+import { analyzeHttp, analyzeHttpFlows, traceHttpFromEffect, traceHttpFromEventConsumer,
+  traceHttpFromMethod, analyzeStore } from '../dist/resolve/operation/index.js';
+import { analyzeEvents, analyzeReactiveMethods, catalogSignalStores } from '../dist/adapters/reactive/index.js';
+import { httpTraceEdges } from '../dist/assemble/steps.js';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 async function fixture(files, check) {
@@ -202,6 +204,63 @@ export const rootProviders = [provideStore(), provideEffects(ItemEffects)];`,
   assert.match(unregistered.reason, /is not registered/);
 }));
 
+test('a selected effect follows constructor injected wrappers and keeps its filter and Action branches', async () => fixture({
+  'main.ts': `
+import {Injectable} from '@angular/core';
+import {HttpClient, provideHttpClient} from '@angular/common/http';
+import {Actions, createEffect, ofType, provideEffects} from '@ngrx/effects';
+import {createAction, provideStore} from '@ngrx/store';
+import {catchError, filter, mergeMap} from 'rxjs';
+export const save = createAction('[Task] Save');
+export const saved = createAction('[Task] Saved');
+export const extra = createAction('[Task] Extra');
+export const failed = createAction('[Task] Failed');
+@Injectable() export class Transport {
+  constructor(private http: HttpClient) {}
+  post(url: string) { return this.http.post(url, {}); }
+}
+@Injectable() export class TaskApi {
+  constructor(private transport: Transport) {}
+  update() { return this.transport.post('/tasks.update'); }
+  unrelated() { return this.transport.post('/unrelated'); }
+}
+@Injectable() export class SaveEffects {
+  constructor(private actions$: Actions, private api: TaskApi) {}
+  save$ = createEffect(() => this.actions$.pipe(ofType(save), filter((action: any) => action.valid),
+    mergeMap((action: any) => this.api.update().pipe(
+      mergeMap(() => [saved(), ...(action.more ? [extra()] : [])]),
+      catchError(() => [failed()])))));
+}
+@Injectable() export class UnusedEffects {
+  constructor(private actions$: Actions, private api: TaskApi) {}
+  unused$ = createEffect(() => this.actions$.pipe(ofType(save), mergeMap(() => this.api.unrelated())));
+}
+export const rootProviders = [provideStore(), provideHttpClient(), Transport, TaskApi, provideEffects(SaveEffects)];`,
+}, ({ context, catalog, expr }) => {
+  const providers = [expr('rootProviders')];
+  const store = analyzeStore(context, catalog, { rootProviders: providers });
+  const http = analyzeHttp(context);
+  const layers = [{ id: 'root', kind: 'root', providers }];
+  const selected = store.effects.find(item => item.id.includes('save$'));
+  const unused = store.effects.find(item => item.id.includes('unused$'));
+  assert.equal(selected.registered, true);
+  assert.equal(unused.registered, false);
+  const trace = traceHttpFromEffect(context, http, selected, { catalog, store, layers });
+  assert.deepEqual(trace.steps.filter(step => step.kind === 'http-consume').map(step => step.source),
+    ['POST /tasks.update']);
+  assert.deepEqual(httpTraceEdges(trace).filter(edge => edge.kind === 'http-create')
+    .map(edge => edge.details.urlExpression.value), ['/tasks.update']);
+  assert(!trace.steps.some(step => JSON.stringify(step).includes('/unrelated')));
+  assert(trace.steps.find(step => step.kind === 'http-consume').conditions.some(item =>
+    item.includes('filter requires')));
+  assert.deepEqual(selected.emits.map(id => id.slice(id.lastIndexOf(':') + 1)).sort(),
+    ['extra', 'failed', 'saved']);
+  assert(selected.emissionConditions[selected.emits.find(id => id.endsWith(':extra'))].some(item =>
+    item.includes('action.more')));
+  const idle = traceHttpFromEffect(context, http, unused, { catalog, store, layers });
+  assert.deepEqual(idle.steps.filter(step => step.kind === 'http-consume'), []);
+}));
+
 // P12-04 / P12-07
 test('an rxMethod pipeline starts a request only once the method is called', async () => fixture({
   'client.ts': client,
@@ -270,4 +329,40 @@ export class Root { private readonly store = inject(LogStore); }`,
   assert.equal(idle.consumption.kind, 'event-handler');
   assert.equal(idle.start, 'candidate');
   assert.match(idle.reason, /declared but never created/);
+}));
+
+test('fromFetch in a selected SignalStore handler is conditional and an unused handler stays idle', async () => fixture({
+  'main.ts': `
+import {Component, inject} from '@angular/core';
+import {signalStore, withState, type} from '@ngrx/signals';
+import {eventGroup, Events, withEventHandlers} from '@ngrx/signals/events';
+import {fromFetch} from 'rxjs/fetch';
+import {of, switchMap} from 'rxjs';
+export const logEvents = eventGroup({source: 'Log', events: {download: type<void>()}});
+export const LogStore = signalStore(withState({ready: false}),
+  withEventHandlers((store, events = inject(Events)) => ({
+    download$: events.on(logEvents.download).pipe(switchMap(() => store.ready()
+      ? fromFetch('/events.download_task_log', {method: 'POST'}) : of(null))),
+  })));
+export const IdleStore = signalStore(withState({ready: false}),
+  withEventHandlers((store, events = inject(Events)) => ({
+    idle$: events.on(logEvents.download).pipe(switchMap(() => fromFetch('/unused'))),
+  })));
+@Component({selector: 'app-root', template: ''})
+export class Root { private readonly store = inject(LogStore); }`,
+}, ({ context, catalog }) => {
+  const stores = catalogSignalStores(context);
+  const events = analyzeEvents(context, stores);
+  const http = analyzeHttp(context);
+  const [live, idle] = events.consumers.filter(item => item.kind === 'handler')
+    .sort((left, right) => Number(left.source.split(':').at(-2)) - Number(right.source.split(':').at(-2)));
+  assert(live && idle);
+  const trace = traceHttpFromEventConsumer(context, http, live, { catalog, stores });
+  assert.deepEqual(trace.steps.filter(step => step.kind === 'http-consume').map(step => step.source),
+    ['POST /events.download_task_log']);
+  assert(trace.steps.find(step => step.kind === 'http-consume').conditions.some(item =>
+    item.includes('store.ready()')));
+  assert(!trace.steps.some(step => JSON.stringify(step).includes('/unused')));
+  const unused = traceHttpFromEventConsumer(context, http, idle, { catalog, stores });
+  assert.deepEqual(unused.steps.filter(step => step.kind === 'http-consume'), []);
 }));

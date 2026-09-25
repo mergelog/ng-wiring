@@ -228,6 +228,19 @@ export function requestSiteAt(context, call) {
     const place = enclosing(context, call);
     const base = { id: location(context, call), source: location(context, call), owner: place.owner,
         member: place.member, branches: [] };
+    if (rxjsExport(context, call.expression) === 'fromFetch') {
+        const url = resolveUrl(context, call.arguments[0]);
+        const init = call.arguments[1] ? unwrap(t, call.arguments[1]) : undefined;
+        const methodValue = init && t.isObjectLiteralExpression(init) ? getProperty(t, init, 'method') : undefined;
+        const literalMethod = methodValue && t.isStringLiteralLike(methodValue)
+            ? methodValue.text.toUpperCase() : null;
+        const known = literalMethod && Object.values(methodByMember).includes(literalMethod);
+        pipeBranches(context, call, base.branches, gaps);
+        return { ...base, transport: 'rxjs-fetch', method: methodValue ? (known ? literalMethod : 'unknown') : 'GET',
+            methodReason: methodValue && !known ? 'the fromFetch method option is not a static method name' : null,
+            url, observe: null, types: [],
+            conditions: [...conditions, 'fromFetch starts the request only when its Observable is subscribed'], gaps };
+    }
     if (isGlobalFetch(context, call.expression)) {
         const url = resolveUrl(context, call.arguments[0]);
         const init = call.arguments[1] ? unwrap(t, call.arguments[1]) : undefined;
@@ -410,7 +423,8 @@ export function analyzeHttp(context) {
     }
     const environment = analyzeHttpEnvironment(context);
     for (const request of requests) {
-        request.conditions.push(...environment.conditions);
+        if (request.transport === 'http-client')
+            request.conditions.push(...environment.conditions);
         diagnostics.push(...request.gaps);
     }
     diagnostics.push(...environment.gaps);

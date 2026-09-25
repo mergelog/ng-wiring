@@ -1,7 +1,7 @@
 import type ts from 'typescript';
 import type { AnalysisContext } from '../../workspace/context.js';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'JSONP' | 'unknown';
-export type HttpTransport = 'http-client' | 'fetch';
+export type HttpTransport = 'http-client' | 'fetch' | 'rxjs-fetch';
 export interface UrlSegment {
     kind: 'literal' | 'expression';
     text: string;

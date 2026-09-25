@@ -106,11 +106,10 @@ export function storeTraceEdges(trace) {
 }
 /** §7.5 the HTTP trace. Request details come from the request site the step names. */
 export function httpTraceEdges(trace) {
-    const sites = new Map(trace.flows.map(flow => [flow.request.id, flow]));
     const edges = [];
     for (const step of trace.steps) {
         const common = { location: step.location, conditions: step.conditions, capability: null };
-        const flow = sites.get(step.target) ?? sites.get(step.source);
+        const flow = step.flowIndex === undefined ? undefined : trace.flows[step.flowIndex];
         const request = flow?.request;
         switch (step.kind) {
             case 'call':

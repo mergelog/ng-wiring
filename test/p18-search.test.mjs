@@ -60,6 +60,7 @@ test('P18-04 valueChanged reaches searchTable, resets changed search state, then
   const {report} = await inputReport;
   const output = edgesOfKind(report, 'output-subscription');
   assert(output.some(edge => edge.fromLabel === 'valueChanged' && edge.toLabel.endsWith('.searchTable')));
+  assert(!edgesOfKind(report, 'event-propagation').some(edge => edge.details.event.value === 'valueChanged'));
   const writes = edgesOfKind(report, 'state-write').filter(edge => edge.fromLabel ===
     'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent');
   for (const name of ['searchedText', 'scrollIndexCounter', 'searchResultsCount'])

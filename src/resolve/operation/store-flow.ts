@@ -16,6 +16,7 @@ export interface StoreStep { kind: StoreStepKind; source: string; target: string
   path: string[]; conditions: string[]; detail: string | null }
 export interface StoreTrace { steps: StoreStep[]; diagnostics: string[]; backgroundReads: string[] }
 export interface StoreTraceOptions { outputElement?: IndexedElement; catalog?: Catalog;
+  outputUses?: ReadonlyMap<string, IndexedElement>;
   parentLayers?: InjectorLayer[]; changedInput?: string; rootArguments?: readonly ts.Expression[] }
 const LIMIT = 10000;
 const DEPTH = 64;
@@ -458,20 +459,29 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       if (action.type) stateFromAction(action,owner.id,call,step.path,step.conditions,0);
     }
     if (options.outputElement && options.catalog) {
-      const element = options.outputElement;
-      const bindings = resolveElementBindings(element,context,options.catalog);
       const ng = context.toolchain.angularCompiler;
-      const emittedBySite = new Map<string, { target: string; location: string; path: string[];
-        conditions: string[]; detail: string | null }>();
+      type Emission = { source: string; target: string; location: string; path: string[];
+        conditions: string[]; detail: string | null };
+      const emittedBySite = new Map<string, Emission>();
       for (const item of operation.steps.filter(item => item.kind === 'output-emit'))
-        emittedBySite.set(item.location, item);
+        emittedBySite.set(item.location, { ...item, source: owner.id });
       // The direct method traversal knows literal call arguments (for example findNext(true));
       // use that specialization over the unspecialized callback trace at the same emit site.
       for (const item of steps.filter(item => item.kind === 'output-emit' && item.source === owner.id))
         emittedBySite.set(item.location, { ...item, target: item.target.replace(/^this\./, '') });
-      for (const emitted of emittedBySite.values()) {
+      const pending = [...emittedBySite.values()];
+      const seenEmissions = new Set<string>();
+      for (let cursor = 0; cursor < pending.length && cursor < LIMIT; cursor++) {
+        const emitted = pending[cursor]!;
+        const emissionKey = `${emitted.source}|${emitted.location}|${emitted.target}|${emitted.conditions.join('|')}`;
+        if (seenEmissions.has(emissionKey)) continue;
+        seenEmissions.add(emissionKey);
+        const element = options.outputUses?.get(emitted.source) ??
+          (emitted.source === owner.id ? options.outputElement : undefined);
+        if (!element) continue;
+        const bindings = resolveElementBindings(element, context, options.catalog);
         for (const relation of bindings.relations.filter(item => item.kind === 'output-subscription' &&
-          item.targetId === owner.id && item.member === emitted.target)) {
+          item.targetId === emitted.source && item.member === emitted.target.replace(/^this\./, ''))) {
           const handler = element.node.outputs.find(output => output.name === relation.alias)?.handler;
           if (!handler) continue;
           const methods: string[] = [];
@@ -486,20 +496,22 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
           for (const name of methods) {
             const parentMethod = classMethod(context, element.owner.node, name);
             if (!parentMethod) {
-              add('boundary',owner.id,name,root,emitted.path,
+              add('boundary',emitted.source,name,root,emitted.path,
                 [...emitted.conditions,...relation.conditions],'output handler method is unresolved');
               continue;
             }
             const conditions = [...emitted.conditions,...relation.conditions];
-            add('output-subscription',`${owner.id}.${emitted.target}`,`${element.owner.id}.${name}`,
+            add('output-subscription',`${emitted.source}.${emitted.target.replace(/^this\./, '')}`,`${element.owner.id}.${name}`,
               parentMethod, emitted.path, conditions, 'component output reaches the selected template subscription');
             const argumentSource = emitted.detail ? t.createSourceFile('__ngwi_emit.ts',
               `(${emitted.detail});`, t.ScriptTarget.Latest, true) : null;
             const argumentStatement = argumentSource?.statements[0];
             const argument = argumentStatement && t.isExpressionStatement(argumentStatement)
               ? [unwrap(t, argumentStatement.expression)] : [];
+            const before = steps.length;
             visitMethod(parentMethod,element.owner.id,[...emitted.path,location(context,parentMethod)],conditions,1,
               parentMethod,argument,options.parentLayers ?? []);
+            for (const item of steps.slice(before).filter(item => item.kind === 'output-emit')) pending.push(item);
           }
         }
       }

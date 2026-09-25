@@ -12,8 +12,8 @@ import { componentInjectorLayers, type InjectorLayer } from '../resolve/operatio
 import { analyzeStore, storeInputsForSelection, type StoreGraph } from '../resolve/operation/store.js';
 import { traceStoreDispatch } from '../resolve/operation/store-flow.js';
 import { traceOperation } from '../resolve/operation/flow.js';
-import { analyzeHttp } from '../resolve/operation/http.js';
-import { traceHttpFromMethod } from '../resolve/operation/http-flow.js';
+import { analyzeHttp, type HttpCatalog } from '../resolve/operation/http.js';
+import { traceHttpFromEffect, traceHttpFromEventConsumer, traceHttpFromMethod } from '../resolve/operation/http-flow.js';
 import { resolveElementBindings } from '../resolve/operation/bindings.js';
 import { resolveTemplateExpressions } from '../resolve/operation/expressions.js';
 import { analyzeSignals, type SignalGraph, type SignalSource } from '../adapters/reactive/signals.js';
@@ -50,12 +50,18 @@ export interface AssembleInput {
 const handlerMethod = (handler: string, inputs: ReadonlyMap<string, string>): string | null => {
   const direct = /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*$/.exec(handler);
   if (direct) return direct[1]!;
+  const guarded = /^\s*.+\s+&&\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*$/.exec(handler);
+  if (guarded) return guarded[1]!;
   // An input signal used as a simple template ternary can be decided only at this component use.
   // Other expressions remain unresolved; guessing one arm would claim an operation that may not run.
   const branch = /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\(\)\s*\?\s*(?:this\.)?([A-Za-z_$][\w$]*)\([^)]*\)\s*:\s*(?:this\.)?([A-Za-z_$][\w$]*)\([^)]*\)\s*$/.exec(handler);
   if (!branch) return null;
   const value = inputs.get(branch[1]!);
   return value === 'true' ? branch[2]! : value === 'false' ? branch[3]! : null;
+};
+const handlerGuard = (handler: string): string | null => {
+  const guarded = /^\s*(.+)\s+&&\s*(?:this\.)?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*$/.exec(handler);
+  return guarded?.[1]?.trim() ?? null;
 };
 const allowed = (kind: EdgeKind, from: NodeKind, to: NodeKind): boolean =>
   edgeContracts[kind].from.includes(from) && edgeContracts[kind].to.includes(to);
@@ -449,6 +455,8 @@ function addOperations(input: OperationInput): void {
   const selfOwner = catalog.declarations.get(targetElement.owner.id) ?? owners[0];
   const selectedUse = placed.find(item => item.element?.component === selfOwner?.id &&
     item.element.owner.id !== selfOwner.id)?.element;
+  const outputUses = new Map(placed.flatMap(item => item.element?.component
+    ? [[item.element.component, item.element] as const] : []));
   const contextualInputs = new Map<string, string>();
   for (const item of placed) {
     if (item.element?.component !== selfOwner?.id) continue;
@@ -567,7 +575,8 @@ function addOperations(input: OperationInput): void {
   };
   /** Positions another layer already explained, so a later trace does not report them as unknown. */
   const resolvedAt = new Map<string, string>();
-  const materialize = (edges: readonly TracedEdge[], into: { nodes: Set<string>; edges: string[] }): void => {
+  const materialize = (edges: readonly TracedEdge[], into: { nodes: Set<string>; edges: string[];
+    conditions?: string[] }): void => {
     for (const edge of edges) {
       const evidenceId = evidence.location(edge.location);
       if (!evidenceId) { problems.push(`${edge.location} を根拠に解決できず ${edge.kind} を出力しない`); continue; }
@@ -575,7 +584,7 @@ function addOperations(input: OperationInput): void {
       const to = edge.to.kind === 'boundary'
         ? builder.boundary({ reason: displayId(edge.to.label), lastConfirmed: displayId(edge.from.id), evidenceIds: [evidenceId] })
         : nodeFor(edge.to, evidenceId);
-      const predicates = edge.conditions.map(text =>
+      const predicates = [...(into.conditions ?? []), ...edge.conditions].map(text =>
         conditions.predicate({ expression: text, scope: edge.from.id, evidenceId }));
       const conditionId = predicates.length ? conditions.all(predicates) : null;
       const details = Object.fromEntries(Object.entries(edge.details).map(([key, field]) =>
@@ -622,7 +631,9 @@ function addOperations(input: OperationInput): void {
       details: { name: detail(listener.handler), label: detail(`${listener.eventName} → ${listener.handler}`) } });
     const scopeNodes = new Set<string>([targetNodeId, listenerNode]);
     const scopeEdges: string[] = [];
-    const predicates = listener.conditions.map(text =>
+    const guard = handlerGuard(listener.handler);
+    const listenerConditions = [...listener.conditions, ...(guard ? [`handler requires ${guard}`] : [])];
+    const predicates = listenerConditions.map(text =>
       conditions.predicate({ expression: text, scope: ownerId, evidenceId: listenerEvidence }));
     const conditionId = predicates.length ? conditions.all(predicates) : null;
     const hostNode = listener.listenerElement ? elementNode(listener.listenerElement) : declarationNode(ownerId);
@@ -639,7 +650,8 @@ function addOperations(input: OperationInput): void {
     });
     if (registered) scopeEdges.push(registered);
     // §7.2 an ancestor listener is reached by propagation; the DOM rules stay on the edge as conditions.
-    if (listener.listenerElement && listener.listenerElement !== targetElement) {
+    if (!listener.eventSource.endsWith('output') && listener.listenerElement &&
+      listener.listenerElement !== targetElement) {
       const propagated = connect({ kind: 'event-propagation', from: targetNodeId, fromKind: targetKind,
         to: hostNode, toKind: hostKind, evidenceIds: [listenerEvidence], conditionId,
         details: { event: detail(listener.eventName), fromElement: detail(`<${targetElement.tag}>`),
@@ -658,13 +670,13 @@ function addOperations(input: OperationInput): void {
         const at = evidence.offsetOf(location);
         return !!at && at.file === range.file && at.offset >= range.start && at.offset < range.end;
       };
-      const scope = { nodes: scopeNodes, edges: scopeEdges };
+      const scope = { nodes: scopeNodes, edges: scopeEdges, conditions: listenerConditions };
       const actionSource = t.createSourceFile('__ngwi_handler.ts', listener.handler, t.ScriptTarget.Latest, true);
       const action = actionSource.statements[0];
       const rootArguments = action && t.isExpressionStatement(action) && t.isCallExpression(action.expression)
         ? action.expression.arguments : [];
       const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers,
-        { outputElement: selectedUse ?? targetElement, catalog, parentLayers: layers, rootArguments });
+        { outputElement: selectedUse ?? targetElement, outputUses, catalog, parentLayers: layers, rootArguments });
       const outputTypes = new Map<string, string>();
       for (const member of owner.node.members) {
         if (!t.isPropertyDeclaration(member) || !member.initializer || !t.isCallExpression(member.initializer) ||
@@ -679,6 +691,17 @@ function addOperations(input: OperationInput): void {
         outputTypes, outputValues), scope);
       const httpTrace = traceHttpFromMethod(context, httpCatalog, owner, method,
         { catalog, store: storeGraph, methods, stores, layers });
+      for (const consumed of storeTrace.steps.filter(step => step.kind === 'action-consume')) {
+        const effect = storeGraph.effects.find(item => item.id === consumed.target);
+        if (!effect) continue;
+        const effectHttp = traceHttpFromEffect(context, httpCatalog, effect,
+          { catalog, store: storeGraph, methods, stores, layers }, consumed.conditions);
+        const offset = httpTrace.flows.length;
+        httpTrace.steps.push(...effectHttp.steps.map(step => ({ ...step,
+          flowIndex: step.flowIndex === undefined ? undefined : step.flowIndex + offset })));
+        httpTrace.flows.push(...effectHttp.flows);
+        httpTrace.diagnostics.push(...effectHttp.diagnostics);
+      }
       // Store methods this operation actually entered. Only a call on a resolved receiver counts: the
       // handler's own name must not stand in for a Store member that happens to share it.
       const entered = new Set<string>(storeTrace.steps
@@ -700,6 +723,7 @@ function addOperations(input: OperationInput): void {
       // The reactive layer runs first so the NgRx and HTTP traces can be reconciled against what it resolved.
       const keys = addReactiveWrites({ listenerNode, inside: reached, signals, eventGraph, owners, materialize,
         scope, storeGraph, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId,
+        context, catalog, httpCatalog, layers,
         reachedConsumers: new Set(storeTrace.steps.filter(step => step.kind === 'reactive-link')
           .map(step => step.target)) });
       addDisplayReads({ analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope,
@@ -749,7 +773,7 @@ function addOperations(input: OperationInput): void {
           if (lifecycleCall) scope.edges.push(lifecycleCall);
           scope.nodes.add(state); scope.nodes.add(inputNode); scope.nodes.add(lifecycle);
           const downstream = traceStoreDispatch(context, storeGraph, childOwner, 'ngOnChanges', layers,
-            { outputElement: child, catalog, parentLayers: layers, changedInput: bound.alias });
+            { outputElement: child, outputUses, catalog, parentLayers: layers, changedInput: bound.alias });
           materialize(storeTraceEdges(downstream).map(edge => ({ ...edge,
             conditions: [...phase, ...edge.conditions] })), scope);
         }
@@ -777,6 +801,10 @@ function addOperations(input: OperationInput): void {
 }
 
 interface ReactiveWriteInput {
+  context: ContextAnalysis['context'];
+  catalog: ContextAnalysis['catalog'];
+  httpCatalog: HttpCatalog;
+  layers: InjectorLayer[];
   listenerNode: string;
   inside: (location: string) => boolean;
   signals: SignalGraph;
@@ -799,7 +827,8 @@ interface ReactiveWriteInput {
 
 /** §7.6 the state this operation writes through Signal and SignalStore APIs, with no effect required. */
 function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
-  const { listenerNode, inside, signals, eventGraph, owners, storeGraph, materialize, scope,
+  const { context, catalog, httpCatalog, layers, listenerNode, inside, signals, eventGraph, owners,
+    storeGraph, materialize, scope,
     callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId, reachedConsumers } = input;
   const keys: DisplayKey[] = [];
   const traced: TracedEdge[] = [];
@@ -845,6 +874,11 @@ function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
     const delivery = resolveEventDelivery(eventGraph, dispatch, ancestry,
       consumer => consumer.owner ? [consumer.owner, ...ancestry] : ancestry);
     materialize(reactiveStepEdges(eventDeliverySteps(eventGraph, dispatch, delivery)), scope);
+    for (const consumer of delivery.consumers.filter(item => item.kind === 'handler')) {
+      const http = traceHttpFromEventConsumer(context, httpCatalog, consumer,
+        { catalog, store: storeGraph, stores, layers }, [...delivery.conditions, ...consumer.conditions]);
+      materialize(httpTraceEdges(http), scope);
+    }
     for (const consumer of delivery.consumers) for (const key of consumer.writes) {
       keys.push({ ownerId: consumer.owner, member: key, storeId: consumer.storeId,
         node: { kind: 'state', id: [consumer.storeId ?? consumer.id, consumer.owner, key].filter(Boolean).join('.'), label: key } });

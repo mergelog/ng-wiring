@@ -456,6 +456,10 @@ export function analyzeStore(context, catalog, inputs) {
         const explicitDispatches = [];
         const emissionConditions = {};
         const gaps = [];
+        const filterConditions = expressions(context, call, part => {
+            const callee = t.isPropertyAccessExpression(part.expression) ? part.expression.name : part.expression;
+            return importedApi(context, callee)?.name === 'filter';
+        }).filter(part => part.arguments[0]).map(part => `filter requires ${part.arguments[0].getText()}`);
         const returning = (callback) => {
             if (!t.isArrowFunction(callback) && !t.isFunctionExpression(callback))
                 return [];
@@ -464,18 +468,23 @@ export function analyzeStore(context, catalog, inputs) {
             return callback.body.statements.filter(t.isReturnStatement)
                 .flatMap(statement => statement.expression ? [statement.expression] : []);
         };
-        const actionReturns = (value) => {
+        const actionReturns = (value, branch = []) => {
             const result = definition(context, value);
             if (t.isConditionalExpression(result))
-                return [...actionReturns(result.whenTrue), ...actionReturns(result.whenFalse)];
+                return [
+                    ...actionReturns(result.whenTrue, [...branch, `if ${result.condition.getText()}`]),
+                    ...actionReturns(result.whenFalse, [...branch, `else of ${result.condition.getText()}`])
+                ];
+            if (t.isArrayLiteralExpression(result))
+                return result.elements.flatMap(element => actionReturns(t.isSpreadElement(element) ? element.expression : element, branch));
             if (!t.isCallExpression(result))
                 return [];
             const id = actionId(context, result);
             if (actions.some(action => action.id === id))
-                return [id];
+                return [{ id, branch }];
             const callee = t.isPropertyAccessExpression(result.expression) ? result.expression.name : result.expression;
             if (importedApi(context, callee)?.name === 'of')
-                return result.arguments.flatMap(actionReturns);
+                return result.arguments.flatMap(arg => actionReturns(arg, branch));
             return [];
         };
         for (const outer of expressions(context, call, part => {
@@ -487,9 +496,10 @@ export function analyzeStore(context, catalog, inputs) {
             const name = importedApi(context, callee)?.name;
             for (const callback of outer.arguments)
                 for (const returned of returning(callback))
-                    for (const id of actionReturns(returned)) {
-                        emitted.push(id);
-                        emissionConditions[id] = name === 'catchError' ? ['error notification'] : ['successful source notification'];
+                    for (const result of actionReturns(returned)) {
+                        emitted.push(result.id);
+                        emissionConditions[result.id] = [name === 'catchError' ? 'error notification' :
+                                'successful source notification', ...filterConditions, ...result.branch];
                     }
         }
         for (const inner of expressions(context, call, part => t.isPropertyAccessExpression(part.expression) &&

@@ -5,10 +5,11 @@ import { classMethod } from '../../index/catalog.js';
 import { matchIdentifier } from '../../adapters/reactive/capabilities.js';
 import type { ReactiveMethodGraph } from '../../adapters/reactive/methods.js';
 import { storeLifetime, type SignalStoreCatalog } from '../../adapters/reactive/signal-store.js';
-import { location } from './reactive.js';
-import { httpBranchEffect, rxjsExport, type HttpBranch, type HttpCatalog, type HttpRequestSite } from './http.js';
+import { importedApi, location } from './reactive.js';
+import { httpBranchEffect, resolveUrl, rxjsExport, type HttpBranch, type HttpCatalog, type HttpRequestSite } from './http.js';
 import { injectionRequestFor, resolveInjection, tokenId, type InjectorLayer } from './di.js';
-import type { StoreGraph } from './store.js';
+import type { StoreEffect, StoreGraph } from './store.js';
+import type { EventConsumer } from '../../adapters/reactive/events.js';
 
 /** Where the created value is actually subscribed. `none` leaves the request a candidate, not a call. */
 export type ConsumptionKind = 'subscribe' | 'promise-consume' | 'promise-result' | 'to-signal' | 'async-pipe' |
@@ -40,7 +41,7 @@ export interface HttpFlowInputs {
 }
 export type HttpStepKind = 'call' | 'http-create' | 'http-consume' | 'type-use' | 'boundary';
 export interface HttpStep { kind: HttpStepKind; source: string; target: string; location: string; path: string[];
-  conditions: string[]; detail: string | null }
+  conditions: string[]; detail: string | null; flowIndex?: number }
 export interface HttpTrace { steps: HttpStep[]; flows: HttpRequestFlow[]; diagnostics: string[] }
 
 const DEPTH = 64;
@@ -65,7 +66,7 @@ function memberCall(t: typeof ts, current: ts.Node): { name: string; call: ts.Ca
 }
 /** Collects the operators of a `pipe(...)` call, skipping the argument the value itself occupies. */
 function pipeArguments(context: AnalysisContext, call: ts.CallExpression, skip: ts.Node | null,
-  branches: HttpBranch[], gaps: string[]): void {
+  branches: HttpBranch[], gaps: string[], conditions: string[]): void {
   const t = context.toolchain.typescript;
   for (const argument of call.arguments) {
     if (argument === skip) continue;
@@ -73,12 +74,14 @@ function pipeArguments(context: AnalysisContext, call: ts.CallExpression, skip: 
       ? (t.isPropertyAccessExpression(argument.expression) ? argument.expression.name : argument.expression) : argument;
     const name = rxjsExport(context, callee);
     // An operator of a registered reactive API (ofType, tapResponse) is known without being an rxjs export.
-    if (!name && !matchIdentifier(context, callee)) {
+    if (!name && !matchIdentifier(context, callee) && importedApi(context, callee)?.name !== 'concatLatestFrom') {
       gaps.push(`operator ${callee.getText()} at ${location(context, argument)} is not a resolved rxjs export; the HTTP pipeline past it is unresolved`);
       continue;
     }
     const effect = name ? httpBranchEffect(name) : null;
     const place = location(context, argument);
+    if (name === 'filter' && t.isCallExpression(argument) && argument.arguments[0])
+      conditions.push(`filter requires ${argument.arguments[0]!.getText()}`);
     if (name && effect && !branches.some(item => item.operator === name && item.location === place))
       branches.push({ operator: name, location: place, effect });
   }
@@ -163,9 +166,10 @@ function asyncPipeFields(context: AnalysisContext, owner: Declaration): { fields
 }
 
 interface WalkState { branches: HttpBranch[]; gaps: string[]; conditions: string[]; stages: string[];
-  visited: Set<ts.Node>; stage: number }
+  visited: Set<ts.Node>; stage: number; callPath?: ReadonlySet<string> }
 const fork = (state: WalkState): WalkState => ({ branches: [...state.branches], gaps: [...state.gaps],
-  conditions: [...state.conditions], stages: [...state.stages], visited: new Set(state.visited), stage: state.stage });
+  conditions: [...state.conditions], stages: [...state.stages], visited: new Set(state.visited),
+  stage: state.stage, callPath: state.callPath });
 function consume(kind: ConsumptionKind, context: AnalysisContext, node: ts.Node, state: WalkState,
   conditions: string[], registration: string[] = [], registered = true): HttpConsumption {
   return { kind, location: location(context, node), registration, registered,
@@ -183,7 +187,8 @@ function consumptionOf(context: AnalysisContext, start: ts.Node, state: WalkStat
   /** A wrapper that returns the value hands the decision to its callers; each caller is one more stage. */
   const throughCallers = (declaration: ts.FunctionLikeDeclaration): HttpConsumption => {
     if (state.stage >= STAGES) return stop(declaration, 'the wrapper chain exceeded the staged resolution limit');
-    const callers = callSitesOf(context, declaration);
+    const callers = callSitesOf(context, declaration).filter(caller =>
+      !state.callPath || state.callPath.has(location(context, caller)));
     if (!callers.length)
       return stop(declaration, `the value is returned by ${declaration.name?.getText() ?? 'a function'} and no caller of it was found in the analyzed sources`);
     for (const caller of callers) {
@@ -203,12 +208,18 @@ function consumptionOf(context: AnalysisContext, start: ts.Node, state: WalkStat
     const parent: ts.Node | undefined = current.parent;
     if (!parent) return stop(current, 'the created value leaves the analyzed expression');
     if (parenLike(t, parent)) { current = parent; continue; }
+    if (t.isConditionalExpression(parent) && (parent.whenTrue === current || parent.whenFalse === current)) {
+      state.conditions.push(parent.whenTrue === current
+        ? `if ${parent.condition.getText()}` : `else of ${parent.condition.getText()}`);
+      current = parent;
+      continue;
+    }
     if (t.isAwaitExpression(parent))
       return consume('promise-result', context, parent, state, ['the awaited result continues after the response arrives']);
     const member = memberCall(t, current);
     if (member) {
       if (member.name === 'pipe') {
-        pipeArguments(context, member.call, null, state.branches, state.gaps);
+        pipeArguments(context, member.call, null, state.branches, state.gaps, state.conditions);
         current = member.call;
         continue;
       }
@@ -226,14 +237,14 @@ function consumptionOf(context: AnalysisContext, start: ts.Node, state: WalkStat
     if (t.isCallExpression(parent) && parent.arguments.includes(current as ts.Expression)) {
       const callee = t.isPropertyAccessExpression(parent.expression) ? parent.expression.name : parent.expression;
       if (t.isPropertyAccessExpression(parent.expression) && parent.expression.name.text === 'pipe') {
-        pipeArguments(context, parent, current, state.branches, state.gaps);
+        pipeArguments(context, parent, current, state.branches, state.gaps, state.conditions);
         current = parent;
         continue;
       }
       const rxjs = rxjsExport(context, callee);
       // The standalone `pipe(...)` composes operators the same way the `.pipe` member does.
       if (rxjs === 'pipe') {
-        pipeArguments(context, parent, current, state.branches, state.gaps);
+        pipeArguments(context, parent, current, state.branches, state.gaps, state.conditions);
         current = parent;
         continue;
       }
@@ -353,7 +364,10 @@ function consumptionOf(context: AnalysisContext, start: ts.Node, state: WalkStat
   return stop(current, 'the value path exceeded the consumption depth limit');
 }
 
+const callIndexes = new WeakMap<AnalysisContext, Map<string, ts.CallExpression>>();
 export function callIndex(context: AnalysisContext): Map<string, ts.CallExpression> {
+  const cached = callIndexes.get(context);
+  if (cached) return cached;
   const t = context.toolchain.typescript;
   const index = new Map<string, ts.CallExpression>();
   const visit = (node: ts.Node): void => {
@@ -364,18 +378,19 @@ export function callIndex(context: AnalysisContext): Map<string, ts.CallExpressi
     const source = context.program.getSourceFile(file);
     if (source) visit(source);
   }
+  callIndexes.set(context, index);
   return index;
 }
 /** Follows one request site to the consumer that starts it, through the wrappers that return it. */
 export function resolveHttpStart(context: AnalysisContext, site: HttpRequestSite, inputs: HttpFlowInputs = {},
-  index = callIndex(context)): HttpRequestFlow {
+  index = callIndex(context), callPath?: ReadonlySet<string>): HttpRequestFlow {
   const node = index.get(site.id);
   if (!node) return { request: site, start: 'candidate', stages: [],
     consumption: { kind: 'none', location: site.source, registration: [], registered: false, conditions: [],
       branches: [...site.branches], gaps: ['the request call site could not be read again'] },
     reason: 'the request call site could not be read again' };
   const state: WalkState = { branches: [...site.branches], gaps: [], conditions: [], stages: [],
-    visited: new Set(), stage: 0 };
+    visited: new Set(), stage: 0, callPath };
   const consumption = consumptionOf(context, node, state, inputs);
   const stages = state.stages;
   // A Promise API starts its request when it is called; reading the result is a separate stage.
@@ -399,8 +414,9 @@ export function analyzeHttpFlows(context: AnalysisContext, catalog: HttpCatalog,
 
 export interface HttpTraceOptions extends HttpFlowInputs { layers?: InjectorLayer[] }
 /** Walks one operation forward and reports only the requests that operation actually reaches. */
-export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatalog, owner: Declaration,
-  methodName: string, options: HttpTraceOptions = {}): HttpTrace {
+function traceHttpFromRoot(context: AnalysisContext, catalog: HttpCatalog,
+  root: ts.MethodDeclaration | ts.PropertyDeclaration | ts.PropertyAssignment | null,
+  rootName: string, rootOwner: string, options: HttpTraceOptions, entryConditions: string[] = []): HttpTrace {
   const t = context.toolchain.typescript;
   const steps: HttpStep[] = [];
   const diagnostics: string[] = [];
@@ -410,10 +426,10 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
   const active = new Set<ts.Node>();
   let expanded = 0;
   const add = (kind: HttpStepKind, source: string, target: string, node: ts.Node, path: string[],
-    conditions: string[] = [], detail: string | null = null): void => {
+    conditions: string[] = [], detail: string | null = null, flowIndex?: number): void => {
     if (expanded > LIMIT) return;
     steps.push({ kind, source, target, location: location(context, node), path: [...path],
-      conditions: [...conditions], detail });
+      conditions: [...conditions], detail, flowIndex });
   };
   const classFor = (implementation: string): ts.ClassDeclaration | null => {
     for (const file of context.sourceFiles) {
@@ -430,8 +446,9 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
     return !!node && node.getSourceFile() === body.getSourceFile() &&
       node.getStart() >= body.getStart() && node.getEnd() <= body.getEnd();
   });
-  const visitMethod = (declaration: ts.MethodDeclaration | ts.FunctionDeclaration, receiver: string,
-    path: string[], conditions: string[], depth: number): void => {
+  const visitMethod = (declaration: ts.MethodDeclaration | ts.FunctionDeclaration | ts.PropertyDeclaration |
+    ts.PropertyAssignment, receiver: string,
+    path: string[], conditions: string[], depth: number, argumentsAtCall: readonly ts.Expression[] = []): void => {
     if (++expanded > LIMIT) {
       if (expanded === LIMIT + 1) diagnostics.push(`HTTP flow reached ${LIMIT} expansion states`);
       return;
@@ -442,29 +459,42 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
       add('boundary', receiver, name, declaration, path, conditions, 'recursive call on the current branch');
       return;
     }
-    if (!declaration.body) {
+    active.add(declaration);
+    const body = t.isPropertyDeclaration(declaration) || t.isPropertyAssignment(declaration)
+      ? declaration.initializer : declaration.body;
+    if (!body) {
       add('boundary', receiver, name, declaration, path, conditions, 'the callee body is unavailable');
+      active.delete(declaration);
       return;
     }
-    active.add(declaration);
-    const body = declaration.body;
+    const parameterValues = new Map<string, ts.Expression>();
+    if (!t.isPropertyDeclaration(declaration) && !t.isPropertyAssignment(declaration))
+      declaration.parameters.forEach((parameter, position) => {
+      if (t.isIdentifier(parameter.name) && argumentsAtCall[position])
+        parameterValues.set(parameter.name.text, argumentsAtCall[position]!);
+      });
     for (const site of requestsIn(body)) {
-      const flow = resolveHttpStart(context, site, options, index);
-      flows.push(flow);
       const node = index.get(site.id) ?? declaration;
-      const target = `${site.method} ${site.url.text ?? '(unresolved URL)'}`;
-      add('http-create', receiver, target, node, path, [...conditions, ...site.conditions],
-        site.url.status === 'static' ? null : site.url.reason);
+      const urlArgument = t.isCallExpression(node) && node.arguments[0];
+      const boundUrl = urlArgument && t.isIdentifier(urlArgument) ? parameterValues.get(urlArgument.text) : undefined;
+      const effective = boundUrl ? { ...site, url: resolveUrl(context, boundUrl) } : site;
+      const flow = resolveHttpStart(context, effective, options, index, new Set(path));
+      const flowIndex = flows.length;
+      flows.push(flow);
+      const target = `${effective.method} ${effective.url.text ?? '(unresolved URL)'}`;
+      add('http-create', receiver, target, node, path,
+        [...conditions, ...effective.conditions, ...flow.consumption.conditions],
+        effective.url.status === 'static' ? null : effective.url.reason, flowIndex);
       for (const type of site.types)
         add('type-use', target, type.id, node, path, conditions,
-          `${type.role} type read from the ${type.origin.replaceAll('-', ' ')}`);
+          `${type.role} type read from the ${type.origin.replaceAll('-', ' ')}`, flowIndex);
       if (flow.start === 'confirmed')
         add('http-consume', target, flow.consumption.kind, node, path,
           [...conditions, ...flow.consumption.conditions, ...flow.consumption.registration],
-          flow.consumption.branches.map(item => item.effect).join('; ') || 'no branch operator was found on this pipeline');
+          flow.consumption.branches.map(item => item.effect).join('; ') || 'no branch operator was found on this pipeline', flowIndex);
       else add('boundary', target, 'request candidate', node, path,
-        [...conditions, ...flow.consumption.conditions], flow.reason);
-      diagnostics.push(...site.gaps, ...flow.consumption.gaps);
+        [...conditions, ...flow.consumption.conditions], flow.reason, flowIndex);
+      diagnostics.push(...effective.gaps, ...flow.consumption.gaps);
     }
     const visit = (node: ts.Node, localConditions: string[]): void => {
       if (expanded > LIMIT) return;
@@ -476,11 +506,16 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
       if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression)) {
         const callee = node.expression;
         const nextPath = [...path, location(context, node)];
+        // pipe is the carrier of operator callbacks, not a service call to resolve through DI.
+        if (callee.name.text === 'pipe') {
+          t.forEachChild(node, child => visit(child, localConditions));
+          return;
+        }
         if (callee.expression.kind === t.SyntaxKind.ThisKeyword && t.isClassDeclaration(declaration.parent)) {
           const target = classMethod(context, declaration.parent, callee.name.text);
           if (target) {
             add('call', receiver, callee.name.text, node, nextPath, localConditions);
-            visitMethod(target, receiver, nextPath, localConditions, depth + 1);
+            visitMethod(target, receiver, nextPath, localConditions, depth + 1, node.arguments);
             return;
           }
         }
@@ -490,8 +525,10 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
           const field = declaration.parent.members.find(item => t.isPropertyDeclaration(item) &&
             item.name.getText() === fieldName);
           const initializer = field && t.isPropertyDeclaration(field) ? field.initializer : undefined;
+          const constructor = declaration.parent.members.find(t.isConstructorDeclaration);
+          const parameter = constructor?.parameters.find(item => item.name.getText() === fieldName);
           const request = initializer && t.isCallExpression(initializer)
-            ? injectionRequestFor(context, initializer) : null;
+            ? injectionRequestFor(context, initializer) : parameter ? injectionRequestFor(context, parameter) : null;
           if (request) {
             const resolution = resolveInjection(context, request, layers);
             const implementation = resolution.bindings[0]?.implementation;
@@ -504,7 +541,7 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
               item.name.getText() === callee.name.text);
             if (target && t.isMethodDeclaration(target)) {
               add('call', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, localConditions);
-              visitMethod(target, implementation, nextPath, localConditions, depth + 1);
+              visitMethod(target, implementation, nextPath, localConditions, depth + 1, node.arguments);
               return;
             }
             add('boundary', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, localConditions,
@@ -518,8 +555,42 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
     visit(body, conditions);
     active.delete(declaration);
   };
-  const root = classMethod(context, owner.node, methodName);
-  if (root) visitMethod(root, owner.id, [location(context, root)], [], 0);
-  else diagnostics.push(`No method ${methodName} in ${owner.id}`);
+  if (root) visitMethod(root, rootOwner, [location(context, root)], entryConditions, 0);
+  else diagnostics.push(`No method or effect ${rootName} in ${rootOwner}`);
   return { steps, flows, diagnostics: [...new Set(diagnostics)] };
+}
+
+export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatalog, owner: Declaration,
+  methodName: string, options: HttpTraceOptions = {}): HttpTrace {
+  return traceHttpFromRoot(context, catalog, classMethod(context, owner.node, methodName),
+    methodName, owner.id, options);
+}
+
+/** Only an effect reached by the selected Action is entered; other registered effects stay outside this trace. */
+export function traceHttpFromEffect(context: AnalysisContext, catalog: HttpCatalog, effect: StoreEffect,
+  options: HttpTraceOptions = {}, conditions: string[] = []): HttpTrace {
+  const t = context.toolchain.typescript;
+  const source = context.sourceFiles.map(file => context.program.getSourceFile(file)).find(file =>
+    file && effect.source.startsWith(`${file.fileName.slice(context.workspaceRoot.length + 1).replaceAll('\\', '/')}:`));
+  let root: ts.PropertyDeclaration | null = null;
+  if (source) {
+    const visit = (node: ts.Node): void => {
+      if (root) return;
+      if (t.isPropertyDeclaration(node) && node.initializer && t.isCallExpression(node.initializer) &&
+        location(context, node.initializer) === effect.source) { root = node; return; }
+      t.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return traceHttpFromRoot(context, catalog, root, effect.id, effect.owner ?? effect.id, options, conditions);
+}
+
+/** Follows only the handler pipeline that received the selected SignalStore event. */
+export function traceHttpFromEventConsumer(context: AnalysisContext, catalog: HttpCatalog,
+  consumer: EventConsumer, options: HttpTraceOptions = {}, conditions: string[] = []): HttpTrace {
+  const t = context.toolchain.typescript;
+  const call = callIndex(context).get(consumer.source);
+  const root = call ? t.findAncestor(call, t.isPropertyAssignment) ?? null : null;
+  return traceHttpFromRoot(context, catalog, root, consumer.id,
+    consumer.storeId ?? consumer.owner ?? consumer.id, options, conditions);
 }

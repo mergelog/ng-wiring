@@ -23,6 +23,7 @@ export interface StoreTrace {
 export interface StoreTraceOptions {
     outputElement?: IndexedElement;
     catalog?: Catalog;
+    outputUses?: ReadonlyMap<string, IndexedElement>;
     parentLayers?: InjectorLayer[];
     changedInput?: string;
     rootArguments?: readonly ts.Expression[];
