@@ -26,7 +26,7 @@ export interface TracedEdge {
 /** §8 every required detail is present; one the layer did not report stays null with its reason. */
 export declare function completeDetails(kind: EdgeKind, provided: Record<string, DetailField>): Record<string, DetailField>;
 /** The live RxJS pipeline reached by Subject.next, including its operator sites and emitted values. */
-export declare function operationTraceEdges(trace: OperationTrace, ownerId: string, outputTypes: ReadonlyMap<string, string>): TracedEdge[];
+export declare function operationTraceEdges(trace: OperationTrace, ownerId: string, outputTypes: ReadonlyMap<string, string>, outputValues?: ReadonlyMap<string, string>): TracedEdge[];
 /** §7.4 the NgRx trace. Every step keeps the direction cause to receiver that §5 stores. */
 export declare function storeTraceEdges(trace: StoreTrace): TracedEdge[];
 /** §7.5 the HTTP trace. Request details come from the request site the step names. */

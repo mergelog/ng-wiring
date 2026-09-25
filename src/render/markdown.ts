@@ -133,6 +133,8 @@ export function renderMarkdown(input: RenderInput): RenderResult {
   out.push(`- クエリ: ${escapeInline(report.query.raw)} / 絞り込み: ${filters.length ? listOr(filters, '') : 'なし'}`);
   out.push(`- project: ${escapeInline(report.context.projectName ?? '（未指定）')}（${report.context.projectType}）` +
     ` / tsconfig: ${escapeInline(report.context.tsconfig)} / 設定ハッシュ: \`${escapeInline(report.context.configHash)}\``);
+  if (report.context.strictNullChecks !== undefined)
+    out.push(`- strictNullChecks: ${report.context.strictNullChecks}`);
   out.push(`- toolchain: TypeScript ${escapeInline(report.context.toolchain.typescript)}` +
     ` / @angular/compiler ${escapeInline(report.context.toolchain.angularCompiler)}` +
     ` / ngmaze ${escapeInline(report.context.toolchain.ngmaze)}`);

@@ -44,7 +44,7 @@ function traced(input: Omit<TracedEdge, 'details'> & { details: Record<string, D
 
 /** The live RxJS pipeline reached by Subject.next, including its operator sites and emitted values. */
 export function operationTraceEdges(trace: OperationTrace, ownerId: string,
-  outputTypes: ReadonlyMap<string, string>): TracedEdge[] {
+  outputTypes: ReadonlyMap<string, string>, outputValues: ReadonlyMap<string, string> = new Map()): TracedEdge[] {
   const edges: TracedEdge[] = [];
   let previous: TracedEnd | null = null;
   for (const step of trace.steps) {
@@ -69,7 +69,7 @@ export function operationTraceEdges(trace: OperationTrace, ownerId: string,
         from: end('symbol', `${ownerId}.${step.source}`, step.source),
         to: end('event', `${ownerId}.${step.target}`, step.target), location: step.location, conditions,
         capability: 'angular/output', details: { output: detail(step.target),
-          valueExpression: known(step.detail, '送出値の式を確定できていない'),
+          valueExpression: known(outputValues.get(step.location) ?? step.detail, '送出値の式を確定できていない'),
           declaredType: known(outputTypes.get(step.target), '宣言型を確定できていない') } }));
     }
   }

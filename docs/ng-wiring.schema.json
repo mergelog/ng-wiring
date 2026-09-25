@@ -574,6 +574,7 @@
         "projectType": {"enum":["application","library","explicit"]},
         "tsconfig": {"type":"string"},
         "configHash": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+        "strictNullChecks": {"type":"boolean"},
         "toolchain": {
           "type": "object",
           "required": ["typescript","angularCompiler","ngmaze"],

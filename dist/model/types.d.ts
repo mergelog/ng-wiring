@@ -195,6 +195,7 @@ export interface ReportContext {
     projectType: 'application' | 'library' | 'explicit';
     tsconfig: string;
     configHash: string;
+    strictNullChecks?: boolean;
     toolchain: {
         typescript: string;
         angularCompiler: string;

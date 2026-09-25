@@ -151,7 +151,7 @@ export interface LimitsReport { applied: LimitReport[]; truncations: Truncation[
 export interface ReportContext {
   id: string; workspaceRoot: string; projectName: string | null;
   projectType: 'application' | 'library' | 'explicit';
-  tsconfig: string; configHash: string;
+  tsconfig: string; configHash: string; strictNullChecks?: boolean;
   toolchain: { typescript: string; angularCompiler: string; ngmaze: string };
   entry: string[]; entryUnknown: boolean; excluded: string[]; unapplied: string[];
 }

@@ -1,3 +1,4 @@
+import type ts from 'typescript';
 import type { AnalysisContext } from '../../workspace/context.js';
 import type { Declaration } from '../../index/catalog.js';
 import type { Catalog } from '../../index/catalog.js';
@@ -24,6 +25,7 @@ export interface StoreTraceOptions {
     catalog?: Catalog;
     parentLayers?: InjectorLayer[];
     changedInput?: string;
+    rootArguments?: readonly ts.Expression[];
 }
 /** Traverses a chosen method and its confirmed DI callees, then registered NgRx transitions. */
 export declare function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, owner: Declaration, methodName: string, layers?: InjectorLayer[], options?: StoreTraceOptions): StoreTrace;

@@ -16,7 +16,7 @@ export interface StoreStep { kind: StoreStepKind; source: string; target: string
   path: string[]; conditions: string[]; detail: string | null }
 export interface StoreTrace { steps: StoreStep[]; diagnostics: string[]; backgroundReads: string[] }
 export interface StoreTraceOptions { outputElement?: IndexedElement; catalog?: Catalog;
-  parentLayers?: InjectorLayer[]; changedInput?: string }
+  parentLayers?: InjectorLayer[]; changedInput?: string; rootArguments?: readonly ts.Expression[] }
 const LIMIT = 10000;
 const DEPTH = 64;
 const slash = (s: string): string => s.replaceAll('\\', '/');
@@ -43,6 +43,40 @@ function matchesAction(action: StoreAction, candidate: StoreAction): boolean {
 export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, owner: Declaration,
   methodName: string, layers: InjectorLayer[] = [], options: StoreTraceOptions = {}): StoreTrace {
   const t = context.toolchain.typescript;
+  type Known = string | number | boolean | null;
+  const unknown = Symbol('unknown');
+  const valueOf = (node: ts.Expression, known: ReadonlyMap<string, Known>): Known | typeof unknown => {
+    const part = unwrap(t, node);
+    if (part.kind === t.SyntaxKind.NullKeyword) return null;
+    if (part.kind === t.SyntaxKind.TrueKeyword) return true;
+    if (part.kind === t.SyntaxKind.FalseKeyword) return false;
+    if (t.isStringLiteralLike(part)) return part.text;
+    if (t.isNumericLiteral(part)) return Number(part.text);
+    if (t.isIdentifier(part)) return known.has(part.text) ? known.get(part.text)! : unknown;
+    if (t.isPrefixUnaryExpression(part) && part.operator === t.SyntaxKind.ExclamationToken) {
+      const inner = valueOf(part.operand, known);
+      return inner === unknown ? unknown : !inner;
+    }
+    if (t.isBinaryExpression(part)) {
+      const left = valueOf(part.left, known), right = valueOf(part.right, known);
+      if (part.operatorToken.kind === t.SyntaxKind.AmpersandAmpersandToken) {
+        if (left === false || right === false) return false;
+        return left === unknown || right === unknown ? unknown : Boolean(left && right);
+      }
+      if (part.operatorToken.kind === t.SyntaxKind.BarBarToken) {
+        if (left === true || right === true) return true;
+        return left === unknown || right === unknown ? unknown : Boolean(left || right);
+      }
+      if (left === unknown || right === unknown) return unknown;
+      if (part.operatorToken.kind === t.SyntaxKind.EqualsEqualsEqualsToken) return left === right;
+      if (part.operatorToken.kind === t.SyntaxKind.ExclamationEqualsEqualsToken) return left !== right;
+    }
+    if (t.isConditionalExpression(part)) {
+      const condition = valueOf(part.condition, known);
+      return condition === unknown ? unknown : valueOf(condition ? part.whenTrue : part.whenFalse, known);
+    }
+    return unknown;
+  };
   const steps: StoreStep[] = [];
   const diagnostics: string[] = [];
   const backgroundReads: string[] = [];
@@ -231,6 +265,12 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
     }
     active.add(key);
     const before = steps.length;
+    const known = new Map<string, Known>();
+    method.parameters.forEach((parameter, index) => {
+      if (!t.isIdentifier(parameter.name) || !args[index]) return;
+      const value = valueOf(args[index]!, known);
+      if (value !== unknown) known.set(parameter.name.text, value);
+    });
     const visit = (node: ts.Node, localConditions: string[], level: number): void => {
       if (!enter(node,path)) return;
       if (level >= DEPTH) { add('boundary',receiver,'call stack depth limit',node,path,localConditions); return; }
@@ -242,9 +282,19 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
             return;
           }
         }
+        const branch = valueOf(node.expression, known);
+        if (branch === true) { visit(node.thenStatement, localConditions, level); return; }
+        if (branch === false) {
+          if (node.elseStatement) visit(node.elseStatement, localConditions, level);
+          return;
+        }
         visit(node.thenStatement,[...localConditions,`if ${node.expression.getText()}`],level);
         if (node.elseStatement) visit(node.elseStatement,[...localConditions,`else of ${node.expression.getText()}`],level);
         return;
+      }
+      if (t.isVariableDeclaration(node) && t.isIdentifier(node.name) && node.initializer) {
+        const value = valueOf(node.initializer, known);
+        if (value !== unknown) known.set(node.name.text, value);
       }
       if (t.isBinaryExpression(node) && node.operatorToken.kind === t.SyntaxKind.EqualsToken &&
         t.isPropertyAccessExpression(node.left) && node.left.expression.kind === t.SyntaxKind.ThisKeyword) {
@@ -279,8 +329,10 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
           return;
         }
         if (callee.name.text === 'emit' && receiverFiles.some(file => file.includes('/node_modules/@angular/core/'))) {
+          const argument = node.arguments[0] && valueOf(node.arguments[0], known);
           add('output-emit',receiver,callee.expression.getText(),node,nextPath,localConditions,
-            node.arguments[0]?.getText() ?? null);
+            argument !== undefined && argument !== unknown ?
+              argument === null ? 'null' : JSON.stringify(argument) : node.arguments[0]?.getText() ?? null);
           return;
         }
         if (t.isCallExpression(callee.expression) && t.isPropertyAccessExpression(callee.expression.expression) &&
@@ -377,7 +429,8 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
     active.delete(key);
   };
   const root = owner.node.members.find(member => t.isMethodDeclaration(member) && member.name.getText() === methodName);
-  if (root && t.isMethodDeclaration(root)) visitMethod(root,owner.id,[location(context,root)],[],0,root,[]);
+  if (root && t.isMethodDeclaration(root)) visitMethod(root,owner.id,[location(context,root)],[],0,root,
+    options.rootArguments ?? []);
   else diagnostics.push(`No method ${methodName} in ${owner.id}`);
   if (root && t.isMethodDeclaration(root) && !limitReported) {
     const operation = traceOperation(context,owner,methodName);
@@ -408,7 +461,15 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       const element = options.outputElement;
       const bindings = resolveElementBindings(element,context,options.catalog);
       const ng = context.toolchain.angularCompiler;
-      for (const emitted of operation.steps.filter(item => item.kind === 'output-emit')) {
+      const emittedBySite = new Map<string, { target: string; location: string; path: string[];
+        conditions: string[]; detail: string | null }>();
+      for (const item of operation.steps.filter(item => item.kind === 'output-emit'))
+        emittedBySite.set(item.location, item);
+      // The direct method traversal knows literal call arguments (for example findNext(true));
+      // use that specialization over the unspecialized callback trace at the same emit site.
+      for (const item of steps.filter(item => item.kind === 'output-emit' && item.source === owner.id))
+        emittedBySite.set(item.location, { ...item, target: item.target.replace(/^this\./, '') });
+      for (const emitted of emittedBySite.values()) {
         for (const relation of bindings.relations.filter(item => item.kind === 'output-subscription' &&
           item.targetId === owner.id && item.member === emitted.target)) {
           const handler = element.node.outputs.find(output => output.name === relation.alias)?.handler;
@@ -433,8 +494,13 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
             const conditions = [...emitted.conditions,...relation.conditions];
             add('output-subscription',`${owner.id}.${emitted.target}`,`${element.owner.id}.${name}`,
               parentMethod, emitted.path, conditions, 'component output reaches the selected template subscription');
+            const argumentSource = emitted.detail ? t.createSourceFile('__ngwi_emit.ts',
+              `(${emitted.detail});`, t.ScriptTarget.Latest, true) : null;
+            const argumentStatement = argumentSource?.statements[0];
+            const argument = argumentStatement && t.isExpressionStatement(argumentStatement)
+              ? [unwrap(t, argumentStatement.expression)] : [];
             visitMethod(parentMethod,element.owner.id,[...emitted.path,location(context,parentMethod)],conditions,1,
-              parentMethod,[],options.parentLayers ?? []);
+              parentMethod,argument,options.parentLayers ?? []);
           }
         }
       }

@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import {analyzeFixture, edgeKeys, edgesOfKind} from './fixtures/harness.mjs';
 
 const inputReport = analyzeFixture('search-scenario', {target: 'data-id=searchInputField', event: 'input'});
+const previousReport = analyzeFixture('search-scenario', {target: 'data-id=previousSearchResultButton', event: 'click'});
 
 test('P18-01 input follows Subject.next through debounce and both filters to the output', async () => {
   const {report} = await inputReport;
@@ -87,4 +88,18 @@ test('P18-05 searchedText causes a later child ngOnChanges branch and two output
   assert(predicates.some(text => text.includes('later change-detection pass')));
   assert(predicates.some(text => text.includes('if changes?.searchedText')));
   assert(!keys.some(key => key.includes('resetSearch')), 'an unrelated formData change was followed');
+});
+
+test('P18-06 previous icon bubbles to its button, which emits null under non-strict null checks', async () => {
+  const {report} = await previousReport;
+  const keys = edgeKeys(report);
+  assert(keys.includes('event-propagation|<span>|<button>'));
+  assert(keys.includes('dom-listener|<button>|click → findNext(true)'));
+  assert(!keys.includes('dom-listener|<span>|click → findNext(true)'));
+  const emitted = edgesOfKind(report, 'output-emit').find(edge => edge.fromLabel === 'findNext');
+  assert.equal(emitted?.details.valueExpression.value, 'null');
+  assert.equal(emitted?.details.declaredType.value, 'string');
+  assert.equal(report.context.strictNullChecks, false);
+  assert(!keys.includes('state-write|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent|searchedText'),
+    'backward null must not start a new search term');
 });

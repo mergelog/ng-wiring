@@ -50,6 +50,7 @@ export function assembleReport(input) {
     const reportContext = {
         id: context.id, workspaceRoot: context.workspaceRoot, projectName: context.projectName,
         projectType: context.projectType, tsconfig: relative(context.tsconfig), configHash: context.configHash,
+        strictNullChecks: context.compilerOptions.strictNullChecks ?? context.compilerOptions.strict ?? false,
         toolchain: { typescript: context.toolchain.ts.version, angularCompiler: context.toolchain.compiler.version,
             ngmaze: maze ? NGMAZE_REVISION : '未取得' },
         entry: context.entry.map(relative), entryUnknown: context.entryUnknown,
@@ -638,7 +639,11 @@ function addOperations(input) {
                 return !!at && at.file === range.file && at.offset >= range.start && at.offset < range.end;
             };
             const scope = { nodes: scopeNodes, edges: scopeEdges };
-            const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers, { outputElement: selectedUse ?? targetElement, catalog, parentLayers: layers });
+            const actionSource = t.createSourceFile('__ngwi_handler.ts', listener.handler, t.ScriptTarget.Latest, true);
+            const action = actionSource.statements[0];
+            const rootArguments = action && t.isExpressionStatement(action) && t.isCallExpression(action.expression)
+                ? action.expression.arguments : [];
+            const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers, { outputElement: selectedUse ?? targetElement, catalog, parentLayers: layers, rootArguments });
             const outputTypes = new Map();
             for (const member of owner.node.members) {
                 if (!t.isPropertyDeclaration(member) || !member.initializer || !t.isCallExpression(member.initializer) ||
@@ -650,7 +655,9 @@ function addOperations(input) {
                 if (declared)
                     outputTypes.set(member.name.text, declared);
             }
-            materialize(operationTraceEdges(traceOperation(context, owner, method), ownerId, outputTypes), scope);
+            const outputValues = new Map(storeTrace.steps.filter(step => step.kind === 'output-emit' &&
+                step.source === ownerId && step.detail !== null).map(step => [step.location, step.detail]));
+            materialize(operationTraceEdges(traceOperation(context, owner, method), ownerId, outputTypes, outputValues), scope);
             const httpTrace = traceHttpFromMethod(context, httpCatalog, owner, method, { catalog, store: storeGraph, methods, stores, layers });
             // Store methods this operation actually entered. Only a call on a resolved receiver counts: the
             // handler's own name must not stand in for a Store member that happens to share it.
