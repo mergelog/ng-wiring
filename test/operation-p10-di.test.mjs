@@ -138,3 +138,34 @@ export class Root {
   assert.equal(second.optional,true);
   assert.equal(resolveInjection(context,first,componentInjectorLayers(owner)).status,'boundary');
 }));
+
+test('an unexpanded importProvidersFrom names itself as the reason a token stays unresolved', async () => fixture(`
+import {Component,Injectable,NgModule,ModuleWithProviders,importProvidersFrom,inject} from '@angular/core';
+@Injectable() export class NoticeService { show(){return 1;} }
+@Injectable() export class DirectService { show(){return 2;} }
+@NgModule({providers:[NoticeService]}) export class NoticeModule {
+  static withConfig(): ModuleWithProviders<NoticeModule> { return {ngModule: NoticeModule, providers: []}; }
+}
+@Component({selector:'app-root',template:''}) export class Root {
+  notice=inject(NoticeService);
+  direct=inject(DirectService);
+}
+export const rootProviders=[importProvidersFrom(NoticeModule.withConfig()), DirectService];
+`, (context,catalog) => {
+  const t=context.toolchain.typescript;
+  const file=context.program.getSourceFiles().find(f=>f.fileName.endsWith('/src/main.ts'));
+  const expr=name=>file.statements.filter(t.isVariableStatement).flatMap(s=>s.declarationList.declarations)
+    .find(d=>d.name.getText()===name)?.initializer;
+  const owner=[...catalog.declarations.values()].find(d=>d.className==='Root');
+  const layers=componentInjectorLayers(owner,[],[expr('rootProviders')]);
+  const member=name=>owner.node.members.find(m=>t.isPropertyDeclaration(m)&&m.name.getText()===name).initializer;
+  const notice=resolveInjection(context,injectionRequestFor(context,member('notice')),layers);
+  assert.equal(notice.status,'missing');
+  assert(notice.reasons.some(item=>item.startsWith('importProvidersFrom at ')),
+    'the unexpanded call says where it is');
+  assert(notice.reasons.some(item=>item.startsWith('no provider for ')));
+  // A provider listed beside it is still resolved, so the record is about the unexpanded call only.
+  const direct=resolveInjection(context,injectionRequestFor(context,member('direct')),layers);
+  assert.equal(direct.status,'resolved');
+  assert(!direct.reasons.some(item=>item.includes('importProvidersFrom')));
+}));

@@ -100,6 +100,15 @@ function injectableScope(context: AnalysisContext, id: string): string | null {
   }
   return null;
 }
+/** `importProvidersFrom(...)` carries the providers of an NgModule, which this layer does not expand. */
+function importedModuleProviders(context: AnalysisContext, item: ts.Expression): boolean {
+  const t = context.toolchain.typescript;
+  if (!t.isCallExpression(item)) return false;
+  const callee = t.isPropertyAccessExpression(item.expression) ? item.expression.name : item.expression;
+  const found = symbolOf(context, callee);
+  return found?.getName() === 'importProvidersFrom' && !!found.declarations?.some(declaration =>
+    slash(declaration.getSourceFile().fileName).includes('/node_modules/@angular/core/'));
+}
 /** True when the token itself comes from an external package, whose sources §4.2 does not traverse. */
 export function externalToken(context: AnalysisContext, token: ts.Node): boolean {
   const symbol = symbolOf(context, token);
@@ -118,6 +127,7 @@ export function resolveInjection(context: AnalysisContext, request: InjectionReq
   const siteGroup = ordered[0] ? group(ordered[0]) : '';
   const applicable = request.skipSelf ? ordered.filter(layer => group(layer) !== siteGroup) : ordered;
   const collected: ProviderBinding[] = [];
+  const imported: string[] = [];
   let found = false;
   for (const layer of applicable) {
     if (request.self && group(layer) !== siteGroup) break;
@@ -128,7 +138,8 @@ export function resolveInjection(context: AnalysisContext, request: InjectionReq
       if (!items) { reasons.push(`provider list in ${layer.id} cannot be statically expanded`); continue; }
       for (const item of items) {
         const provider = providerOf(context, item);
-        if (!provider || provider.token !== token) continue;
+        if (!provider) { if (importedModuleProviders(context, item)) imported.push(location(context, item)); continue; }
+        if (provider.token !== token) continue;
         found = true;
         if (provider.multi) layerBindings.push(provider);
         else { layerBindings.length = 0; layerBindings.push(provider); }
@@ -157,6 +168,8 @@ export function resolveInjection(context: AnalysisContext, request: InjectionReq
   if (collected.some(item => item.multi) && collected.some(item => !item.multi)) reasons.push('mixed multi and single providers');
   // §4.2 keeps external package sources out of the traversal, so a token an external package both declares
   // and provides is a designed stop, not an unresolved injection. Say which of the two this is.
+  for (const source of !found ? [...new Set(imported)] : [])
+    reasons.push(`importProvidersFrom at ${source} contributes NgModule providers this analysis does not expand`);
   if (!found && !request.optional) reasons.push(externalToken(context, request.token)
     ? `${token} is declared by an external package, which supplies its own provider outside the analyzed sources`
     : `no provider for ${token}`);

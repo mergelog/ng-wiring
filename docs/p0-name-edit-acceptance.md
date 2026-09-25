@@ -37,7 +37,7 @@ HTTP の追跡が画面のメソッドからしか始まらず、Action を受�
 
 生成された API クライアントの `this.configuration` は `@Optional()` 注入であり、`optional injection may return null` を根拠として停止する。実行時に null になりうる以上、この停止は正しい。
 
-`NotifierService` は `importProvidersFrom(NotifierModule.withConfig({...}))` から提供される。DI の層は `ModuleWithProviders` を返す静的メソッドを展開しないため、provider が見つからないまま停止する。これは未対応の構文であり、`layout.effects.ts` の周辺で 1 件の boundary として現れる。
+`NotifierService` は `importProvidersFrom(NotifierModule.withConfig({...}))` から提供される。DI の層は NgModule の provider を展開しないため、provider が見つからないまま停止する。これは未対応の構文であり、`layout.effects.ts` の周辺で 1 件の boundary として現れる。停止の根拠には provider 不在に加えて、展開していない `importProvidersFrom` の位置（`app.config.ts:46:7`）を記録する。検査は `test/operation-p10-di.test.mjs` に置いた。
 
 外部パッケージが宣言と provider の両方を持つ受け手、たとえば ngrx の `Store` や `HttpClient` での停止は、§4.2 が外部パッケージのソースを探索対象外としているための設計上の停止である。以前はこれを「DI で一意に解決できない」と表示していた。名前編集の `keydown.enter` に出る 41 件の停止のうち 21 件がこれに当たり、現在は外部パッケージであることを理由として区別する。残る 20 件は上記の optional 注入と provider 不在である。
 
