@@ -33,6 +33,7 @@ export function optionsFor(input) {
   return {
     target: targetFor(input.target),
     project: input.project, tsconfig: input.tsconfig, through: input.through, route: input.route,
+    selector: input.selector,
     candidate: input.candidate, event: input.event,
     outDir: input.outDir ?? '.', json: input.json ?? false,
   };

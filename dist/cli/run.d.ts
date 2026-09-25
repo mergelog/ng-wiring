@@ -23,5 +23,5 @@ export interface Io {
         isTTY?: boolean;
     };
 }
-export declare const help = "Usage: ng-wiring ATTRIBUTE=VALUE [options]\n       ng-wiring --source PATH:LINE [options]\nOptions: --project NAME | --tsconfig PATH, --through CLASS|PATH#CLASS,\n         --route PATH, --candidate NUMBER|cand:SHA256, --event NAME,\n         --out-dir DIR, --json, --help, --version\n";
+export declare const help = "Usage: ng-wiring ATTRIBUTE=VALUE [options]\n       ng-wiring --source PATH:LINE [options]\nOptions: --project NAME | --tsconfig PATH, --through CLASS|PATH#CLASS,\n         --route PATH, --selector DEVTOOLS_PATH, --candidate NUMBER|cand:SHA256, --event NAME,\n         --out-dir DIR, --json, --help, --version\n";
 export declare function runCli(argv: readonly string[], backend: CliBackend, io: Io, cwd?: string, signal?: AbortSignal): Promise<ExitCode>;

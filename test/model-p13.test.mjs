@@ -381,6 +381,9 @@ test('the shipped schema states the same contract as the model', async () => {
   }
 
   const { report } = buildReport();
+  const withSelector = JSON.parse(JSON.stringify(report));
+  withSelector.query.filters.selector = 'body > app-root > input';
+  assert.deepEqual(await validateAgainstSchema(withSelector), []);
   const broken = async (mutate) => {
     const copy = JSON.parse(JSON.stringify(report));
     mutate(copy);

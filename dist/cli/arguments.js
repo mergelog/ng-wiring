@@ -4,7 +4,7 @@ export class UsageError extends Error {
 }
 const valueOptions = new Map([
     ['--source', 'source'], ['--project', 'project'], ['--tsconfig', 'tsconfig'],
-    ['--through', 'through'], ['--route', 'route'], ['--candidate', 'candidate'],
+    ['--through', 'through'], ['--route', 'route'], ['--selector', 'selector'], ['--candidate', 'candidate'],
     ['--event', 'event'], ['--out-dir', 'outDir'],
 ]);
 export function parseAttribute(raw) {
@@ -24,6 +24,22 @@ export function parseSource(raw) {
         throw new UsageError('Source target must be PATH:POSITIVE_LINE');
     }
     return { kind: 'source', raw, file: match[1], line: Number(match[2]) };
+}
+/** The direct-child form produced by Chrome DevTools' Copy selector. */
+export function parseDomSelector(raw) {
+    const segments = raw.split('>').map(part => part.trim());
+    const tag = /^([A-Za-z][A-Za-z0-9-]*)/;
+    const qualifiers = /^(?:(?:[.#][A-Za-z_][\w-]*)|(?::[A-Za-z-]+(?:\([^()]*\))?)|(?:\[[^\]]+\]))*$/;
+    const tags = segments.map(part => {
+        if (!part)
+            return undefined;
+        const name = tag.exec(part)?.[1] ?? null;
+        return qualifiers.test(part.slice(name?.length ?? 0)) ? name?.toLowerCase() ?? null : undefined;
+    });
+    if (segments.length < 2 || tags.includes(undefined) || !tags.at(-1)) {
+        throw new UsageError('--selector expects a DevTools Copy selector path with > between elements');
+    }
+    return tags.filter((name) => typeof name === 'string');
 }
 export function parseArguments(argv, cwd = process.cwd()) {
     if (argv.includes('--help') || argv.includes('--version')) {
@@ -72,10 +88,12 @@ export function parseArguments(argv, cwd = process.cwd()) {
     if (values.through && !/^(?:[^#]+#)?[^/#]+$/.test(values.through)) {
         throw new UsageError('--through must be ClassName or path#ClassName');
     }
+    if (values.selector)
+        parseDomSelector(values.selector);
     const target = values.source === undefined ? parseAttribute(positional[0]) : parseSource(values.source);
     return { kind: 'run', options: {
             target, project: values.project, tsconfig: values.tsconfig && path.resolve(cwd, values.tsconfig),
-            through: values.through, route: values.route, candidate: values.candidate,
+            through: values.through, route: values.route, selector: values.selector, candidate: values.candidate,
             event: values.event, outDir: path.resolve(cwd, values.outDir ?? '.'), json,
         } };
 }

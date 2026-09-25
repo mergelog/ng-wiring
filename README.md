@@ -43,6 +43,16 @@ Installed into a workspace, the same command is `npx ng-wiring`:
 npx ng-wiring 'data-id="searchInputField"' --project app --out-dir reports
 ```
 
+When one input appears on several screens, copy its selector from Chrome DevTools
+and pass it with `--selector`. ng-wiring compares the component host tags and the
+final element tag; CSS classes and `:nth-child()` do not establish a source path.
+If several source paths remain, it asks you to choose one.
+
+```sh
+npx ng-wiring 'data-id=nameField' --project stackup \
+  --selector 'body > sm-root > sm-app-shell > sm-common-experiments > sm-experiment-output > sm-experiment-info-header > sm-inline-edit > input'
+```
+
 Run times and peak memory for a real application and for generated workspaces
 of several sizes are recorded in [docs/performance.md](docs/performance.md),
 together with what that measurement could not obtain.

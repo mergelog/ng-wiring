@@ -16,6 +16,10 @@ function position(context: AnalysisContext, span: Span): SourcePosition {
 
 export function buildIndexedCandidates(context: AnalysisContext, catalog: Catalog, index: TemplateIndex,
   target: Target, maze?: MazeGraph, routes?: RouteGraph): IndexedCandidate[] {
+  const hostTag = (id: string): string | null => {
+    const selector = catalog.declarations.get(id)?.selector ?? catalog.external.get(id)?.selector;
+    return selector && /^[A-Za-z][A-Za-z0-9-]*$/.test(selector.trim()) ? selector.trim().toLowerCase() : null;
+  };
   const query = target.kind === 'attribute' ? { kind: 'attribute' as const, name: target.name, value: target.value } :
     { kind: 'source' as const, file: resolveWorkspacePath(context.workspaceRoot, target.file), line: target.line };
   const output: IndexedCandidate[] = [];
@@ -49,7 +53,8 @@ export function buildIndexedCandidates(context: AnalysisContext, catalog: Catalo
         class: view.end === 'bootstrap' ? 'bootstrap' :
           view.end === 'fragment-uninstantiated' ? 'uninstantiated-fragment' :
             view.end === 'dynamic-boundary' ? 'unresolved-dynamic' : 'declaration',
-        parentIds, routePattern: routeRefs[0]?.pattern ?? null,
+        parentIds, dom: { componentTags: parentIds.map(hostTag).filter((tag): tag is string => tag !== null).reverse(),
+          targetTag: element.tag.toLowerCase() }, routePattern: routeRefs[0]?.pattern ?? null,
         events: element.events, partialReasons });
       output.push({ candidate, path: view });
     }

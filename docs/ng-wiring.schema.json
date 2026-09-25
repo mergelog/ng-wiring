@@ -633,6 +633,7 @@
             "tsconfig": {"type":["string","null"]},
             "through": {"type":["string","null"]},
             "route": {"type":["string","null"]},
+            "selector": {"type":"string"},
             "candidate": {"type":["string","null"]},
             "event": {"type":["string","null"]}
           }

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { UsageError } from './arguments.js';
+import { parseDomSelector, UsageError } from './arguments.js';
 
 export type CandidateClass = 'bootstrap' | 'declaration' | 'uninstantiated-fragment' | 'unresolved-dynamic';
 export interface SourcePosition { path: string; line: number; column: number; offset: number }
@@ -17,6 +17,8 @@ export interface Candidate {
   snapshotId: string;
   class: CandidateClass;
   parentIds: string[];
+  /** Display-path component host tags and selected template tag; not part of the stable ID. */
+  dom?: { componentTags: string[]; targetTag: string };
   routePattern: string | null;
   events: string[];
   partialReasons: string[];
@@ -106,7 +108,7 @@ export function matchesEvent(requested: string, actual: string): boolean {
 }
 
 export function filterCandidates(candidates: readonly Candidate[], options: {
-  through?: string; route?: string; event?: string;
+  through?: string; route?: string; selector?: string; event?: string;
 }): Candidate[] {
   let selected = [...candidates];
   if (options.through) {
@@ -118,6 +120,22 @@ export function filterCandidates(candidates: readonly Candidate[], options: {
     } else selected = selected.filter(c => c.parentIds.map(normalizePath).includes(through));
   }
   if (options.route !== undefined) selected = selected.filter(c => c.routePattern === options.route);
+  if (options.selector) {
+    if (!selected.length) return [];
+    const tags = parseDomSelector(options.selector);
+    const known = new Set(selected.flatMap(candidate => candidate.dom?.componentTags ?? []));
+    const componentTags = tags.filter(tag => known.has(tag));
+    if (!componentTags.length) {
+      throw new UsageError('--selector contains no component host tag found in the candidates');
+    }
+    const targetTag = tags.at(-1)!;
+    selected = selected.filter(candidate => {
+      if (candidate.dom?.targetTag !== targetTag) return false;
+      const path = candidate.dom.componentTags;
+      return componentTags.length <= path.length &&
+        componentTags.every((tag, index) => path[path.length - componentTags.length + index] === tag);
+    });
+  }
   // Event filtering selects listener paths; an element with no matching listener
   // remains reportable so the renderer can explain the missing listener.
   if (options.event) selected = selected.map(c => ({ ...c,

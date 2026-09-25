@@ -8,6 +8,10 @@ function position(context, span) {
     return { path: relative(context, span.file), line: span.line, column: span.column, offset: span.start };
 }
 export function buildIndexedCandidates(context, catalog, index, target, maze, routes) {
+    const hostTag = (id) => {
+        const selector = catalog.declarations.get(id)?.selector ?? catalog.external.get(id)?.selector;
+        return selector && /^[A-Za-z][A-Za-z0-9-]*$/.test(selector.trim()) ? selector.trim().toLowerCase() : null;
+    };
     const query = target.kind === 'attribute' ? { kind: 'attribute', name: target.name, value: target.value } :
         { kind: 'source', file: resolveWorkspacePath(context.workspaceRoot, target.file), line: target.line };
     const output = [];
@@ -44,7 +48,8 @@ export function buildIndexedCandidates(context, catalog, index, target, maze, ro
                 class: view.end === 'bootstrap' ? 'bootstrap' :
                     view.end === 'fragment-uninstantiated' ? 'uninstantiated-fragment' :
                         view.end === 'dynamic-boundary' ? 'unresolved-dynamic' : 'declaration',
-                parentIds, routePattern: routeRefs[0]?.pattern ?? null,
+                parentIds, dom: { componentTags: parentIds.map(hostTag).filter((tag) => tag !== null).reverse(),
+                    targetTag: element.tag.toLowerCase() }, routePattern: routeRefs[0]?.pattern ?? null,
                 events: element.events, partialReasons });
             output.push({ candidate, path: view });
         }

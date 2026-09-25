@@ -14,6 +14,7 @@ export interface CliOptions {
   tsconfig?: string;
   through?: string;
   route?: string;
+  selector?: string;
   candidate?: string;
   event?: string;
   outDir: string;
@@ -24,7 +25,7 @@ export type ParsedArguments = { kind: 'help' } | { kind: 'version' } | { kind: '
 
 const valueOptions: ReadonlyMap<string, string> = new Map([
   ['--source', 'source'], ['--project', 'project'], ['--tsconfig', 'tsconfig'],
-  ['--through', 'through'], ['--route', 'route'], ['--candidate', 'candidate'],
+  ['--through', 'through'], ['--route', 'route'], ['--selector', 'selector'], ['--candidate', 'candidate'],
   ['--event', 'event'], ['--out-dir', 'outDir'],
 ] as const);
 
@@ -44,6 +45,22 @@ export function parseSource(raw: string): Extract<Target, { kind: 'source' }> {
     throw new UsageError('Source target must be PATH:POSITIVE_LINE');
   }
   return { kind: 'source', raw, file: match[1], line: Number(match[2]) };
+}
+
+/** The direct-child form produced by Chrome DevTools' Copy selector. */
+export function parseDomSelector(raw: string): string[] {
+  const segments = raw.split('>').map(part => part.trim());
+  const tag = /^([A-Za-z][A-Za-z0-9-]*)/;
+  const qualifiers = /^(?:(?:[.#][A-Za-z_][\w-]*)|(?::[A-Za-z-]+(?:\([^()]*\))?)|(?:\[[^\]]+\]))*$/;
+  const tags = segments.map(part => {
+    if (!part) return undefined;
+    const name = tag.exec(part)?.[1] ?? null;
+    return qualifiers.test(part.slice(name?.length ?? 0)) ? name?.toLowerCase() ?? null : undefined;
+  });
+  if (segments.length < 2 || tags.includes(undefined) || !tags.at(-1)) {
+    throw new UsageError('--selector expects a DevTools Copy selector path with > between elements');
+  }
+  return tags.filter((name): name is string => typeof name === 'string');
 }
 
 export function parseArguments(argv: readonly string[], cwd = process.cwd()): ParsedArguments {
@@ -87,10 +104,11 @@ export function parseArguments(argv: readonly string[], cwd = process.cwd()): Pa
   if (values.through && !/^(?:[^#]+#)?[^/#]+$/.test(values.through)) {
     throw new UsageError('--through must be ClassName or path#ClassName');
   }
+  if (values.selector) parseDomSelector(values.selector);
   const target = values.source === undefined ? parseAttribute(positional[0]!) : parseSource(values.source);
   return { kind: 'run', options: {
     target, project: values.project, tsconfig: values.tsconfig && path.resolve(cwd, values.tsconfig),
-    through: values.through, route: values.route, candidate: values.candidate,
+    through: values.through, route: values.route, selector: values.selector, candidate: values.candidate,
     event: values.event, outDir: path.resolve(cwd, values.outDir ?? '.'), json,
   } };
 }

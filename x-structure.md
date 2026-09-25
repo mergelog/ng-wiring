@@ -68,6 +68,7 @@ npx github:mergelog/ng-wiring --source 'src/app/webapp-common/experiments/dumb/e
 | `--tsconfig <path>` | 明示した TS 設定を 1 つの独立した解析コンテキストとして扱う。`angular.json` は必須でない。solution-style の複数 references は勝手に 1 つを選ばず、具体的な設定を要求する |
 | `--through <ClassNameまたはpath#ClassName>` | 親経路に指定コンポーネントを含む候補だけ残す。クラス名が複数 ComponentId に解決する場合は識別子一覧を返し、完全な ID で再指定を求める |
 | `--route <path>` | 再構築したルートパターンを完全一致で絞る。例 `/projects/:projectId/tasks/:experimentId/hyper-params/hyper-param/:hyperParamId`。実 URL、query、fragment、glob として解釈しない |
+| `--selector <DevTools Copy selector>` | Chrome DevTools の「Copy selector」で得た `>` 区切りの DOM 経路を渡す。既知の Angular component host タグを表示経路と順序照合し、末尾の要素タグも照合する。HTML 要素、CSS class、id、`:nth-child()` は静的解析の絞り込み根拠には使わない。候補が複数残れば選択を要求する |
 | `--candidate <番号またはcand:ID>` | 下記の安定順序による 1 始まりの番号、または SHA-256 の全桁 ID。全フィルター適用後の候補から選ぶ。範囲外・存在しない ID はエラー |
 | `--event <name>` | 正規化したイベント名で絞る。`keydown` は `keydown.enter` 等も含み、修飾子付き指定は完全一致。該当リスナーなしならその理由を持つ経路資料を出す |
 | `--out-dir <dir>` | 既定は実行ディレクトリ。存在しなければ作成。ソースへのリンクはこの出力先を基準にする |
@@ -77,13 +78,13 @@ npx github:mergelog/ng-wiring --source 'src/app/webapp-common/experiments/dumb/e
 
 属性は Angular AST の静的属性名とデコード済み値の完全一致で比較する。大小文字・空白・Unicode の正規化で勝手に対象を増減させない。`data-id="a"` と `data-id=a` は入力文法上同一のクエリであり、異なる対象ではない。raw 引数も保存する。`[attr.data-id]`、補間、host 属性、実行時に付く属性は静的属性一致に含めず、検出できた範囲を診断する。空値は許可し、存在属性は `search-button=` と指定できる。
 
-`--source` は外部 HTML またはインラインテンプレートを含む TS を受ける。同一行に複数タグがある場合、および同じ HTML に複数所有者がいる場合は全組合せを候補にする。指定行で `[startOffset, endOffset)` の開始タグ span と重なる要素だけを選び、本文・閉じタグ・コメントだけの行は一致なし。インライン文字列の cooked/raw offset を変換できないときは推測で行を決めず診断する。`@for` 内の位置はソース要素を表し、個々の行データを表さない。CSS selector、`:nth-child()`、ビルド由来の `_ngcontent-*` は初期版の識別構文にしない。
+`--source` は外部 HTML またはインラインテンプレートを含む TS を受ける。同一行に複数タグがある場合、および同じ HTML に複数所有者がいる場合は全組合せを候補にする。指定行で `[startOffset, endOffset)` の開始タグ span と重なる要素だけを選び、本文・閉じタグ・コメントだけの行は一致なし。インライン文字列の cooked/raw offset を変換できないときは推測で行を決めず診断する。`@for` 内の位置はソース要素を表し、個々の行データを表さない。`--selector` は実行時 DOM 全体を復元せず、Copy selector 中の component host タグと最終要素タグだけを照合する。`:nth-child()` やビルド由来の `_ngcontent-*` を候補 ID の識別要素にしない。
 
 ### 3.2 候補と対話
 
 候補は「解析コンテキスト + 所有コンポーネント + 対象要素の span + 使用箇所列 + route の定義/loader 使用箇所列 + bootstrap + 投影/挿入先」で区別する。各パスは `/` 区切りのワークスペース相対表現、比較順は Unicode code point と数値位置で固定し、環境の locale に依存させない。上記 tuple の canonical JSON を SHA-256 にして candidate ID とする。canonical JSON はオブジェクトのキーを code point 順、配列は規定の経路/ソース順、UTF-8、余分な空白なし、未設定値は null とする。識別 tuple に日時・OS 固有の絶対ルートは入れない。ファイル内容・設定のハッシュは別途 snapshotId に持つ。ソース編集で番号・ID は変わり得るので、再実行時に選択結果の所有者・経路・snapshot を必ず資料に記載する。
 
-`--through` / `--route` は候補を絞るだけである。一意なら選択し、複数なら stdin と stderr がともに TTY のときだけ stderr に一覧・プロンプトを出し、stdin から入力を読む。stdout がパイプでも対話可能。非対話時は stderr に ID 付き一覧を出して終了し、資料を作らない。候補ゼロを一意と扱わない。
+`--through` / `--route` / `--selector` は候補を絞るだけである。一意なら選択し、複数なら stdin と stderr がともに TTY のときだけ stderr に一覧・プロンプトを出し、stdin から入力を読む。stdout がパイプでも対話可能。非対話時は stderr に ID 付き一覧を出して終了し、資料を作らない。候補ゼロを一意と扱わない。
 
 bootstrap 到達済み、宣言/使用のみ確認、未生成 TemplateRef、動的配置未解決を分けて候補表示する。不完全な候補も明示選択できるが、未解決位置を架空の親で埋めない。ルート列挙が上限に達した場合は「1 件しか見つからなかった」を一意性の証明にせず、自動選択を禁止する。上限はフィルター後の列挙に適用する。省略された候補 ID を指定しても発見済み扱いにせず、through/route/project で探索を狭めるよう案内する。
 

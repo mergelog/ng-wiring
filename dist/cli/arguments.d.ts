@@ -18,6 +18,7 @@ export interface CliOptions {
     tsconfig?: string;
     through?: string;
     route?: string;
+    selector?: string;
     candidate?: string;
     event?: string;
     outDir: string;
@@ -37,5 +38,7 @@ export declare function parseAttribute(raw: string): Extract<Target, {
 export declare function parseSource(raw: string): Extract<Target, {
     kind: 'source';
 }>;
+/** The direct-child form produced by Chrome DevTools' Copy selector. */
+export declare function parseDomSelector(raw: string): string[];
 export declare function parseArguments(argv: readonly string[], cwd?: string): ParsedArguments;
 export declare function resolveWorkspacePath(workspaceRoot: string, input: string): string;

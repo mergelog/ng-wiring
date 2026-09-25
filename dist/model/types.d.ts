@@ -233,6 +233,7 @@ export interface ReportQuery {
         tsconfig: string | null;
         through: string | null;
         route: string | null;
+        selector?: string;
         candidate: string | null;
         event: string | null;
     };

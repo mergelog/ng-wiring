@@ -168,7 +168,7 @@ export interface CandidateSummary {
 export interface ReportQuery {
   raw: string; target: QueryTarget;
   filters: { project: string | null; tsconfig: string | null; through: string | null;
-    route: string | null; candidate: string | null; event: string | null };
+    route: string | null; selector?: string; candidate: string | null; event: string | null };
   candidates: CandidateSummary[]; enumerationComplete: boolean;
 }
 

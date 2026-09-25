@@ -6,7 +6,7 @@ import { filterCandidates, formatCandidateList, selectCandidate } from './candid
 export const help = `Usage: ng-wiring ATTRIBUTE=VALUE [options]
        ng-wiring --source PATH:LINE [options]
 Options: --project NAME | --tsconfig PATH, --through CLASS|PATH#CLASS,
-         --route PATH, --candidate NUMBER|cand:SHA256, --event NAME,
+         --route PATH, --selector DEVTOOLS_PATH, --candidate NUMBER|cand:SHA256, --event NAME,
          --out-dir DIR, --json, --help, --version
 `;
 export async function runCli(argv, backend, io, cwd = process.cwd(), signal) {

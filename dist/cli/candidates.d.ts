@@ -26,6 +26,11 @@ export interface Candidate {
     snapshotId: string;
     class: CandidateClass;
     parentIds: string[];
+    /** Display-path component host tags and selected template tag; not part of the stable ID. */
+    dom?: {
+        componentTags: string[];
+        targetTag: string;
+    };
     routePattern: string | null;
     events: string[];
     partialReasons: string[];
@@ -39,6 +44,7 @@ export declare function matchesEvent(requested: string, actual: string): boolean
 export declare function filterCandidates(candidates: readonly Candidate[], options: {
     through?: string;
     route?: string;
+    selector?: string;
     event?: string;
 }): Candidate[];
 export declare function selectCandidate(candidates: readonly Candidate[], selector?: string): Candidate | undefined;

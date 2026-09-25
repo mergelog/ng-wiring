@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { UsageError } from './arguments.js';
+import { parseDomSelector, UsageError } from './arguments.js';
 function pointCodeCompare(a, b) {
     const x = Array.from(a), y = Array.from(b);
     for (let i = 0; i < Math.min(x.length, y.length); i++) {
@@ -93,6 +93,24 @@ export function filterCandidates(candidates, options) {
     }
     if (options.route !== undefined)
         selected = selected.filter(c => c.routePattern === options.route);
+    if (options.selector) {
+        if (!selected.length)
+            return [];
+        const tags = parseDomSelector(options.selector);
+        const known = new Set(selected.flatMap(candidate => candidate.dom?.componentTags ?? []));
+        const componentTags = tags.filter(tag => known.has(tag));
+        if (!componentTags.length) {
+            throw new UsageError('--selector contains no component host tag found in the candidates');
+        }
+        const targetTag = tags.at(-1);
+        selected = selected.filter(candidate => {
+            if (candidate.dom?.targetTag !== targetTag)
+                return false;
+            const path = candidate.dom.componentTags;
+            return componentTags.length <= path.length &&
+                componentTags.every((tag, index) => path[path.length - componentTags.length + index] === tag);
+        });
+    }
     // Event filtering selects listener paths; an element with no matching listener
     // remains reportable so the renderer can explain the missing listener.
     if (options.event)

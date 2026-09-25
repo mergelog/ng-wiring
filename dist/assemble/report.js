@@ -63,7 +63,9 @@ export function assembleReport(input) {
             ? { kind: 'attribute', name: options.target.name, value: options.target.value }
             : { kind: 'source', file: slash(options.target.file), line: options.target.line },
         filters: { project: options.project ?? null, tsconfig: options.tsconfig ?? null,
-            through: options.through ?? null, route: options.route ?? null, candidate: options.candidate ?? null,
+            through: options.through ?? null, route: options.route ?? null,
+            ...(options.selector ? { selector: options.selector } : {}),
+            candidate: options.candidate ?? null,
             event: options.event ?? null },
         candidates: input.candidates.map(item => summarize(item)),
         enumerationComplete: input.enumerationComplete,

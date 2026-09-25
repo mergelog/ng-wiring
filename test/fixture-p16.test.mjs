@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { analyzeFixture, edgeKeys } from './fixtures/harness.mjs';
+import { filterCandidates } from '../dist/cli/candidates.js';
 
 const bootstrapped = (candidates) => candidates.find(item => item.candidate.class === 'bootstrap');
 const orphan = (candidates) => candidates.find(item => item.candidate.tuple.ownerId.startsWith('src/legacy/'));
 
 // P16-01
 test('the minimal Angular 22 fixture enumerates the displayed use and the false-positive twin', async () => {
-  const { analysis } = await analyzeFixture('minimal-app', { target: 'data-id=searchInputField' });
+  const selector = 'body > app-root > app-editable-section > app-search-page > app-search > input';
+  const { analysis, report } = await analyzeFixture('minimal-app', { target: 'data-id=searchInputField',
+    selector, pick: bootstrapped });
   const ids = analysis.candidates.map(item => item.candidate.tuple.ownerId);
   assert.deepEqual([...ids].sort(), ['src/legacy/search.ts#SearchComponent', 'src/search.ts#SearchComponent']);
   // The two candidates share a class name; only the declaring path tells them apart (§8, A04).
@@ -15,6 +18,12 @@ test('the minimal Angular 22 fixture enumerates the displayed use and the false-
   assert.equal(displayed.candidate.tuple.ownerId, 'src/search.ts#SearchComponent');
   assert.equal(displayed.path.end, 'bootstrap');
   assert.deepEqual(displayed.candidate.events, ['input']);
+  assert.deepEqual(displayed.candidate.dom, { componentTags: [
+    'app-root', 'app-editable-section', 'app-search-page', 'app-search',
+  ], targetTag: 'input' });
+  assert.deepEqual(filterCandidates(analysis.candidates.map(item => item.candidate), { selector })
+    .map(item => item.id), [displayed.candidate.id]);
+  assert.equal(report.query.filters.selector, selector);
   // The same-named class is never displayed, so its path stops instead of borrowing the other root.
   const unused = orphan(analysis.candidates);
   assert.equal(unused.path.end, 'root-unresolved');
