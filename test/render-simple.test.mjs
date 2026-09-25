@@ -39,7 +39,8 @@ test('the short map follows output subscriptions before a propagated HTTP reques
     const emitSaved = add('output-emit', 'second', 'saved', 'host.ts', 1, { output: 'saved' });
     const subscribeSaved = add('output-subscription', 'saved', 'third', 'parent.html', 1,
       { output: 'saved', subscriber: 'onSaved($event)' });
-    const dispatch = add('action-dispatch', 'third', 'action', 'parent.ts', 1);
+    const dispatch = add('action-dispatch', 'third', 'action', 'parent.ts', 1,
+      { caller: 'parent.ts#Parent', action: 'actions.ts#updated' });
     const consume = add('action-consume', 'action', 'effect', 'parent.ts', 1,
       { consumer: 'effect.ts#updateDetails$' });
     const call = add('call', 'effect', 'service', 'effect.ts', 2, { callee: 'apiRecords.recordsUpdate' });
@@ -65,6 +66,8 @@ test('the short map follows output subscriptions before a propagated HTTP reques
     assert(rows[3].includes('Host.onChanged'));
     assert(rows[4].includes('this.saved.emit'));
     assert(rows[5].includes('Parent.onSaved'));
+    assert(rows.some(row => row.includes('updateDetails$')), rows.join('\n'));
+    assert(rows.some(row => row.includes('this.apiRecords.recordsUpdate')), 'the effect calls the API service');
     assert(rows.at(-1).includes('api/items/update'));
     const below = renderSimple({ report, outputDir: root, fileNameSource: '', heading: '', belowData: true });
     assert.equal(below.text.split('\n').filter(line => /^- \d\d\./.test(line)).length, 9);

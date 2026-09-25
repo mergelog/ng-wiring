@@ -125,7 +125,7 @@ function operationBranches(chain, edges, evidence, sources, predicates) {
     const calls = all.filter(edge => edge.kind === 'call');
     const effectMemberAt = (file, line) => {
         const lines = sources.text(file)?.split(/\r?\n/).slice(0, line) ?? [];
-        const declaration = [...lines].reverse().find(text => /\b\w+\s*=\s*createEffect\s*\(/.test(text));
+        const declaration = [...lines].reverse().find(text => /\b[\w$]+\s*=\s*createEffect\s*\(/.test(text));
         return declaration ? /\b([\w$]+)\s*=\s*createEffect\s*\(/.exec(declaration)?.[1] ?? null : null;
     };
     return dispatches.flatMap(dispatch => {
@@ -158,7 +158,9 @@ function operationBranches(chain, edges, evidence, sources, predicates) {
             return linked;
         const boundary = all.find(edge => edge.kind === 'boundary' && compatible(edge) &&
             (value(edge, 'reason').includes('provideEffects') || value(edge, 'reason').includes('injector')));
-        return [{ dispatch, reason: value(boundary ?? dispatch, 'reason') || '通信への接続を確認できない' }];
+        const notificationOnly = value(dispatch, 'action').endsWith('#addMessage');
+        return [{ dispatch, reason: notificationOnly ? 'メッセージ表示で終了（通信なし）' :
+                    value(boundary ?? dispatch, 'reason') || '通信への接続を確認できない' }];
     });
 }
 function viewRows(report, nodes, evidence, sources) {
