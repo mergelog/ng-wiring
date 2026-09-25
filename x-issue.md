@@ -52,6 +52,21 @@ Angular の要素から表示経路、イベント、状態更新、Effect、通
 4. **一件ずつ修正**: 期待経路と境界条件をテストで固定し、実アプリ資料を再生成する。接続が増えたときは誤接続が増えていないか否定ケースも再実行する。
 5. **回帰と配布を確認**: `npm run build`、`npm test`、`npm run check:contracts` を実行する。追跡ファイルである `dist` を更新して commit した後、`npm run check:dist` と CLI の実アプリ再実行を確認する。実アプリ 1 件の実行時間とメモリも基準値と比較し、著しい増加は別問題として記録する。
 
+## 4. 発見した差分
+
+### I-01: route の根拠行がオブジェクト開始行を指す
+
+| 記録項目 | 内容 |
+| --- | --- |
+| 再現条件 | `../000-learn-ClearML-pro`、資料 `ngwi-InlineEditComponent.data-id=nameField-260925.133738.md`（節 12 と節 16）。対象は `src/app/webapp-common/experiments/experiment-routes.ts`。 |
+| 期待と実際 | 期待は `path: ':experimentId'` の 76 行目、実際は資料が 75 行目を指す。親ルートも同様に `path: ''` の 46 行目ではなく 45 行目を指す。いずれもルート定義オブジェクトの `{` の行。 |
+| 分類 | 根拠リンク不良。ルートと pattern の対応付けと 1-based の行計算自体は正しい。 |
+| 修正判定 | 未着手。 |
+
+原因は `src/resolve/view/routes.ts:440` の `const definition = spanOf(route)` で、配列要素のオブジェクトリテラル全体を位置に採用している点にある。`spanOf`（同 70 行目）は `node.getStart()` を 1-based 行へ変換するだけなので off-by-one はない。`{` と `path` を別行に書くコードスタイルでは、資料のリンクが常に 1 行手前へ着地する。この `definition` は `src/resolve/view/index.ts:228` の `routeStepFor` から `route-outlet` ステップと `routeRef.definition` に渡り、資料の「位置」と「根拠」になる。
+
+修正時の制約として、`definition` は表示だけでなく occurrence id のハッシュ入力でもある（`src/resolve/view/routes.ts:387`-`388` の `occurrenceIdFor`）。ここを `path` のスパンへ差し替えると、資料に出る `route:07cdeef8…` 形式の ID とキャッシュキーが変わる。`definition` は同一性用に据え置き、`path`（無ければ `matcher`、それも無ければオブジェクト）のスパンを表示用アンカーとして別に持ち、レンダリング側のリンクだけ切り替える。`path` のノードは `stringOf(route, 'path')` の時点で取得済みのため、解析コストは増えない。
+
 ## 完了条件
 
 - 名前変更の資料で、条件付きの `tasksUpdate` と `POST /tasks.update` まで根拠付きで辿れる。静的に辿れない箇所が残る場合は、その**具体的な停止位置と理由**を資料に示し、「通信未検出」だけで終わらせない。
