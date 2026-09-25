@@ -91,3 +91,18 @@ node /home/mtrysd/work_2026/ng-wiring/dist/cli/index.js 'data-id=previousDiffBut
 ```
 
 候補 ID は対象 snapshot が変われば再取得する。現行レポートは表示経路を `bootstrap` まで `complete-within-scope` とし、ボタンの表示上の親を `PortalComponent`、さらにその親を元の比較画面側として確定する。実際の DOM 配置先である `#nextDiff` と `DomPortalOutlet.attach()` は経路に出ない。宣言元・DI の文脈と DOM の表示先を混同しない形で、Portal の挿入先を追跡するか、未解決の表示境界として示す必要がある。完了確認には、宣言元と DOM 移動先が異なる最小 fixture とこの実アプリの再解析を加える。
+
+## 対応状況（2026-09-25 追記）
+
+上記6件はすべて対応済み。実装は `aad4c11`（および先行するローカルコミット群）で `main` に push 済み。`npm run build` / `npm run typecheck` / `npm test`（236/236）を確認したうえで、対象 workspace で再解析し、以下を確認した。
+
+| ケース | 再解析結果 |
+| --- | --- |
+| プロジェクト作成 | `POST /projects.create` を条件付き通信として検出。条件に `route /dashboard or /projects or /projects/:projectId/projects is active` を含み、Dashboard・ProjectsPage 両方の呼び出し元が共通 provider として扱われている。 |
+| プロジェクト移動 | `POST /projects.move` を条件付き通信として検出。条件は `route /projects or /projects/:projectId/projects is active` のみで `one of 1 verified dialog creation calls executes`。Dashboard 側の `mode: 'create'` 固定枝（実行不能）は候補から除外されている。 |
+| ENQUEUE | `POST /tasks.enqueue_many` を ExperimentMenuComponent 経由の `click` イベントで条件付き通信として検出（条件: `MatDialogRef.close({confirmed: true}) reaches ...afterClosed()`、`afterClosed emits {confirmed: true, queue}`、`if res && res.confirmed`）。QueueInfoComponent 経由の枝は `output-emit moveExperimentToOtherQueue`（条件: `route /workers-and-queues/queues is active`、`if res?.confirmed`）として別に記録され、一本化されていない。 |
+| PrimeNG テーブル見出し／行内メニュー | `tableHeader` `3DotMenuButton` とも `headerTemplate`/`bodyTemplate` 経由で `p-table` に接続し、表示経路の終端が `bootstrap` に到達する。`TableComponent` はアプリ内で 30 箇所以上再利用されるため候補が多数存在するが、いずれの bootstrap route 候補でも同様に到達する。 |
+| 構造ディレクティブ（`mat-tab` の `smCheckPermission`） | 以前は同じ `<mat-tab>` に2候補（未解決枝と条件を飛ばした完結枝）が生成されていたが、現在は単一候補のみが生成され、条件 `smCheckPermission(route.permissionCheck) && allowed` を伴って `bootstrap` まで到達する。 |
+| CDK Portal（`previousDiffButton`） | 表示経路は `DomPortalOutlet.attach → #nextDiff` を経由した未確定境界（`dynamic-boundary`）で正しく停止する。実際の DOM 移動先 `#nextDiff` が表示上の親として確定していない旨をレポートに明記しており、誤って `complete-within-scope` と扱っていない。 |
+
+副次的な対応として、`structuralInsertion()` に `*dir="cond; else ref"` の `else` 枝の検証を追加した（`${selector}Else` の set accessor と、その TemplateRef を対象にした `createEmbeddedView` 呼び出しを確認してから表示経路に接続する）。これは本ドキュメントが対象とした実アプリの箇所ではなく、`test/view.test.mjs` の最小 fixture（`permitWithElse` / `neverElse`）でのみ検証済み。実アプリ内で該当パターンを探索・再解析することはしていない — ClearML 実装の全網羅は目的にせず、焦点を定めて対応する方針のため。
