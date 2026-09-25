@@ -9,6 +9,7 @@ npx ng-wiring 'data-id="targetInput"' --project app --out-dir reports
 ```
 
 `targetInput` の処理をたどったMarkdownレポートが `reports/` に出力されます。`--project app` はAngularプロジェクト名、`--out-dir reports` は出力先です。単一プロジェクトの場合、`--project` は省略できます。
+レポート名は `ngwi-01-コンポーネント.属性=値-YYMMDD.HHMMSS.md` の形式です。次の番号はワークスペース直下と出力先にある `ngwi-数字-` で始まるファイルの最大番号から決め、99の次は100になります。
 
 対象には `data-id` 以外の属性も指定できます。たとえば、属性値がその文字列と完全に一致する要素を探すには次のようにします。
 

@@ -23,6 +23,8 @@ export function renderReport(input: RenderInput & { json: boolean; detail?: bool
 export interface ProduceInput {
   report: WiringReport;
   outDir: string;
+  /** Override the workspace root used for numbering (primarily for embedded callers). */
+  sequenceRoot?: string;
   json: boolean;
   detail?: boolean;
   belowData?: boolean;
@@ -53,8 +55,9 @@ export async function produceReport(input: ProduceInput): Promise<ProduceResult>
   }
   await mkdir(input.outDir, { recursive: true });
   const file = await writeOutput({
-    directory: input.outDir, content: rendered.text, signal: input.signal,
-    name: collision => buildFileName({ raw, startedAt: input.startedAt, json: input.json, collision }),
+    directory: input.outDir, sequenceRoot: input.sequenceRoot ?? input.report.context.workspaceRoot,
+    content: rendered.text, signal: input.signal,
+    name: sequence => buildFileName({ raw, startedAt: input.startedAt, json: input.json, sequence }),
   });
   return { path: file, partial: input.report.status === 'partial', problems: rendered.problems };
 }

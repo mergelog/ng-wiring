@@ -5,14 +5,14 @@ export declare class OutputWriteError extends Error {
 }
 export interface WriteOutputInput {
     directory: string;
-    /** Builds the name for attempt 0, 1, 2… so the collision suffix stays on the process name side. */
-    name: (collision: number) => string;
+    /** The Angular workspace root. Defaults to the output directory for direct callers. */
+    sequenceRoot?: string;
+    name: (sequence: number) => string;
     content: string;
     signal?: AbortSignal;
 }
 /**
- * §3.4-5 comparison and creation are serialized through `.ng-wiring-output.lock`, both the lock and the
- * report are created with `wx`, and an existing file is never overwritten. §3.4 the caller has already
- * verified the whole document, so a failure here only has to remove the incomplete file this run made.
+ * Number allocation and creation are serialized through `.ng-wiring-output.lock` at the sequence root.
+ * The completed report is renamed into place, so a same-name file is replaced only after writing succeeds.
  */
 export declare function writeOutput(input: WriteOutputInput): Promise<string>;

@@ -34,9 +34,9 @@ export interface FileNameInput {
     raw: string;
     startedAt: Date;
     json: boolean;
-    collision?: number;
+    sequence: number;
 }
-/** §3.4 `ngwi-{process name}-{YYMMDD.HHMMSS}.md`; step 5 adds `-c1`, `-c2`… on the process name side. */
+/** `ngwi-{sequence}-{process name}-{YYMMDD.HHMMSS}.md`; the sequence grows past two digits. */
 export declare function buildFileName(input: FileNameInput): string;
-/** §3.4 the fixed-width stamp keeps the name decomposable even when the process name holds `-` or `.`. */
+/** The fixed-width stamp keeps the name decomposable even when the process name holds `-` or `.`. */
 export declare const fileNamePattern: RegExp;

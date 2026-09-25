@@ -72,14 +72,14 @@ export function timestamp(date: Date): string {
     `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
 
-export interface FileNameInput { raw: string; startedAt: Date; json: boolean; collision?: number }
+export interface FileNameInput { raw: string; startedAt: Date; json: boolean; sequence: number }
 
-/** §3.4 `ngwi-{process name}-{YYMMDD.HHMMSS}.md`; step 5 adds `-c1`, `-c2`… on the process name side. */
+/** `ngwi-{sequence}-{process name}-{YYMMDD.HHMMSS}.md`; the sequence grows past two digits. */
 export function buildFileName(input: FileNameInput): string {
   const shortened = shortenName(encodeName(input.raw), input.raw);
-  const collision = input.collision && input.collision > 0 ? `-c${input.collision}` : '';
-  return `ngwi-${shortened}${collision}-${timestamp(input.startedAt)}.${input.json ? 'json' : 'md'}`;
+  const sequence = String(input.sequence).padStart(2, '0');
+  return `ngwi-${sequence}-${shortened}-${timestamp(input.startedAt)}.${input.json ? 'json' : 'md'}`;
 }
 
-/** §3.4 the fixed-width stamp keeps the name decomposable even when the process name holds `-` or `.`. */
-export const fileNamePattern = /^ngwi-(.+)-(\d{6}\.\d{6})\.(md|json)$/;
+/** The fixed-width stamp keeps the name decomposable even when the process name holds `-` or `.`. */
+export const fileNamePattern = /^ngwi-(\d+)-(.+)-(\d{6}\.\d{6})\.(md|json)$/;

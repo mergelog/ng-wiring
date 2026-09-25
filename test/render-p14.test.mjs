@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -506,25 +506,28 @@ test('an over-long name is shortened without splitting an escape and keeps the o
 test('the file name is built in the order §3.4 fixes and stays decomposable', () => {
   assert.equal(timestamp(startedAt), '260924.130024');
   assert.equal(timestamp(new Date(2100, 0, 2, 3, 4, 5)), '000102.030405');
-  const name = buildFileName({ raw: 'SearchComponent.data-id=targetInput', startedAt, json: false });
-  assert.equal(name, 'ngwi-SearchComponent.data-id=targetInput-260924.130024.md');
-  const json = buildFileName({ raw: 'SearchComponent.data-id=targetInput', startedAt, json: true });
-  assert.equal(json, 'ngwi-SearchComponent.data-id=targetInput-260924.130024.json');
-  assert.equal(buildFileName({ raw: 'A.b=c', startedAt, json: false, collision: 2 }), 'ngwi-A.b=c-c2-260924.130024.md');
+  const name = buildFileName({ raw: 'SearchComponent.data-id=targetInput', startedAt, json: false, sequence: 1 });
+  assert.equal(name, 'ngwi-01-SearchComponent.data-id=targetInput-260924.130024.md');
+  const json = buildFileName({ raw: 'SearchComponent.data-id=targetInput', startedAt, json: true, sequence: 2 });
+  assert.equal(json, 'ngwi-02-SearchComponent.data-id=targetInput-260924.130024.json');
+  assert.equal(buildFileName({ raw: 'A.b=c', startedAt, json: false, sequence: 100 }),
+    'ngwi-100-A.b=c-260924.130024.md');
   const match = fileNamePattern.exec(name);
-  assert.deepEqual([match[1], match[2], match[3]], ['SearchComponent.data-id=targetInput', '260924.130024', 'md']);
-  assert(fileNamePattern.exec(buildFileName({ raw: 'a-b.c=d', startedAt, json: false })),
+  assert.deepEqual([match[1], match[2], match[3], match[4]],
+    ['01', 'SearchComponent.data-id=targetInput', '260924.130024', 'md']);
+  assert(fileNamePattern.exec(buildFileName({ raw: 'a-b.c=d', startedAt, json: false, sequence: 1 })),
     'a process name holding - and . is still decomposable from the fixed-width stamp');
 });
 
 test('a complete report is written once, with the path only returned after the file exists', async () => {
   const directory = await temp();
   const { report } = buildReport();
-  const result = await produceReport({ report, outDir: directory, json: false, detail: true, startedAt, name: nameInput });
+  const result = await produceReport({ report, outDir: directory, sequenceRoot: directory,
+    json: false, detail: true, startedAt, name: nameInput });
   assert.equal(result.partial, true, 'a partial model is reported as partial');
   assert.deepEqual(result.problems, []);
   assert.equal(path.isAbsolute(result.path), true);
-  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=targetInput-260924.130024.md');
+  assert.equal(path.basename(result.path), 'ngwi-01-SearchComponent.data-id=targetInput-260924.130024.md');
   assert.deepEqual(await readdir(directory), [path.basename(result.path)], 'one file and no leftover lock');
   const written = await readFile(result.path, 'utf8');
   assert.equal(written, renderMarkdown({ report, outputDir: directory,
@@ -532,29 +535,48 @@ test('a complete report is written once, with the path only returned after the f
     heading: 'SearchComponent.data-id="targetInput"' }).text);
   assert(written.includes('2026-09-24T13:00:24.000+09:00'), 'the body keeps ISO 8601 with its UTC offset');
 
-  // §3.4-5 an existing name is never overwritten; the collision suffix goes on the process name side.
-  const second = await produceReport({ report, outDir: directory, json: false, startedAt, name: nameInput });
-  assert.equal(path.basename(second.path), 'ngwi-SearchComponent.data-id=targetInput-c1-260924.130024.md');
+  const second = await produceReport({ report, outDir: directory, sequenceRoot: directory,
+    json: false, startedAt, name: nameInput });
+  assert.equal(path.basename(second.path), 'ngwi-02-SearchComponent.data-id=targetInput-260924.130024.md');
   assert.equal(await readFile(result.path, 'utf8'), written);
 });
 
 test('--json writes exactly one file that differs only in its extension', async () => {
   const directory = await temp();
   const { report } = buildReport();
-  const result = await produceReport({ report, outDir: directory, json: true, startedAt, name: nameInput });
-  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=targetInput-260924.130024.json');
+  const result = await produceReport({ report, outDir: directory, sequenceRoot: directory,
+    json: true, startedAt, name: nameInput });
+  assert.equal(path.basename(result.path), 'ngwi-01-SearchComponent.data-id=targetInput-260924.130024.json');
   assert.deepEqual(await readdir(directory), [path.basename(result.path)]);
   const parsed = JSON.parse(await readFile(result.path, 'utf8'));
   assert.deepEqual(parsed, JSON.parse(JSON.stringify(report)));
   assert.equal(parsed.status, 'partial');
 });
 
-test('a name that differs only in case counts as a collision', async () => {
+test('numbering uses the highest project-root prefix and grows beyond two digits', async () => {
   const directory = await temp();
   const { report } = buildReport();
-  await writeFile(path.join(directory, 'NGWI-searchcomponent.DATA-ID=targetinput-260924.130024.md'), 'taken');
-  const result = await produceReport({ report, outDir: directory, json: false, startedAt, name: nameInput });
-  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=targetInput-c1-260924.130024.md');
+  await writeFile(path.join(directory, 'ngwi-09-old.md'), 'taken');
+  await writeFile(path.join(directory, 'NGWI-099-older.json'), 'taken');
+  await writeFile(path.join(directory, 'ngwi-other-999.md'), 'ignored');
+  const result = await produceReport({ report, outDir: directory, sequenceRoot: directory,
+    json: false, startedAt, name: nameInput });
+  assert.equal(path.basename(result.path), 'ngwi-100-SearchComponent.data-id=targetInput-260924.130024.md');
+});
+
+test('an alternate output directory still follows the project-root sequence', async () => {
+  const directory = await temp();
+  const output = path.join(directory, 'reports');
+  await mkdir(output);
+  await writeFile(path.join(directory, 'ngwi-07-earlier.md'), 'root report');
+  const { report } = buildReport();
+  const result = await produceReport({ report, outDir: output, sequenceRoot: directory,
+    json: false, startedAt, name: nameInput });
+  assert.equal(path.basename(result.path), 'ngwi-08-SearchComponent.data-id=targetInput-260924.130024.md');
+  const next = await produceReport({ report, outDir: output, sequenceRoot: directory,
+    json: false, startedAt, name: nameInput });
+  assert.equal(path.basename(next.path), 'ngwi-09-SearchComponent.data-id=targetInput-260924.130024.md');
+  assert.deepEqual((await readdir(directory)).sort(), ['ngwi-07-earlier.md', 'reports']);
 });
 
 test('output is serialized through a lock that another run keeps', async () => {
@@ -562,7 +584,8 @@ test('output is serialized through a lock that another run keeps', async () => {
   const { report } = buildReport();
   const lock = path.join(directory, outputLockName);
   await writeFile(lock, 'held by another run');
-  await assert.rejects(() => produceReport({ report, outDir: directory, json: false, startedAt, name: nameInput }),
+  await assert.rejects(() => produceReport({ report, outDir: directory, sequenceRoot: directory,
+    json: false, startedAt, name: nameInput }),
     (error) => error instanceof OutputLockError && /Retry once it finishes/.test(error.message));
   // §3.4-5 the lock another process holds is left alone and nothing is written.
   assert.equal(await readFile(lock, 'utf8'), 'held by another run');
@@ -576,18 +599,24 @@ test('a failed write removes the incomplete file and always releases the lock', 
   const written = await writeOutput({ directory, name: () => 'ngwi-x-260924.130024.md', content: 'body' });
   assert.equal(await readFile(written, 'utf8'), 'body');
   assert.deepEqual(await readdir(directory), ['ngwi-x-260924.130024.md']);
+  await assert.rejects(() => writeOutput({ directory, name: () => 'ngwi-x-260924.130024.md', content: 42 }));
+  assert.equal(await readFile(written, 'utf8'), 'body', 'a failed replacement preserves the old file');
+  await writeOutput({ directory, name: () => 'ngwi-x-260924.130024.md', content: 'updated' });
+  assert.equal(await readFile(written, 'utf8'), 'updated', 'an exact file-name match is replaced');
 });
 
 test('the document is verified before anything is written', async () => {
   const directory = await temp();
   const { report } = buildReport();
   const broken = { ...report, status: 'complete-within-scope' };
-  await assert.rejects(() => produceReport({ report: broken, outDir: directory, json: false, startedAt, name: nameInput }),
+  await assert.rejects(() => produceReport({ report: broken, outDir: directory, sequenceRoot: directory,
+    json: false, startedAt, name: nameInput }),
     /status does not match/);
   assert.deepEqual(await readdir(directory), [], 'no file and no lock are created for a report that fails validation');
 
   const missingKind = { ...report, edges: report.edges.map((edge, index) => index ? edge : { ...edge, kind: 'made-up' }) };
-  await assert.rejects(() => produceReport({ report: missingKind, outDir: directory, json: false, startedAt, name: nameInput }));
+  await assert.rejects(() => produceReport({ report: missingKind, outDir: directory, sequenceRoot: directory,
+    json: false, startedAt, name: nameInput }));
   assert.deepEqual(await readdir(directory), []);
 });
 
@@ -604,7 +633,8 @@ test('the CLI writes one --json file and prints only its path', async () => {
   const code = await runCli(['data-id=targetInput', '--out-dir', directory, '--json'], {
     async analyze() { return { candidates: [target], truncated: false, targetDetectionIncomplete: false }; },
     async write(_item, options) {
-      return produceReport({ report, outDir: options.outDir, json: options.json, startedAt, name: nameInput });
+      return produceReport({ report, outDir: options.outDir, sequenceRoot: options.outDir,
+        json: options.json, startedAt, name: nameInput });
     },
   }, io);
   // §3.3 a partial report exits 5; stdout carries the finished path and nothing else.

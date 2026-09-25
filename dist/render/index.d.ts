@@ -16,6 +16,8 @@ export declare function renderReport(input: RenderInput & {
 export interface ProduceInput {
     report: WiringReport;
     outDir: string;
+    /** Override the workspace root used for numbering (primarily for embedded callers). */
+    sequenceRoot?: string;
     json: boolean;
     detail?: boolean;
     belowData?: boolean;

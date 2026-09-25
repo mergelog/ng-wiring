@@ -12,8 +12,10 @@ method, URL, used types and the consumer that starts them. The normalized
 intermediate model lives in `src/model` with its JSON Schema in
 [docs/ng-wiring.schema.json](docs/ng-wiring.schema.json), and `src/render` turns
 that one model into the short tracking map, the detailed Markdown report
-(`--detail`), or the `--json` file, names the
-output file as §3.4 fixes it and serializes writing through an output lock.
+(`--detail`), or the `--json` file. Output names begin with a two-digit sequence
+(`ngwi-01-...`), which grows to three digits after 99. The next number is based
+on files at the Angular workspace root and in the output directory; writing is
+serialized through an output lock.
 Detection gaps are placed against the selection before they are reported: a gap
 is local when its owner, one of its candidates or its location belongs to the
 selection, an owner-less gap that nothing ties to it is listed as a gap of the

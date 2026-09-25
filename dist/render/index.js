@@ -36,8 +36,9 @@ export async function produceReport(input) {
     }
     await mkdir(input.outDir, { recursive: true });
     const file = await writeOutput({
-        directory: input.outDir, content: rendered.text, signal: input.signal,
-        name: collision => buildFileName({ raw, startedAt: input.startedAt, json: input.json, collision }),
+        directory: input.outDir, sequenceRoot: input.sequenceRoot ?? input.report.context.workspaceRoot,
+        content: rendered.text, signal: input.signal,
+        name: sequence => buildFileName({ raw, startedAt: input.startedAt, json: input.json, sequence }),
     });
     return { path: file, partial: input.report.status === 'partial', problems: rendered.problems };
 }

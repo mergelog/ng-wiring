@@ -1,4 +1,5 @@
-import { open, readdir, unlink } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { open, readdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { outputLockName } from './filename.js';
 
@@ -9,23 +10,24 @@ export class OutputWriteError extends Error {}
 const isCode = (error: unknown, code: string): boolean =>
   typeof error === 'object' && error !== null && (error as { code?: string }).code === code;
 
-const collisionAttempts = 1_000;
+const sequencePattern = /^ngwi-(\d+)-/i;
 
 export interface WriteOutputInput {
   directory: string;
-  /** Builds the name for attempt 0, 1, 2… so the collision suffix stays on the process name side. */
-  name: (collision: number) => string;
+  /** The Angular workspace root. Defaults to the output directory for direct callers. */
+  sequenceRoot?: string;
+  name: (sequence: number) => string;
   content: string;
   signal?: AbortSignal;
 }
 
 /**
- * §3.4-5 comparison and creation are serialized through `.ng-wiring-output.lock`, both the lock and the
- * report are created with `wx`, and an existing file is never overwritten. §3.4 the caller has already
- * verified the whole document, so a failure here only has to remove the incomplete file this run made.
+ * Number allocation and creation are serialized through `.ng-wiring-output.lock` at the sequence root.
+ * The completed report is renamed into place, so a same-name file is replaced only after writing succeeds.
  */
 export async function writeOutput(input: WriteOutputInput): Promise<string> {
-  const lockPath = path.join(input.directory, outputLockName);
+  const sequenceRoot = input.sequenceRoot ?? input.directory;
+  const lockPath = path.join(sequenceRoot, outputLockName);
   let lock;
   try {
     lock = await open(lockPath, 'wx');
@@ -36,30 +38,36 @@ export async function writeOutput(input: WriteOutputInput): Promise<string> {
     throw error;
   }
   try {
-    const existing = new Set((await readdir(input.directory)).map(entry => entry.toLowerCase()));
-    for (let collision = 0; collision < collisionAttempts; collision++) {
-      input.signal?.throwIfAborted();
-      const name = input.name(collision);
-      if (existing.has(name.toLowerCase())) continue;
-      const target = path.join(input.directory, name);
-      let handle;
-      try {
-        handle = await open(target, 'wx');
-      } catch (error) {
-        if (isCode(error, 'EEXIST')) continue;
-        throw error;
-      }
-      try {
-        await handle.writeFile(input.content, 'utf8');
-      } catch (error) {
-        await handle.close();
-        await unlink(target).catch(() => undefined);
-        throw error;
-      }
-      await handle.close();
-      return target;
+    const rootEntries = await readdir(sequenceRoot, { withFileTypes: true });
+    const outputEntries = sequenceRoot === input.directory ? rootEntries :
+      await readdir(input.directory, { withFileTypes: true });
+    let highest = 0;
+    for (const entry of [...rootEntries, ...outputEntries]) {
+      if (!entry.isFile()) continue;
+      const match = sequencePattern.exec(entry.name);
+      if (!match) continue;
+      const value = Number(match[1]);
+      if (Number.isSafeInteger(value)) highest = Math.max(highest, value);
     }
-    throw new OutputWriteError(`No free output name after ${collisionAttempts} collisions in ${input.directory}`);
+    const sequence = highest + 1;
+    if (!Number.isSafeInteger(sequence)) {
+      throw new OutputWriteError(`No safe sequence number remains in ${sequenceRoot}`);
+    }
+    input.signal?.throwIfAborted();
+    const target = path.join(input.directory, input.name(sequence));
+    const temporary = path.join(input.directory, `.${path.basename(target)}.${randomUUID()}.tmp`);
+    const handle = await open(temporary, 'wx');
+    try {
+      await handle.writeFile(input.content, 'utf8');
+      await handle.close();
+      input.signal?.throwIfAborted();
+      await rename(temporary, target);
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      await unlink(temporary).catch(() => undefined);
+      throw error;
+    }
+    return target;
   } finally {
     // §3.4-5 the lock this run created is released on success, on failure and on SIGINT alike.
     await lock.close().catch(() => undefined);
