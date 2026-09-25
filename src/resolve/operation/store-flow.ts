@@ -7,7 +7,7 @@ import type { IndexedElement } from '../../index/templates.js';
 import { resolveElementBindings } from './bindings.js';
 import { importedApi, location } from './reactive.js';
 import { traceOperation } from './flow.js';
-import { injectionRequestFor, resolveInjection, tokenId, type InjectorLayer } from './di.js';
+import { externalToken, injectionRequestFor, resolveInjection, tokenId, type InjectorLayer } from './di.js';
 import type { StoreAction, StoreGraph } from './store.js';
 
 export type StoreStepKind = 'call' | 'output-emit' | 'output-subscription' | 'action-dispatch' | 'action-consume' | 'state-write' | 'state-read' |
@@ -397,7 +397,9 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
               const result = resolveInjection(context,request,currentLayers);
               if (result.status !== 'resolved' || result.bindings.length !== 1 || !result.bindings[0]?.implementation) {
                 add('boundary',receiver,fieldName,node,nextPath,[...localConditions,...result.reasons],
-                  'service receiver is not uniquely resolved by DI'); return;
+                  externalToken(context,request.token)
+                    ? 'the receiver is an external package type, whose implementation this analysis does not traverse'
+                    : 'service receiver is not uniquely resolved by DI'); return;
               }
               const implementation = result.bindings[0].implementation;
               const klass = classFor(implementation);

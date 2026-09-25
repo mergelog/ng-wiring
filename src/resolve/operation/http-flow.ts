@@ -7,7 +7,7 @@ import type { ReactiveMethodGraph } from '../../adapters/reactive/methods.js';
 import { storeLifetime, type SignalStoreCatalog } from '../../adapters/reactive/signal-store.js';
 import { importedApi, location } from './reactive.js';
 import { httpBranchEffect, resolveUrl, rxjsExport, type HttpBranch, type HttpCatalog, type HttpRequestSite } from './http.js';
-import { injectionRequestFor, resolveInjection, tokenId, type InjectorLayer } from './di.js';
+import { externalToken, injectionRequestFor, resolveInjection, tokenId, type InjectorLayer } from './di.js';
 import type { StoreEffect, StoreGraph } from './store.js';
 import type { EventConsumer } from '../../adapters/reactive/events.js';
 
@@ -534,7 +534,9 @@ function traceHttpFromRoot(context: AnalysisContext, catalog: HttpCatalog,
             const implementation = resolution.bindings[0]?.implementation;
             if (resolution.status !== 'resolved' || resolution.bindings.length !== 1 || !implementation) {
               add('boundary', receiver, `${fieldName}.${callee.name.text}`, node, nextPath,
-                [...localConditions, ...resolution.reasons], 'the service receiver is not uniquely resolved by DI');
+                [...localConditions, ...resolution.reasons], externalToken(context, request.token)
+                  ? 'the receiver is an external package type, whose implementation this analysis does not traverse'
+                  : 'the service receiver is not uniquely resolved by DI');
               return;
             }
             const target = classFor(implementation)?.members.find(item => t.isMethodDeclaration(item) &&

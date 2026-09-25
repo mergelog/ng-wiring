@@ -96,6 +96,12 @@ function injectableScope(context, id) {
     }
     return null;
 }
+/** True when the token itself comes from an external package, whose sources §4.2 does not traverse. */
+export function externalToken(context, token) {
+    const symbol = symbolOf(context, token);
+    const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+    return !!declaration && declaration.getSourceFile().isDeclarationFile;
+}
 /** Layers are ordered from the injection site outward. An explicit template injector is inserted at the site. */
 export function resolveInjection(context, request, layers) {
     const token = tokenId(context, request.token);
@@ -157,8 +163,12 @@ export function resolveInjection(context, request, layers) {
     }
     if (collected.some(item => item.multi) && collected.some(item => !item.multi))
         reasons.push('mixed multi and single providers');
+    // §4.2 keeps external package sources out of the traversal, so a token an external package both declares
+    // and provides is a designed stop, not an unresolved injection. Say which of the two this is.
     if (!found && !request.optional)
-        reasons.push(`no provider for ${token}`);
+        reasons.push(externalToken(context, request.token)
+            ? `${token} is declared by an external package, which supplies its own provider outside the analyzed sources`
+            : `no provider for ${token}`);
     if (!found && request.optional)
         reasons.push('optional injection may return null');
     for (const item of collected)

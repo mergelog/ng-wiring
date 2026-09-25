@@ -36,6 +36,8 @@ export interface InjectionResolution {
     searched: string[];
 }
 export declare function tokenId(context: AnalysisContext, node: ts.Node): string;
+/** True when the token itself comes from an external package, whose sources §4.2 does not traverse. */
+export declare function externalToken(context: AnalysisContext, token: ts.Node): boolean;
 /** Layers are ordered from the injection site outward. An explicit template injector is inserted at the site. */
 export declare function resolveInjection(context: AnalysisContext, request: InjectionRequest, layers: InjectorLayer[]): InjectionResolution;
 /** A view placement may change display ancestry without changing the injector owner. */

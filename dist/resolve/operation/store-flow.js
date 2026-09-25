@@ -2,7 +2,7 @@ import { classAt, classMethod, idForClass, unwrap } from '../../index/catalog.js
 import { resolveElementBindings } from './bindings.js';
 import { importedApi, location } from './reactive.js';
 import { traceOperation } from './flow.js';
-import { injectionRequestFor, resolveInjection, tokenId } from './di.js';
+import { externalToken, injectionRequestFor, resolveInjection, tokenId } from './di.js';
 const LIMIT = 10000;
 const DEPTH = 64;
 const slash = (s) => s.replaceAll('\\', '/');
@@ -414,7 +414,9 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                         if (request) {
                             const result = resolveInjection(context, request, currentLayers);
                             if (result.status !== 'resolved' || result.bindings.length !== 1 || !result.bindings[0]?.implementation) {
-                                add('boundary', receiver, fieldName, node, nextPath, [...localConditions, ...result.reasons], 'service receiver is not uniquely resolved by DI');
+                                add('boundary', receiver, fieldName, node, nextPath, [...localConditions, ...result.reasons], externalToken(context, request.token)
+                                    ? 'the receiver is an external package type, whose implementation this analysis does not traverse'
+                                    : 'service receiver is not uniquely resolved by DI');
                                 return;
                             }
                             const implementation = result.bindings[0].implementation;

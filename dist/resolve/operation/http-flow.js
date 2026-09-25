@@ -3,7 +3,7 @@ import { matchIdentifier } from '../../adapters/reactive/capabilities.js';
 import { storeLifetime } from '../../adapters/reactive/signal-store.js';
 import { importedApi, location } from './reactive.js';
 import { httpBranchEffect, resolveUrl, rxjsExport } from './http.js';
-import { injectionRequestFor, resolveInjection, tokenId } from './di.js';
+import { externalToken, injectionRequestFor, resolveInjection, tokenId } from './di.js';
 const DEPTH = 64;
 const LIMIT = 10000;
 const STAGES = 8;
@@ -511,7 +511,9 @@ function traceHttpFromRoot(context, catalog, root, rootName, rootOwner, options,
                         const resolution = resolveInjection(context, request, layers);
                         const implementation = resolution.bindings[0]?.implementation;
                         if (resolution.status !== 'resolved' || resolution.bindings.length !== 1 || !implementation) {
-                            add('boundary', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, [...localConditions, ...resolution.reasons], 'the service receiver is not uniquely resolved by DI');
+                            add('boundary', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, [...localConditions, ...resolution.reasons], externalToken(context, request.token)
+                                ? 'the receiver is an external package type, whose implementation this analysis does not traverse'
+                                : 'the service receiver is not uniquely resolved by DI');
                             return;
                         }
                         const target = classFor(implementation)?.members.find(item => t.isMethodDeclaration(item) &&

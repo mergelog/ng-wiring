@@ -366,3 +366,44 @@ export class Root { private readonly store = inject(LogStore); }`,
   const unused = traceHttpFromEventConsumer(context, http, idle, { catalog, stores });
   assert.deepEqual(unused.steps.filter(step => step.kind === 'http-consume'), []);
 }));
+
+test('a stop at an external package receiver says so, while an app receiver keeps the DI reason', async () => fixture({
+  'main.ts': `
+import {Injectable} from '@angular/core';
+import {HttpClient, provideHttpClient} from '@angular/common/http';
+import {Store, createAction, provideStore} from '@ngrx/store';
+import {Actions, createEffect, ofType, provideEffects} from '@ngrx/effects';
+import {mergeMap, tap} from 'rxjs';
+export const save = createAction('[Task] Save');
+@Injectable() export class Audit { note() { return 1; } }
+@Injectable() export class TaskApi {
+  constructor(private http: HttpClient) {}
+  update() { return this.http.post('/tasks.update', {}); }
+}
+@Injectable() export class SaveEffects {
+  constructor(private actions$: Actions, private api: TaskApi, private store: Store,
+    private audit: Audit) {}
+  save$ = createEffect(() => this.actions$.pipe(ofType(save),
+    tap(() => this.store.dispatch(save())),
+    tap(() => this.audit.note()),
+    mergeMap(() => this.api.update())));
+}
+export const rootProviders = [provideStore(), provideHttpClient(), TaskApi, provideEffects(SaveEffects)];`,
+}, ({ context, catalog, expr }) => {
+  const providers = [expr('rootProviders')];
+  const store = analyzeStore(context, catalog, { rootProviders: providers });
+  const layers = [{ id: 'root', kind: 'root', providers }];
+  const selected = store.effects.find(item => item.id.includes('save$'));
+  const trace = traceHttpFromEffect(context, analyzeHttp(context), selected, { catalog, store, layers });
+  const stops = trace.steps.filter(step => step.kind === 'boundary');
+  // Store and HttpClient come from packages whose sources §4.2 does not traverse; Audit is the app's own
+  // class with no provider in the selected injector, which stays an unresolved injection.
+  const external = stops.filter(step => step.detail.includes('external package type'));
+  assert.deepEqual(external.map(step => step.target).sort(), ['http.post', 'store.dispatch']);
+  assert(external.every(step => step.conditions.some(item => item.includes('external package'))));
+  const unresolved = stops.filter(step => step.detail.includes('not uniquely resolved by DI'));
+  assert.deepEqual(unresolved.map(step => step.target), ['audit.note']);
+  assert(unresolved[0].conditions.some(item => item.startsWith('no provider for')));
+  assert(trace.steps.some(step => step.kind === 'http-consume' && step.source === 'POST /tasks.update'),
+    'the request the effect does reach is unaffected');
+}));
