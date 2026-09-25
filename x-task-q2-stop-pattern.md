@@ -51,3 +51,21 @@ node /home/mtrysd/work_2026/ng-wiring/dist/cli/index.js 'data-id=EnqueueButton' 
 `MatDialogRef.close(value)` と、その `MatDialog.open` から得た ref の `afterClosed()` を同一インスタンスで対応付ける。結果の `confirmed` 条件を維持し、ENQUEUE とキュー移動の呼び出し元を混ぜない。プロジェクト移動では `MatDialog.open` の `data.mode` とテンプレートの `@if` 条件を照合し、実行不能な Dashboard 側の枝を候補から除くか、明示的に実行不能とする。
 
 完了確認は、上記3件の実アプリ再解析に加え、複数呼び出し元・同一 provider、異なる provider、`mode` 固定の実行不能枝、`afterClosed()` の戻り値分岐を最小 fixture で検証する。
+
+## 追加確認: PrimeNG `p-table` のテンプレートが表示経路で停止する
+
+Angular Material ダイアログとは別の、実アプリで再現する追跡停止。対象 workspace と `dist` は上記と同じ。次を対象 workspace で実行した。
+
+```bash
+node /home/mtrysd/work_2026/ng-wiring/dist/cli/index.js 'data-id=tableHeader' --detail --out-dir /tmp/ngwi-primeng-audit/table-header
+node /home/mtrysd/work_2026/ng-wiring/dist/cli/index.js 'data-id=3DotMenuButton' --detail --out-dir /tmp/ngwi-q2-audit/prime-body
+```
+
+| ケース | ソース上の表示条件と挿入先 | 詳細レポートの結果 |
+| --- | --- | --- |
+| テーブル見出し | `shared/ui-components/data/table/table.component.html:55` の `<ng-template #header>` は `<p-table>` に渡される。`!noHeader()` などの条件下で `data-id=tableHeader` を表示する。 | 候補は `uninstantiated-fragment`、表示経路は `fragment-uninstantiated`、route は「なし」。`TemplateRef header has no confirmed insertion` で停止。 |
+| 行内のメニューボタン | 同 HTML の `:124` にある `<ng-template #body>` は `<p-table>` に渡される。行データがあり、`rowRightClick.observed && !minimizedView()` 等の条件下で `data-id=3DotMenuButton` を表示する。 | 同様に `TemplateRef body has no confirmed insertion` で停止。 |
+
+これは「テンプレートが実際に表示されない」というアプリ側の判定ではない。対象アプリの PrimeNG 22.1.x の実装は `p-table` の `header` と `body` を `contentChild` で受け取り、`headerTemplate()` を `NgTemplateOutlet` に、`bodyTemplate()` をテーブル本体へ渡す。一方、`src/resolve/view/index.ts` の挿入先探索は、同一 owner の `ngTemplateOutlet`、アプリ内 child の input を介した `ngTemplateOutlet`、`ViewContainerRef.createEmbeddedView` を確認するが、外部コンポーネントが名前付き `TemplateRef` を取得する経路は接続しない。そのため表示可能な PrimeNG の内容を未生成と判定している。
+
+対応時は、外部コンポーネントのテンプレート受け口を型・パッケージ・対象 slot に基づいて確認し、宣言元と表示先、`let-` 変数の context、表示条件を保持する。名前が似た `ng-template` を無条件に表示済みとして扱わない。完了確認には `#header` と `#body` の最小 fixture と上記2件の再解析を追加し、未使用の `ng-template` は従来どおり `fragment-uninstantiated` になることも検証する。
