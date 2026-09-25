@@ -657,7 +657,8 @@ function addOperations(input) {
             const action = actionSource.statements[0];
             const rootArguments = action && t.isExpressionStatement(action) && t.isCallExpression(action.expression)
                 ? action.expression.arguments : [];
-            const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers, { outputElement: selectedUse ?? targetElement, outputUses, catalog, parentLayers: layers, rootArguments });
+            const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers, { outputElement: selectedUse ?? targetElement, outputUses, catalog, parentLayers: layers, rootArguments,
+                routeInjectorUnknown: !routeOccurrence });
             const outputTypes = new Map();
             for (const member of owner.node.members) {
                 if (!t.isPropertyDeclaration(member) || !member.initializer || !t.isCallExpression(member.initializer) ||
@@ -763,7 +764,8 @@ function addOperations(input) {
                         scope.nodes.add(state);
                         scope.nodes.add(inputNode);
                         scope.nodes.add(lifecycle);
-                        const downstream = traceStoreDispatch(context, storeGraph, childOwner, 'ngOnChanges', layers, { outputElement: child, outputUses, catalog, parentLayers: layers, changedInput: bound.alias });
+                        const downstream = traceStoreDispatch(context, storeGraph, childOwner, 'ngOnChanges', layers, { outputElement: child, outputUses, catalog, parentLayers: layers, changedInput: bound.alias,
+                            routeInjectorUnknown: !routeOccurrence });
                         materialize(storeTraceEdges(downstream).map(edge => ({ ...edge,
                             conditions: [...phase, ...edge.conditions] })), scope);
                     }

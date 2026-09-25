@@ -676,7 +676,8 @@ function addOperations(input: OperationInput): void {
       const rootArguments = action && t.isExpressionStatement(action) && t.isCallExpression(action.expression)
         ? action.expression.arguments : [];
       const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers,
-        { outputElement: selectedUse ?? targetElement, outputUses, catalog, parentLayers: layers, rootArguments });
+        { outputElement: selectedUse ?? targetElement, outputUses, catalog, parentLayers: layers, rootArguments,
+          routeInjectorUnknown: !routeOccurrence });
       const outputTypes = new Map<string, string>();
       for (const member of owner.node.members) {
         if (!t.isPropertyDeclaration(member) || !member.initializer || !t.isCallExpression(member.initializer) ||
@@ -773,7 +774,8 @@ function addOperations(input: OperationInput): void {
           if (lifecycleCall) scope.edges.push(lifecycleCall);
           scope.nodes.add(state); scope.nodes.add(inputNode); scope.nodes.add(lifecycle);
           const downstream = traceStoreDispatch(context, storeGraph, childOwner, 'ngOnChanges', layers,
-            { outputElement: child, outputUses, catalog, parentLayers: layers, changedInput: bound.alias });
+            { outputElement: child, outputUses, catalog, parentLayers: layers, changedInput: bound.alias,
+              routeInjectorUnknown: !routeOccurrence });
           materialize(storeTraceEdges(downstream).map(edge => ({ ...edge,
             conditions: [...phase, ...edge.conditions] })), scope);
         }

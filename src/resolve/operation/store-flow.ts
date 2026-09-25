@@ -17,7 +17,9 @@ export interface StoreStep { kind: StoreStepKind; source: string; target: string
 export interface StoreTrace { steps: StoreStep[]; diagnostics: string[]; backgroundReads: string[] }
 export interface StoreTraceOptions { outputElement?: IndexedElement; catalog?: Catalog;
   outputUses?: ReadonlyMap<string, IndexedElement>;
-  parentLayers?: InjectorLayer[]; changedInput?: string; rootArguments?: readonly ts.Expression[] }
+  parentLayers?: InjectorLayer[]; changedInput?: string; rootArguments?: readonly ts.Expression[];
+  /** The selection reaches no route, so a route provided registration can be neither confirmed nor denied. */
+  routeInjectorUnknown?: boolean }
 const LIMIT = 10000;
 const DEPTH = 64;
 const slash = (s: string): string => s.replaceAll('\\', '/');
@@ -144,6 +146,22 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
               [...nextConditions,...computed.conditions],`computed template consumer in ${computed.owner}`);
         }
       }
+    }
+    // A component the selection reaches outside any route (a dialog opened at runtime, for example) has no
+    // route injector, so a route provided registration is undecided rather than absent. Record where it stops.
+    const rootActive = graph.registrations.some(item => item.kind === 'root' && item.status === 'resolved');
+    if (options.routeInjectorUnknown && rootActive) {
+      const listens = (item: { listens: string[] }): boolean =>
+        item.listens.some(id => ids.has(id) || id === `type:${action.type}`);
+      for (const effect of graph.effects.filter(item => !item.registered && listens(item)))
+        add('boundary',source,effect.id,node,path,conditions,
+          `${effect.id} receives this action only where its provideEffects registration is active; ` +
+          'this selection reaches no route, so that injector is not established');
+      for (const reducer of graph.reducers.filter(item => !item.registered &&
+        item.actions.some(id => ids.has(id))))
+        add('boundary',source,reducer.id,node,path,conditions,
+          `${reducer.id} handles this action only where its provideState registration is active; ` +
+          'this selection reaches no route, so that injector is not established');
     }
     for (const effect of graph.effects.filter(item => item.registered && item.listens.some(id =>
       ids.has(id) || id === `type:${action.type}`))) {

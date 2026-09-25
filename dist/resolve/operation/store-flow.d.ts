@@ -27,6 +27,8 @@ export interface StoreTraceOptions {
     parentLayers?: InjectorLayer[];
     changedInput?: string;
     rootArguments?: readonly ts.Expression[];
+    /** The selection reaches no route, so a route provided registration can be neither confirmed nor denied. */
+    routeInjectorUnknown?: boolean;
 }
 /** Traverses a chosen method and its confirmed DI callees, then registered NgRx transitions. */
 export declare function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, owner: Declaration, methodName: string, layers?: InjectorLayer[], options?: StoreTraceOptions): StoreTrace;

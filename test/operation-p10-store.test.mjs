@@ -545,3 +545,43 @@ export const rootProviders=[provideStore()];
   assert(trace.steps.some(s=>s.kind==='boundary'&&s.target==='dynamic action type'));
   assert(!trace.steps.some(s=>s.kind==='action-consume'));
 }));
+
+test('a route provided effect is undecided for a selection that reaches no route, and decided once it does', async () => fixture(`
+import {Component, Injectable, inject} from '@angular/core';
+import {Store, createAction, createReducer, on, provideStore, provideState} from '@ngrx/store';
+import {Actions, createEffect, ofType, provideEffects} from '@ngrx/effects';
+import {map} from 'rxjs';
+export const save=createAction('[Dialog] Save');
+export const saved=createAction('[Dialog] Saved');
+export const dialogReducer=createReducer({open:false},on(save,state=>({...state,open:true})));
+@Injectable() export class DialogEffects {
+  actions=inject(Actions);
+  run=createEffect(()=>this.actions.pipe(ofType(save),map(()=>saved())));
+}
+@Component({selector:'app-dialog',template:''}) export class Dialog {
+  store=inject(Store); submit(){this.store.dispatch(save());}
+}
+export const rootProviders=[provideStore()];
+export const routeProviders=[provideState('dialog',dialogReducer),provideEffects(DialogEffects)];
+`, ({context,catalog,expr}) => {
+  const owner=[...catalog.declarations.values()].find(d=>d.className==='Dialog');
+  const outsideRoute=analyzeStore(context,catalog,{rootProviders:[expr('rootProviders')]});
+  const undecided=traceStoreDispatch(context,outsideRoute,owner,'submit',[],{routeInjectorUnknown:true});
+  const stops=undecided.steps.filter(s=>s.kind==='boundary');
+  assert(stops.some(s=>s.target.endsWith(':run')&&s.detail.includes('provideEffects registration is active')),
+    'the route provided effect states where the decision stops');
+  assert(stops.some(s=>s.detail.includes('provideState registration is active')),
+    'the route provided reducer states where the decision stops');
+  assert(stops.every(s=>s.detail.includes('this selection reaches no route')));
+  assert(!undecided.steps.some(s=>s.kind==='action-consume'),'an undecided registration is not a consumption');
+
+  // The same selection without that flag keeps the earlier silence, and a placed selection decides it.
+  const silent=traceStoreDispatch(context,outsideRoute,owner,'submit',[]);
+  assert(!silent.steps.some(s=>s.kind==='boundary'&&s.detail?.includes('registration is active')));
+  const onRoute=analyzeStore(context,catalog,
+    {rootProviders:[expr('rootProviders')],routeProviders:[expr('routeProviders')]});
+  const decided=traceStoreDispatch(context,onRoute,owner,'submit',[],{routeInjectorUnknown:true});
+  assert(decided.steps.some(s=>s.kind==='action-consume'&&s.target.endsWith(':run')));
+  assert(!decided.steps.some(s=>s.kind==='boundary'&&s.detail?.includes('registration is active')),
+    'a registration the selection establishes is not reported as undecided');
+}));
