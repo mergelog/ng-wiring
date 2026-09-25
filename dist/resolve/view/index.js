@@ -404,6 +404,7 @@ export function resolveViewPaths(target, context, catalog, index, limit = {}, ma
         const dynamic = maze?.edges.filter(edge => edge.to === current.owner.id && edge.kind !== 'template') ?? [];
         for (const edge of dynamic) {
             const relation = step('dynamic-creation', edge.from, `${edge.kind} creates ${edge.to}`, null, false);
+            relation.callSite = { file: edge.location.file, line: edge.location.line, column: edge.location.column };
             relation.creationCondition = 'runtime creation call executes';
             relation.displayCondition = 'render container or overlay parent unresolved';
             paths.push(finalize([...steps, relation], 'dynamic-boundary', `Dynamic display container is not confirmed for ${edge.to}`));

@@ -3,7 +3,7 @@ import type ts from 'typescript';
 import type { CliOptions } from '../cli/arguments.js';
 import type { Declaration } from '../index/catalog.js';
 import { classMethod } from '../index/catalog.js';
-import type { IndexedCandidate } from '../index/candidates.js';
+import type { DynamicCaller, IndexedCandidate } from '../index/candidates.js';
 import type { IndexedElement, Span } from '../index/templates.js';
 import type { ViewPath, ViewStep } from '../resolve/view/index.js';
 import type { BootstrapOccurrence, RouteOccurrence } from '../resolve/view/routes.js';
@@ -134,7 +134,9 @@ export function assembleReport(input: AssembleInput): WiringReport {
   };
   function mazeEvidenceFor(step: ViewStep): string | null {
     if (step.relation !== 'dynamic-creation' || !maze) return null;
-    const edge = maze.edges.find(item => item.from === step.ownerId && `${item.kind} creates ${item.to}` === step.label);
+    const edge = maze.edges.find(item => item.from === step.ownerId && `${item.kind} creates ${item.to}` === step.label &&
+      (!step.callSite || item.location.file === step.callSite.file &&
+        item.location.line === step.callSite.line && item.location.column === step.callSite.column));
     const usage = maze.externalUsages.find(item => `external:${item.callerName}` === step.ownerId &&
       `${item.kind} creates ${item.target}` === step.label);
     const at = edge?.location ?? usage?.location;
@@ -303,7 +305,8 @@ export function assembleReport(input: AssembleInput): WiringReport {
   if (target && targetElement) {
     addOperations({ analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
       targetElement, targetNodeId: target.id, targetKind: target.placed.kind, placed,
-      viewPath: selected.path, options: input.includeAllEvents ? { ...options, event: undefined } : options,
+      viewPath: selected.path, dynamicCallers: selected.dynamicCallers ?? [],
+      options: input.includeAllEvents ? { ...options, event: undefined } : options,
       operationIds, problems, resolvedGaps, stores });
   }
 
@@ -421,6 +424,7 @@ interface OperationInput {
   targetKind: NodeKind;
   placed: readonly PlacedStep[];
   viewPath: ViewPath;
+  dynamicCallers: readonly DynamicCaller[];
   options: CliOptions;
   operationIds: string[];
   problems: string[];
@@ -448,7 +452,7 @@ const sameOwnerId = (reference: string, other: string | null | undefined): boole
  */
 function addOperations(input: OperationInput): void {
   const { analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
-    targetElement, targetNodeId, targetKind, placed, viewPath, options, operationIds, problems,
+    targetElement, targetNodeId, targetKind, placed, viewPath, dynamicCallers, options, operationIds, problems,
     resolvedGaps, stores } = input;
   const { context, catalog, index, routes } = analysis;
   const t = context.toolchain.typescript;
@@ -473,10 +477,70 @@ function addOperations(input: OperationInput): void {
   const bootstrap: BootstrapOccurrence | undefined =
     routes.bootstraps.find(item => placed.some(step => step.step.relation === 'bootstrap' && step.step.ownerId === item.id))
     ?? routes.bootstraps[0];
-  const routeOccurrence: RouteOccurrence | undefined = placed
+  const displayRoute: RouteOccurrence | undefined = placed
     .map(item => item.step.routeRef && routes.byId.get(item.step.routeRef.occurrenceId))
     .find((item): item is RouteOccurrence => !!item);
-  const storeInputs = bootstrap ? storeInputsForSelection(context, catalog, routes, bootstrap, routeOccurrence)
+  const defaultDialogInjector = (call: DynamicCaller): boolean => {
+    if (call.kind !== 'dialog') return false;
+    const source = context.program.getSourceFile(path.resolve(context.workspaceRoot, call.file));
+    if (!source) return false;
+    const offset = source.getPositionOfLineAndCharacter(call.line - 1, call.column - 1);
+    let found: ts.CallExpression | null = null;
+    const visit = (node: ts.Node): void => {
+      if (node.getStart(source) > offset || node.getEnd() <= offset) return;
+      if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'open')
+        found = node;
+      t.forEachChild(node, visit);
+    };
+    visit(source);
+    if (!found) return false;
+    const config: ts.Expression | undefined = (found as ts.CallExpression).arguments[1];
+    if (!config) return true;
+    if (!t.isObjectLiteralExpression(config)) return false;
+    return !config.properties.some(property => !t.isPropertyAssignment(property) && !t.isShorthandPropertyAssignment(property) ||
+      (t.isPropertyAssignment(property) || t.isShorthandPropertyAssignment(property)) &&
+      (property.name.getText(source) === 'injector' || property.name.getText(source) === 'viewContainerRef'));
+  };
+  // Runtime creation does not establish an overlay's display parent. Its caller can still
+  // establish a route injector, provided every verified creation site has the same route.
+  const useOwners = new Map<string, Set<string>>();
+  for (const element of index.elements) if (element.component) {
+    const owners = useOwners.get(element.component) ?? new Set<string>();
+    owners.add(element.owner.id);
+    useOwners.set(element.component, owners);
+  }
+  const routesForCaller = (ownerId: string, visited = new Set<string>()): RouteOccurrence[] => {
+    if (visited.has(ownerId)) return [];
+    const direct = routes.byComponent.get(ownerId) ?? [];
+    const uses = useOwners.get(ownerId) ?? new Set<string>();
+    if (!uses.size) return direct;
+    const next = new Set(visited); next.add(ownerId);
+    const branches = [...uses].map(use => routesForCaller(use, next));
+    if (branches.some(branch => !branch.length)) return [];
+    return [...new Map([...direct, ...branches.flat()].map(route => [route.id, route])).values()];
+  };
+  const callerRoutes = dynamicCallers.map(call => routesForCaller(call.ownerId));
+  const uniqueRoutes = [...new Map(callerRoutes.flat().map(route => [route.id, route])).values()];
+  const callerRoute = dynamicCallers.length && dynamicCallers.every(defaultDialogInjector) &&
+    callerRoutes.every(list => list.length === 1) &&
+    uniqueRoutes.length === 1 ? uniqueRoutes[0] : undefined;
+  const routeOccurrence = displayRoute ?? callerRoute;
+  const routeBootstrapId = routeOccurrence && routes.configs.get(routeOccurrence.configId)?.bootstrapId;
+  const selectedBootstrap = routeBootstrapId
+    ? routes.bootstraps.find(item => item.id === routeBootstrapId)
+    : dynamicCallers.length && routes.bootstraps.length !== 1 ? undefined : bootstrap;
+  if (dynamicCallers.length) {
+    for (const call of dynamicCallers) {
+      const site = evidence.location(`${call.file}:${call.line}:${call.column}`);
+      builder.diagnostic({ code: 'dynamic-call-site', severity: 'info',
+        message: `${call.ownerId} が ${call.kind} でダイアログを開く: ${call.file}:${call.line}`,
+        evidenceIds: site ? [site] : [] });
+    }
+    if (!routeOccurrence) builder.diagnostic({ code: 'dynamic-route-context', severity: 'info',
+      message: '動的生成の呼び出し元に一意の route injector を確認できないため、route provider の接続は境界に留める',
+      stopReason: 'Dynamic caller route injector is ambiguous or unresolved' });
+  }
+  const storeInputs = selectedBootstrap ? storeInputsForSelection(context, catalog, routes, selectedBootstrap, routeOccurrence)
     : { rootProviders: [], routeProviders: [] };
   const storeGraph: StoreGraph = analyzeStore(context, catalog, storeInputs);
   const layers: InjectorLayer[] = selfOwner
@@ -673,7 +737,11 @@ function addOperations(input: OperationInput): void {
         const at = evidence.offsetOf(location);
         return !!at && at.file === range.file && at.offset >= range.start && at.offset < range.end;
       };
-      const scope = { nodes: scopeNodes, edges: scopeEdges, conditions: listenerConditions };
+      const callConditions = callerRoute && !displayRoute
+        ? [`route ${callerRoute.pattern} is active`,
+          `one of ${dynamicCallers.length} verified dialog creation calls executes`]
+        : [];
+      const scope = { nodes: scopeNodes, edges: scopeEdges, conditions: [...listenerConditions, ...callConditions] };
       const actionSource = t.createSourceFile('__ngwi_handler.ts', listener.handler, t.ScriptTarget.Latest, true);
       const action = actionSource.statements[0];
       const rootArguments = action && t.isExpressionStatement(action) && t.isCallExpression(action.expression)

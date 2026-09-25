@@ -10,6 +10,45 @@ export const uiEvents = Object.freeze({
     focus: { bubbles: false, composed: true }, blur: { bubbles: false, composed: true },
     mouseenter: { bubbles: false, composed: false }, mouseleave: { bubbles: false, composed: false },
 });
+function outputProducer(context, catalog, index, subscription) {
+    const marker = subscription.lastIndexOf('.');
+    if (marker < 0)
+        return { conditions: [], diagnostic: null };
+    const ownerId = subscription.slice(0, marker), output = subscription.slice(marker + 1);
+    const owner = catalog.declarations.get(ownerId);
+    if (!owner || !owner.outputs.has(output))
+        return { conditions: [], diagnostic: null };
+    const t = context.toolchain.typescript;
+    const sites = [];
+    for (const member of owner.node.members) {
+        if (!t.isMethodDeclaration(member) || !member.body || !member.name)
+            continue;
+        const scan = (node) => {
+            if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
+                node.expression.name.text === 'emit' && t.isPropertyAccessExpression(node.expression.expression) &&
+                node.expression.expression.expression.kind === t.SyntaxKind.ThisKeyword &&
+                node.expression.expression.name.text === output) {
+                const guards = [];
+                for (let parent = node.parent; parent && parent !== member; parent = parent.parent) {
+                    if (t.isIfStatement(parent))
+                        guards.push(parent.thenStatement.pos <= node.pos && node.end <= parent.thenStatement.end
+                            ? `if ${parent.expression.getText()}` : `else of ${parent.expression.getText()}`);
+                }
+                sites.push({ method: member.name.getText(), guards });
+            }
+            t.forEachChild(node, scan);
+        };
+        scan(member.body);
+    }
+    if (sites.length !== 1)
+        return { conditions: [], diagnostic: null };
+    const site = sites[0];
+    const buttons = (index.byOwner.get(ownerId) ?? []).filter(element => element.tag === 'button' &&
+        element.node.outputs.some((event, position) => event.name === 'click' &&
+            element.eventHandlers[position]?.trim() === `${site.method}()`));
+    return { conditions: [`${ownerId}.${site.method}() executes`, ...site.guards],
+        diagnostic: buttons.length ? `${ownerId}: <button> click calls ${site.method}(); this is a separate operation from the selected input` : null };
+}
 function baseName(event) { return event.split('.')[0]; }
 function hostEvents(context, catalog, element) {
     const t = context.toolchain.typescript;
@@ -155,14 +194,19 @@ export function resolveEventListeners(selected, context, catalog, eventFilter, p
             const event = uiEvents[baseName(actualName)];
             const outputs = global ? [] : element.appliedOutputs.get(name) ?? [];
             const conditions = selected.controlFlow.map(frame => `source view requires ${frame.condition}`);
-            for (const subscription of outputs)
+            for (const subscription of outputs) {
+                const producer = placement ? outputProducer(context, catalog, placement.index, subscription) :
+                    { conditions: [], diagnostic: null };
+                if (producer.diagnostic && !diagnostics.includes(producer.diagnostic))
+                    diagnostics.push(producer.diagnostic);
                 outputSubscriptions.push({ selectedElement: selected, listenerElement: element,
                     eventSource: subscription.includes('#') && (catalog.declarations.get(subscription.slice(0, subscription.lastIndexOf('.')))?.kind === 'component')
                         ? 'component-output' : 'directive-output', eventName: actualName, modifiers, subscription,
                     handler: binding.handler, span: binding.span,
                     conditions: [...selected.controlFlow.map(frame => `source view requires ${frame.condition}`),
-                        'requires explicit output emit from this instance; a DOM event does not trigger it'],
+                        'requires explicit output emit from this instance; a DOM event does not trigger it', ...producer.conditions],
                     status: 'conditional', registration: binding.registration });
+            }
             if (depth > 0 && !event?.bubbles && !global)
                 continue;
             if (!event && !global)

@@ -29,6 +29,12 @@ export interface ViewStep {
     insertionContext: string | null;
     routeRef: ViewRouteRef | null;
     controlFlow: ControlFlowFrame | null;
+    /** The creation call is separate from the unconfirmed display container. */
+    callSite?: {
+        file: string;
+        line: number;
+        column: number;
+    };
 }
 export interface ViewPath {
     steps: ViewStep[];

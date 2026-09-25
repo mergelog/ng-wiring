@@ -30,7 +30,7 @@ export function buildIndexedCandidates(context, catalog, index, target, maze, ro
     const query = target.kind === 'attribute' ? { kind: 'attribute', name: target.name, value: target.value } :
         { kind: 'source', file: resolveWorkspacePath(context.workspaceRoot, target.file), line: target.line };
     const output = [];
-    const seenIds = new Set();
+    const seenIds = new Map();
     for (const element of matchingElements(index, query)) {
         const verifiedMaze = maze ? { ...maze, edges: maze.edges.filter(edge => index.verifiedMazeEdges.includes(edge)) } : undefined;
         const resolution = resolveViewPaths(element, context, catalog, index, defaultViewLimits, verifiedMaze, routes);
@@ -67,9 +67,26 @@ export function buildIndexedCandidates(context, catalog, index, target, maze, ro
                 parentIds, dom: { componentTags: displayTags(view, parentIds),
                     targetTag: element.tag.toLowerCase() }, routePattern: routeRefs[0]?.pattern ?? null,
                 events: element.events, partialReasons });
-            if (!seenIds.has(candidate.id)) {
-                seenIds.add(candidate.id);
-                output.push({ candidate, path: view });
+            const creation = view.steps.find(part => part.relation === 'dynamic-creation');
+            const edge = creation && maze?.edges.find(item => item.from === creation.ownerId &&
+                `${item.kind} creates ${item.to}` === creation.label &&
+                item.location.file === creation.callSite?.file && item.location.line === creation.callSite.line &&
+                item.location.column === creation.callSite.column);
+            const call = edge ? [{ ownerId: edge.from, kind: edge.kind,
+                    file: edge.location.file, line: edge.location.line, column: edge.location.column }] : [];
+            const previous = seenIds.get(candidate.id);
+            if (previous) {
+                const callers = previous.dynamicCallers ?? [];
+                for (const item of call)
+                    if (!callers.some(other => other.ownerId === item.ownerId &&
+                        other.file === item.file && other.line === item.line && other.column === item.column))
+                        callers.push(item);
+                previous.dynamicCallers = callers;
+            }
+            else {
+                const indexed = { candidate, path: view, dynamicCallers: call };
+                seenIds.set(candidate.id, indexed);
+                output.push(indexed);
             }
         }
     }

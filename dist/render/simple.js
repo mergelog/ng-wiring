@@ -91,9 +91,94 @@ function operationChains(report, edges, evidence) {
 function sourceRow(evidence, kind, relation, label, edgeId) {
     return evidence ? { kind, relation, label, file: evidence.file, line: evidence.startLine, ...(edgeId ? { edgeId } : {}) } : null;
 }
+function predicateReader(report) {
+    const byId = new Map((report.conditions ?? []).map(item => [item.id, item]));
+    const cache = new Map();
+    const visit = (key, seen = new Set()) => {
+        if (!key || seen.has(key))
+            return [];
+        const cached = cache.get(key);
+        if (cached)
+            return cached;
+        seen.add(key);
+        const item = byId.get(key);
+        if (!item)
+            return [];
+        const values = item.kind === 'predicate' ? [item.expression] :
+            'operandIds' in item ? item.operandIds.flatMap(child => visit(child, seen)) : [];
+        cache.set(key, values);
+        return values;
+    };
+    return id => [...new Set(visit(id))];
+}
+function operationBranches(chain, edges, evidence, sources, predicates) {
+    const last = chain.operations.at(-1);
+    const ownFile = last.listenerId.slice('def:'.length).split('#')[0];
+    const listenerOwner = last.listenerId.slice('def:'.length).split(':').slice(0, 2).join(':')
+        .replace(/\.[^.]+$/, '');
+    const all = last.edgeIds.map(id => edges.get(id)).filter((edge) => !!edge);
+    const dispatches = all.filter(edge => edge.kind === 'action-dispatch' &&
+        (value(edge, 'caller') ? value(edge, 'caller') === listenerOwner :
+            evidence.get(edge.evidenceIds[0] ?? '')?.file === ownFile));
+    const consumes = all.filter(edge => edge.kind === 'action-consume');
+    const requests = all.filter(edge => edge.kind === 'http-create');
+    const calls = all.filter(edge => edge.kind === 'call');
+    const effectMemberAt = (file, line) => {
+        const lines = sources.text(file)?.split(/\r?\n/).slice(0, line) ?? [];
+        const declaration = [...lines].reverse().find(text => /\b\w+\s*=\s*createEffect\s*\(/.test(text));
+        return declaration ? /\b([\w$]+)\s*=\s*createEffect\s*\(/.exec(declaration)?.[1] ?? null : null;
+    };
+    return dispatches.flatMap(dispatch => {
+        const branch = predicates(dispatch.conditionId);
+        const compatible = (edge) => branch.every(item => predicates(edge.conditionId).includes(item));
+        const matching = requests.filter(compatible);
+        const consumers = consumes.filter(edge => edge.from === dispatch.to && compatible(edge));
+        const linked = [];
+        for (const request of matching) {
+            const endpoint = /\/([\w.]+)$/.exec(value(request, 'urlExpression'))?.[1] ?? '';
+            const method = endpoint.replace(/\.([a-z])/g, (_, char) => char.toUpperCase());
+            const matchingConsumers = consumers.filter(item => {
+                const file = value(item, 'consumer').split('#')[0];
+                const member = value(item, 'consumer').split('#').at(-1);
+                const inEffect = evidence.get(request.evidenceIds[0] ?? '');
+                if (inEffect?.file === file && effectMemberAt(file, inEffect.startLine) === member)
+                    return true;
+                return !!method && calls.some(call => {
+                    const at = evidence.get(call.evidenceIds[0] ?? '');
+                    if (at?.file !== file || !value(call, 'callee').toLowerCase().endsWith(method.toLowerCase()))
+                        return false;
+                    const effect = effectMemberAt(file, at.startLine);
+                    return !effect || effect === member;
+                });
+            });
+            if (matchingConsumers.length === 1)
+                linked.push({ dispatch, consume: matchingConsumers[0], request });
+        }
+        if (linked.length)
+            return linked;
+        const boundary = all.find(edge => edge.kind === 'boundary' && compatible(edge) &&
+            (value(edge, 'reason').includes('provideEffects') || value(edge, 'reason').includes('injector')));
+        return [{ dispatch, reason: value(boundary ?? dispatch, 'reason') || '通信への接続を確認できない' }];
+    });
+}
 function viewRows(report, nodes, evidence, sources) {
     const occurrences = [...(report.paths[0]?.occurrenceIds ?? [])].reverse().map(id => nodes.get(id)).filter((node) => !!node);
     const result = [];
+    const callSites = (report.diagnostics ?? []).filter(item => item.code === 'dynamic-call-site');
+    for (const item of callSites) {
+        const ev = evidence.get(item.evidenceIds[0] ?? '');
+        if (!ev)
+            continue;
+        const lines = sources.text(ev.file)?.split(/\r?\n/).slice(0, ev.startLine) ?? [];
+        const method = [...lines].reverse().map((line, index) => {
+            const beforeCall = index === 0 ? line.slice(0, Math.max(0, line.indexOf('.open'))) : line;
+            const names = [...beforeCall.matchAll(/\b([\w$]+)\([^)]*\)\s*\{/g)];
+            return names.at(-1)?.[1];
+        })
+            .find((name) => !!name);
+        result.push({ kind: 'C', relation: 'V', label: `${method ? `${method}() → ` : ''}MatDialog.open`,
+            file: ev.file, line: ev.startLine });
+    }
     const outletCandidate = (segment) => {
         if (segment.some(node => node.details.label?.value?.startsWith('<router-outlet')))
             return null;
@@ -114,6 +199,8 @@ function viewRows(report, nodes, evidence, sources) {
     };
     let betweenRoutes = [];
     for (const node of occurrences) {
+        if (callSites.length && node.details.relation?.value === 'dynamic-creation')
+            continue;
         if (node.kind === 'route') {
             const outlet = outletCandidate(betweenRoutes);
             if (outlet)
@@ -174,7 +261,7 @@ function viewRows(report, nodes, evidence, sources) {
     }
     return result;
 }
-function dataRows(chain, edges, nodes, evidence, sources) {
+function dataRows(chain, edges, nodes, evidence, sources, branch, branchConditions = [], includePrefix = true) {
     const result = [];
     const edgeOf = (operation, predicate) => operation.edgeIds.map(id => edges.get(id)).find((edge) => !!edge && predicate(edge));
     const evidenceOf = (edge) => evidence.get(edge?.evidenceIds[0] ?? '');
@@ -185,9 +272,9 @@ function dataRows(chain, edges, nodes, evidence, sources) {
     };
     const first = chain.operations[0];
     const listener = edgeOf(first, edge => edge.kind === 'dom-listener');
-    if (listener)
+    if (includePrefix && listener)
         push(listener, 'h', 'D', `(${first.event}) ${value(listener, 'handler')}`);
-    for (let i = 0; i < chain.operations.length - 1; i++) {
+    for (let i = 0; includePrefix && i < chain.operations.length - 1; i++) {
         const current = chain.operations[i], next = chain.operations[i + 1];
         const emitted = edgeOf(current, edge => edge.kind === 'output-emit' && outputName(value(edge, 'output')) === next.event);
         if (emitted) {
@@ -204,13 +291,15 @@ function dataRows(chain, edges, nodes, evidence, sources) {
         }
     }
     const last = chain.operations.at(-1);
-    const dispatch = edgeOf(last, edge => edge.kind === 'action-dispatch');
+    const dispatch = branch?.dispatch ?? edgeOf(last, edge => edge.kind === 'action-dispatch');
+    if (branch && branchConditions.length)
+        push(dispatch, '@', 'C', `条件: ${branchConditions.join(' / ')}`);
     if (dispatch) {
         const ev = evidenceOf(dispatch);
         const code = ev ? sources.line(ev.file, ev.startLine).replace(/;$/, '') : '';
         push(dispatch, 'D', 'D', code || value(dispatch, 'action'));
     }
-    const consume = dispatch && edgeOf(last, edge => edge.kind === 'action-consume' && edge.from === dispatch.to);
+    const consume = branch ? branch.consume : dispatch && edgeOf(last, edge => edge.kind === 'action-consume' && edge.from === dispatch.to);
     if (consume) {
         const effect = nodes.get(consume.to);
         const effectName = value(consume, 'consumer').split('#').at(-1) ?? effect?.details.label?.value ?? '';
@@ -222,10 +311,14 @@ function dataRows(chain, edges, nodes, evidence, sources) {
         const registered = action && new RegExp(`\\bofType\\(\\s*${action.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\)`).test(nearby);
         push(consume, 'E', 'D', registered ? `${effectName}（ofType(${action})）` : effectName, ev);
     }
-    if (!chain.request)
+    const request = branch ? branch.request : chain.request;
+    if (!request) {
+        if (branch?.reason)
+            push(dispatch, '@', 'C', `停止: ${branch.reason}`);
         return result;
-    const url = value(chain.request, 'urlExpression');
-    const method = value(chain.request, 'method') || 'HTTP';
+    }
+    const url = value(request, 'urlExpression');
+    const method = value(request, 'method') || 'HTTP';
     const endpoint = /\/([\w.]+)$/.exec(url)?.[1] ?? '';
     const methodName = endpoint.replace(/\.([a-z])/g, (_, char) => char.toUpperCase());
     const effectFile = consume ? value(consume, 'consumer').split('#')[0] : '';
@@ -239,7 +332,7 @@ function dataRows(chain, edges, nodes, evidence, sources) {
     }
     const service = edgeOf(last, edge => edge.kind === 'call' && evidenceOf(edge)?.file.endsWith('.service.ts') === true &&
         !!endpoint && sources.line(evidenceOf(edge).file, evidenceOf(edge).startLine).includes(endpoint));
-    push(service ?? chain.request, 'S', 'A', `${method} ${url || '（URL 未解決）'}`);
+    push(service ?? request, 'S', 'A', `${method} ${url || '（URL 未解決）'}`);
     return result;
 }
 function execCommand(report, belowData) {
@@ -264,6 +357,7 @@ export function renderSimple(input) {
     const nodes = new Map(report.nodes.map(node => [node.id, node]));
     const edges = new Map(report.edges.map(edge => [edge.id, edge]));
     const evidence = new Map(report.evidence.map(item => [item.id, item]));
+    const predicates = predicateReader(report);
     const chains = operationChains(report, edges, evidence);
     const primary = chains.find(chain => chain.request && chain.operations.some(operation => operation.event.startsWith('keydown.')))
         ?? chains.find(chain => chain.request) ?? chains[0];
@@ -271,7 +365,11 @@ export function renderSimple(input) {
         chain.operations.map(operation => operation.event).slice(1).join('/') ===
             primary.operations.map(operation => operation.event).slice(1).join('/')) : [];
     const view = input.belowData ? [] : viewRows(report, nodes, evidence, sources);
-    const data = primary ? dataRows(primary, edges, nodes, evidence, sources) : [];
+    const branches = primary ? operationBranches(primary, edges, evidence, sources, predicates) : [];
+    const data = primary ? branches.length ? branches.flatMap((branch, index) => {
+        const branchTerms = predicates(branch.dispatch.conditionId).filter(term => /^(?:if |else |switch |case |route )/.test(term));
+        return dataRows(primary, edges, nodes, evidence, sources, branch, branchTerms, index === 0);
+    }) : dataRows(primary, edges, nodes, evidence, sources) : [];
     if (data.length && siblings.length > 1) {
         const events = [...new Set(siblings.map(chain => chain.operations[0].event))];
         const listener = data[0];
@@ -294,7 +392,10 @@ export function renderSimple(input) {
         const lines = [row.line, ...(row.extraLines ?? [])].sort((a, b) => a - b);
         out.push(`- ${String(rows.length - index).padStart(2, '0')}. ${link} ${escapeLabel(row.label)}:${[...new Set(lines)].join(',')}`);
     });
-    if (!primary?.request)
+    if ((report.diagnostics ?? []).some(item => item.code === 'event-propagation' &&
+        item.message.includes('this is a separate operation from the selected input')))
+        out.push('- 操作: 入力と送信ボタンの click は別操作。output は送信メソッドが emit した場合に届く');
+    if (!primary?.request && !branches.some(branch => branch.request))
         out.push('- 通信: この探索範囲では未検出');
     out.push('', '## 凡例', '');
     const kinds = { h: 'html', C: 'コンポーネントクラスts', D: 'ディスパッチ', E: 'エフェクト',

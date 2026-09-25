@@ -145,15 +145,19 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
         // A component the selection reaches outside any route (a dialog opened at runtime, for example) has no
         // route injector, so a route provided registration is undecided rather than absent. Record where it stops.
         const rootActive = graph.registrations.some(item => item.kind === 'root' && item.status === 'resolved');
-        if (options.routeInjectorUnknown && rootActive) {
+        if (rootActive) {
             const listens = (item) => item.listens.some(id => ids.has(id) || id === `type:${action.type}`);
             for (const effect of graph.effects.filter(item => !item.registered && listens(item)))
-                add('boundary', source, effect.id, node, path, conditions, `${effect.id} receives this action only where its provideEffects registration is active; ` +
-                    'this selection reaches no route, so that injector is not established');
+                add('boundary', source, effect.id, node, path, conditions, options.routeInjectorUnknown
+                    ? `${effect.id} receives this action only where its provideEffects registration is active; ` +
+                        'this selection reaches no route, so that injector is not established'
+                    : `${effect.id} has no active provideEffects registration in the selected injector`);
             for (const reducer of graph.reducers.filter(item => !item.registered &&
                 item.actions.some(id => ids.has(id))))
-                add('boundary', source, reducer.id, node, path, conditions, `${reducer.id} handles this action only where its provideState registration is active; ` +
-                    'this selection reaches no route, so that injector is not established');
+                add('boundary', source, reducer.id, node, path, conditions, options.routeInjectorUnknown
+                    ? `${reducer.id} handles this action only where its provideState registration is active; ` +
+                        'this selection reaches no route, so that injector is not established'
+                    : `${reducer.id} has no active provideState registration in the selected injector`);
         }
         for (const effect of graph.effects.filter(item => item.registered && item.listens.some(id => ids.has(id) || id === `type:${action.type}`))) {
             const effectConditions = [...conditions, ...effect.conditions,

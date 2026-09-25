@@ -8,7 +8,8 @@ import { defaultViewLimits, resolveViewPaths, type ViewPath } from '../resolve/v
 import type { RouteGraph } from '../resolve/view/routes.js';
 import type { MazeGraph } from '../adapters/ng-maze/index.js';
 
-export interface IndexedCandidate { candidate: Candidate; path: ViewPath }
+export interface DynamicCaller { ownerId: string; kind: string; file: string; line: number; column: number }
+export interface IndexedCandidate { candidate: Candidate; path: ViewPath; dynamicCallers?: DynamicCaller[] }
 const relative = (context: AnalysisContext, file: string): string => path.relative(context.workspaceRoot, file).replaceAll('\\', '/');
 function position(context: AnalysisContext, span: Span): SourcePosition {
   return { path: relative(context, span.file), line: span.line, column: span.column, offset: span.start };
@@ -37,7 +38,7 @@ export function buildIndexedCandidates(context: AnalysisContext, catalog: Catalo
   const query = target.kind === 'attribute' ? { kind: 'attribute' as const, name: target.name, value: target.value } :
     { kind: 'source' as const, file: resolveWorkspacePath(context.workspaceRoot, target.file), line: target.line };
   const output: IndexedCandidate[] = [];
-  const seenIds = new Set<string>();
+  const seenIds = new Map<string, IndexedCandidate>();
   for (const element of matchingElements(index, query)) {
     const verifiedMaze = maze ? { ...maze, edges: maze.edges.filter(edge => index.verifiedMazeEdges.includes(edge)) } : undefined;
     const resolution = resolveViewPaths(element, context, catalog, index, defaultViewLimits, verifiedMaze, routes);
@@ -71,9 +72,23 @@ export function buildIndexedCandidates(context: AnalysisContext, catalog: Catalo
         parentIds, dom: { componentTags: displayTags(view, parentIds),
           targetTag: element.tag.toLowerCase() }, routePattern: routeRefs[0]?.pattern ?? null,
         events: element.events, partialReasons });
-      if (!seenIds.has(candidate.id)) {
-        seenIds.add(candidate.id);
-        output.push({ candidate, path: view });
+      const creation = view.steps.find(part => part.relation === 'dynamic-creation');
+      const edge = creation && maze?.edges.find(item => item.from === creation.ownerId &&
+        `${item.kind} creates ${item.to}` === creation.label &&
+        item.location.file === creation.callSite?.file && item.location.line === creation.callSite.line &&
+        item.location.column === creation.callSite.column);
+      const call: DynamicCaller[] = edge ? [{ ownerId: edge.from, kind: edge.kind,
+        file: edge.location.file, line: edge.location.line, column: edge.location.column }] : [];
+      const previous = seenIds.get(candidate.id);
+      if (previous) {
+        const callers = previous.dynamicCallers ?? [];
+        for (const item of call) if (!callers.some(other => other.ownerId === item.ownerId &&
+          other.file === item.file && other.line === item.line && other.column === item.column)) callers.push(item);
+        previous.dynamicCallers = callers;
+      } else {
+        const indexed = { candidate, path: view, dynamicCallers: call };
+        seenIds.set(candidate.id, indexed);
+        output.push(indexed);
       }
     }
   }

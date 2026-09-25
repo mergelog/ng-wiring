@@ -32,7 +32,7 @@ export function createBackend(input) {
             if (!found)
                 throw new UsageError(`Candidate ${candidate.id} is outside the discovered candidates`);
             // The CLI may hand back a filtered copy; its event list is the selection, the path is the analysed one.
-            const selected = { candidate, path: found.path };
+            const selected = { ...found, candidate };
             const report = assembleReport({ analysis: contextOf(analysis, found), selected,
                 candidates: analysis.candidates, options, toolVersion: input.toolVersion ?? toolVersion,
                 startedAt, enumerationComplete: !analysis.truncated,
