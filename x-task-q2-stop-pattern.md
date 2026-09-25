@@ -1,4 +1,4 @@
-# Angular Material ダイアログの追跡停止: 追加調査
+# 表示・操作の追跡停止パターン: 追加調査
 
 作成日: 2026-09-25
 
@@ -69,3 +69,25 @@ node /home/mtrysd/work_2026/ng-wiring/dist/cli/index.js 'data-id=3DotMenuButton'
 これは「テンプレートが実際に表示されない」というアプリ側の判定ではない。対象アプリの PrimeNG 22.1.x の実装は `p-table` の `header` と `body` を `contentChild` で受け取り、`headerTemplate()` を `NgTemplateOutlet` に、`bodyTemplate()` をテーブル本体へ渡す。一方、`src/resolve/view/index.ts` の挿入先探索は、同一 owner の `ngTemplateOutlet`、アプリ内 child の input を介した `ngTemplateOutlet`、`ViewContainerRef.createEmbeddedView` を確認するが、外部コンポーネントが名前付き `TemplateRef` を取得する経路は接続しない。そのため表示可能な PrimeNG の内容を未生成と判定している。
 
 対応時は、外部コンポーネントのテンプレート受け口を型・パッケージ・対象 slot に基づいて確認し、宣言元と表示先、`let-` 変数の context、表示条件を保持する。名前が似た `ng-template` を無条件に表示済みとして扱わない。完了確認には `#header` と `#body` の最小 fixture と上記2件の再解析を追加し、未使用の `ng-template` は従来どおり `fragment-uninstantiated` になることも検証する。
+
+## 追加確認: アプリ内の構造ディレクティブで停止枝と条件欠落枝が並立する
+
+`src/app/webapp-common/layout/header-navbar-tabs/header-navbar-tabs.component.html:8` の `<mat-tab *smCheckPermission="route.permissionCheck">` を調べた。`src/app/shared/directives/check-permission.directive.ts:37-45` の `CheckPermissionDirective` は権限条件が成立すると `ViewContainerRef.createEmbeddedView(this.templateRef)` でそのビューを作る。したがって `smCheckPermission` の条件は表示経路に必要である。
+
+```bash
+node /home/mtrysd/work_2026/ng-wiring/dist/cli/index.js --source 'src/app/webapp-common/layout/header-navbar-tabs/header-navbar-tabs.component.html:8' --out-dir /tmp/ngwi-q2-audit/custom-structural-mat-tab
+```
+
+現行レポートは同じ `<mat-tab>` に候補を2件作る。一方は `Custom structural directive insertion is unresolved` で `fragment-uninstantiated` に停止する。他方は `bootstrap` まで到達し、表示経路を `complete-within-scope` とするが、`smCheckPermission` の許可条件も `createEmbeddedView` も経路に示さない。未解決として止める枝と、条件を飛ばして完結扱いにする枝が同居する点が不具合である。`src/resolve/view/index.ts` は既知の構造ディレクティブを固定の名前リストで判定しており、アプリ内のディレクティブ実装を確認しない。
+
+対応時は、構造ディレクティブの `TemplateRef` と `ViewContainerRef.createEmbeddedView` の対応、および許可・else 条件を確認できる範囲で枝に結びつける。確認できない場合は全枝を未解決として扱い、別の候補が構造ディレクティブを迂回して完結扱いにならないようにする。最小 fixture では許可、拒否、else、挿入しないディレクティブを区別して検証する。
+
+## 追加確認: CDK Portal の DOM 移動先を表示上の親に反映しない
+
+`src/app/webapp-common/experiments-compare/containers/experiment-compare-details/experiment-compare-details.component.html:115-133` の `data-id=previousDiffButton` は `<sm-portal outletId="nextDiff">` 内に宣言される。`src/app/webapp-common/shared/portal/portal.component.ts:31-37` は `CdkPortal` を `DomPortalOutlet` に attach し、移動先は `experiment-compare-header.component.html:84` の `<div id="nextDiff">` である。
+
+```bash
+node /home/mtrysd/work_2026/ng-wiring/dist/cli/index.js 'data-id=previousDiffButton' --candidate 'cand:6fb7ee09bdb3a8f6971e94b9aa4bc5b8fe1cfd1c230538f8d3ce92e2d700e009' --detail --out-dir /tmp/ngwi-q2-audit/cdk-portal-selected
+```
+
+候補 ID は対象 snapshot が変われば再取得する。現行レポートは表示経路を `bootstrap` まで `complete-within-scope` とし、ボタンの表示上の親を `PortalComponent`、さらにその親を元の比較画面側として確定する。実際の DOM 配置先である `#nextDiff` と `DomPortalOutlet.attach()` は経路に出ない。宣言元・DI の文脈と DOM の表示先を混同しない形で、Portal の挿入先を追跡するか、未解決の表示境界として示す必要がある。完了確認には、宣言元と DOM 移動先が異なる最小 fixture とこの実アプリの再解析を加える。
