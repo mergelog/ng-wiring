@@ -24,7 +24,7 @@ async function fixture(fn, setup) {
     await writeFile(path.join(root, 'src/main.ts'), "import {HostA,HostB} from './host'; export const entry=[HostA,HostB];\n");
     await writeFile(path.join(root, 'src/child.ts'), "import {Component,Directive,Input} from '@angular/core'; export class Base { @Input('baseAlias') base = ''; } @Directive({selector:'[mark]'}) export class Mark { @Input() value = ''; } @Directive({selector:'a-child'}) export class Tag {} @Component({selector:'a-child',template:'<p></p>',hostDirectives:[{directive:Mark,inputs:['value:publicValue']}]}) export class Child extends Base { @Input('aliased') field = ''; }\n");
     await writeFile(path.join(root, 'src/host.ts'), "import {Component} from '@angular/core'; import {Child,Mark,Tag} from './child'; @Component({selector:'host-a',imports:[Child,Mark,Tag],templateUrl:'./shared.html'}) export class HostA {} @Component({selector:'host-b',imports:[Child],templateUrl:'./shared.html'}) export class HostB {}\n");
-    await writeFile(path.join(root, 'src/shared.html'), '<a-child data-id="a&amp;b" mark></a-child><a-child data-id=a></a-child>\n<span [attr.data-id]="value"></span><button data-id="multi"\n title="x"></button>\n');
+    await writeFile(path.join(root, 'src/shared.html'), '<a-child data-id="a&amp;b" mark></a-child><a-child data-id=a></a-child>\n<span [attr.data-id]="value"></span><button data-id="multi"\n title="x"></button>\n<input formControlName="name">\n');
     if (setup) await setup(root);
     const toolchain = await resolveToolchain(root);
     const context = await createContext({ workspaceRoot: root, project: (await selectProjects(root, toolchain))[0], toolchain });
@@ -42,6 +42,7 @@ test('catalog and selector scope keep shared template owners and all directives'
   assert.equal(matchingElements(index, { kind: 'attribute', name: 'data-id', value: 'a&b' }).length, 2);
   assert.equal(matchingElements(index, { kind: 'attribute', name: 'data-id', value: 'a' }).length, 2);
   assert.equal(matchingElements(index, { kind: 'attribute', name: 'data-id', value: 'b' }).length, 0);
+  assert.equal(matchingElements(index, { kind: 'attribute', name: 'formcontrolname', value: 'name' }).length, 2);
   const first = matchingElements(index, { kind: 'source', file: path.join(root, 'src/shared.html'), line: 1 });
   assert.equal(first.length, 4);
   assert(first.some(item => item.owner.className === 'HostA' && item.directives.some(id => id.endsWith('#Mark'))));

@@ -20,9 +20,24 @@ export function buildIndexedCandidates(context: AnalysisContext, catalog: Catalo
     const selector = catalog.declarations.get(id)?.selector ?? catalog.external.get(id)?.selector;
     return selector && /^[A-Za-z][A-Za-z0-9-]*$/.test(selector.trim()) ? selector.trim().toLowerCase() : null;
   };
+  const knownHostTags = new Set([...catalog.declarations.keys(), ...catalog.external.keys()]
+    .map(hostTag).filter((tag): tag is string => tag !== null));
+  const displayTags = (view: ViewPath, parentIds: string[]): string[] => {
+    const ordinary = parentIds.map(hostTag).filter((tag): tag is string => tag !== null).reverse();
+    if (view.end !== 'dynamic-boundary') return ordinary;
+    const creation = [...view.steps].reverse().find(part => part.relation === 'dynamic-creation');
+    const createdId = creation?.label.match(/ creates (.+)$/)?.[1];
+    const createdTag = createdId && hostTag(createdId);
+    const hosts = view.steps.filter(part => part.relation === 'element').flatMap(part => {
+      const tag = part.label.match(/^<([A-Za-z][A-Za-z0-9-]*)>$/)?.[1]?.toLowerCase();
+      return tag && knownHostTags.has(tag) ? [tag] : [];
+    }).reverse();
+    return createdTag ? [createdTag, ...hosts] : ordinary;
+  };
   const query = target.kind === 'attribute' ? { kind: 'attribute' as const, name: target.name, value: target.value } :
     { kind: 'source' as const, file: resolveWorkspacePath(context.workspaceRoot, target.file), line: target.line };
   const output: IndexedCandidate[] = [];
+  const seenIds = new Set<string>();
   for (const element of matchingElements(index, query)) {
     const verifiedMaze = maze ? { ...maze, edges: maze.edges.filter(edge => index.verifiedMazeEdges.includes(edge)) } : undefined;
     const resolution = resolveViewPaths(element, context, catalog, index, defaultViewLimits, verifiedMaze, routes);
@@ -53,10 +68,13 @@ export function buildIndexedCandidates(context: AnalysisContext, catalog: Catalo
         class: view.end === 'bootstrap' ? 'bootstrap' :
           view.end === 'fragment-uninstantiated' ? 'uninstantiated-fragment' :
             view.end === 'dynamic-boundary' ? 'unresolved-dynamic' : 'declaration',
-        parentIds, dom: { componentTags: parentIds.map(hostTag).filter((tag): tag is string => tag !== null).reverse(),
+        parentIds, dom: { componentTags: displayTags(view, parentIds),
           targetTag: element.tag.toLowerCase() }, routePattern: routeRefs[0]?.pattern ?? null,
         events: element.events, partialReasons });
-      output.push({ candidate, path: view });
+      if (!seenIds.has(candidate.id)) {
+        seenIds.add(candidate.id);
+        output.push({ candidate, path: view });
+      }
     }
   }
   const order = new Map(sortCandidates(output.map(item => item.candidate)).map((candidate, index) => [candidate, index]));

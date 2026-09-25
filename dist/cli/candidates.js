@@ -103,8 +103,12 @@ export function filterCandidates(candidates, options) {
             throw new UsageError('--selector contains no component host tag found in the candidates');
         }
         const targetTag = tags.at(-1);
+        // Angular Material inserts this wrapper around an authored form control.
+        // DevTools may copy the wrapper selector even when the supplied attribute is on its child input.
+        const materialInputWrapper = /^div\.mat-mdc-form-field-infix(?:[.#:\[]|$)/i.test(options.selector.split('>').at(-1)?.trim() ?? '');
         selected = selected.filter(candidate => {
-            if (candidate.dom?.targetTag !== targetTag)
+            if (!candidate.dom || (candidate.dom.targetTag !== targetTag &&
+                !(materialInputWrapper && ['input', 'textarea'].includes(candidate.dom.targetTag))))
                 return false;
             const path = candidate.dom.componentTags;
             return componentTags.length <= path.length &&

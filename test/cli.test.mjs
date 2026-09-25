@@ -75,6 +75,19 @@ test('DevTools selector chooses the matching component display path', () => {
   assert.throws(() => filterCandidates([insideExperiments], { selector: 'body > div > input' }), UsageError);
 });
 
+test('Material dialog wrapper selector resolves its projected input', () => {
+  const dialogInput = { ...candidate(4), dom: { componentTags: [
+    'sm-queue-create-dialog', 'sm-dialog-template', 'sm-create-new-queue-form', 'mat-form-field',
+  ], targetTag: 'input' } };
+  const copied = '#mat-mdc-dialog-5 > div > div > sm-queue-create-dialog > sm-dialog-template > div > ' +
+    'div.generic-container > sm-create-new-queue-form > form > mat-form-field.mat-mdc-form-field > ' +
+    'div.mat-mdc-text-field-wrapper > div > div.mat-mdc-form-field-infix';
+  assert.deepEqual(filterCandidates([dialogInput], { selector: copied }), [dialogInput]);
+  assert.deepEqual(filterCandidates([dialogInput], {
+    selector: copied.replace('div.mat-mdc-form-field-infix', 'div.unrelated-wrapper'),
+  }), []);
+});
+
 test('candidate identity is stable, numeric positions sort numerically and filters are exact', () => {
   const a = candidate(2), b = candidate(10);
   assert.equal(a.id, candidate(2).id);

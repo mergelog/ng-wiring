@@ -465,7 +465,9 @@ export async function indexTemplates(context: AnalysisContext, catalog: Catalog,
 
 export function matchingElements(index: TemplateIndex, target: { kind: 'attribute'; name: string; value: string } |
   { kind: 'source'; file: string; line: number }): IndexedElement[] {
-  if (target.kind === 'attribute') return index.elements.filter(element => element.staticAttributes.get(target.name) === target.value);
+  if (target.kind === 'attribute') return index.elements.filter(element =>
+    [...element.staticAttributes].some(([name, value]) => name.toLowerCase() === target.name.toLowerCase() &&
+      value === target.value));
   return index.elements.filter(element => path.resolve(element.span.file) === path.resolve(target.file) &&
     element.span.line <= target.line && target.line <= element.span.endLine);
 }

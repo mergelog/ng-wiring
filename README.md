@@ -49,6 +49,11 @@ and pass it with `--selector`. ng-wiring compares the component host tags and th
 final element tag; CSS classes and `:nth-child()` do not establish a source path.
 If several source paths remain, it asks you to choose one.
 
+For Angular Material form fields, you can use the lowercased DOM attribute
+`formcontrolname` as the target. A selector ending at Material's generated
+`div.mat-mdc-form-field-infix` also matches the authored child `<input>` or
+`<textarea>`.
+
 ```sh
 npx ng-wiring 'data-id="saveButton"' --project app \
   --selector 'body > app-root > app-settings > button'

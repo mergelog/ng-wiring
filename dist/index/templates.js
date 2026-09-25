@@ -465,7 +465,8 @@ export async function indexTemplates(context, catalog, maze) {
 }
 export function matchingElements(index, target) {
     if (target.kind === 'attribute')
-        return index.elements.filter(element => element.staticAttributes.get(target.name) === target.value);
+        return index.elements.filter(element => [...element.staticAttributes].some(([name, value]) => name.toLowerCase() === target.name.toLowerCase() &&
+            value === target.value));
     return index.elements.filter(element => path.resolve(element.span.file) === path.resolve(target.file) &&
         element.span.line <= target.line && target.line <= element.span.endLine);
 }

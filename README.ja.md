@@ -71,6 +71,8 @@ npx ng-wiring 'data-id="saveButton"' --project app \
 
 `--selector` は画面上の要素に対応する候補を絞るために使います。CSSクラスや `:nth-child()` だけでは、ソースコード内の場所を特定できません。
 
+Angular Material のフォーム入力では、DOM 上の `formcontrolname` をそのまま属性指定できます。`--selector` が Material の生成する `div.mat-mdc-form-field-infix` で終わる場合も、その中の `<input>` または `<textarea>` を候補として照合します。例えば `ng-wiring 'formcontrolname=name' --selector 'sm-create-new-queue-form > form > mat-form-field > div.mat-mdc-form-field-infix'` のように指定します。
+
 ## 結果とオプション
 
 既定では、対象から処理までの短いMarkdownレポートを出力します。レポートにはソースコードへのリンクが含まれます。
