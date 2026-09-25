@@ -90,6 +90,23 @@ export function renderMarkdown(input: RenderInput): RenderResult {
     const index = sectionIndex.get(id);
     return index === undefined ? title(id) : `節 ${number(index)} ${title(id)}`;
   };
+  const sectionLine = (id: string): string => {
+    const index = sectionIndex.get(id);
+    const node = nodes.get(id);
+    const file = node?.occurrence?.span?.file ?? evidence.get(node?.evidenceIds[0] ?? '')?.file;
+    const name = index === undefined ? title(id) : `節 ${number(index)}: ${title(id)}`;
+    if (!file) {
+      problems.push(`Section ${id} has no source file`);
+      return name;
+    }
+    const absolute = platform.resolve(report.context.workspaceRoot, file);
+    const target = relativeLinkTarget(input.outputDir, absolute, platform);
+    if (!target) {
+      problems.push(`No relative source link from ${input.outputDir} to ${absolute}`);
+      return `${name} : ${escapeInline(absolute)}（相対リンク不可）`;
+    }
+    return `${name} [▶️](${target}) : ${target}`;
+  };
 
   const edgeLine = (id: string): string => {
     const edge = edges.get(id);
@@ -100,8 +117,8 @@ export function renderMarkdown(input: RenderInput): RenderResult {
     const tail = [`${sentence.text}。`, `確定度: ${edge.confidence}。`, `出典: ${edge.origin}。`];
     if (condition) tail.push(`条件: ${condition}。`);
     if (sentence.unresolved.length) tail.push(`未解決: ${sentence.unresolved.map(escapeInline).join(' / ')}。`);
-    tail.push(`根拠: ${links(edge.evidenceIds)}`);
-    return `- \`${edge.kind}\`（${displayGroupLabels[displayGroupOf[edge.kind]]}）${tail.join(' ')}`;
+    return `- \`${edge.kind}\`（${displayGroupLabels[displayGroupOf[edge.kind]]}）${tail.join(' ')}  \n` +
+      `  根拠: ${links(edge.evidenceIds)}`;
   };
 
   const excluded = new Set(report.edges.filter(edge => isProvenFalse(conditions, edge.conditionId)).map(edge => edge.id));
@@ -168,7 +185,10 @@ export function renderMarkdown(input: RenderInput): RenderResult {
   if (!report.paths.length) out.push('この探索では表示経路を確定できなかった。「診断と制限」の停止理由を参照。', '');
   report.paths.forEach((item: ModelPath, index) => {
     out.push(`### 経路 ${index + 1}`, '');
-    out.push(`- 節: ${item.occurrenceIds.map(reference).join(' → ')}`);
+    out.push('- 節:  ');
+    item.occurrenceIds.forEach((id, section) => {
+      out.push(`  ${sectionLine(id)}${section < item.occurrenceIds.length - 1 ? '  ' : ''}`);
+    });
     // §8 a cycle shows what it referred back to and that the walk was cut off; no root section is invented.
     out.push(`- 終端: ${item.end}${item.end === 'cycle' ? '（参照先で循環したため打ち切り）' : ''} — ${escapeInline(item.endReason)}`);
     out.push(`- confidence: ${item.confidence} / coverage: ${item.coverage}`);
@@ -250,7 +270,7 @@ export function renderMarkdown(input: RenderInput): RenderResult {
     for (const item of report.diagnostics) {
       out.push(`- [${item.severity}] ${escapeInline(item.code)}: ${escapeInline(item.message)}` +
         `${item.stopReason ? ` 停止理由: ${escapeInline(item.stopReason)}。` : ''}` +
-        ` 根拠: ${item.evidenceIds.length ? links(item.evidenceIds) : 'ソース位置なし'}`);
+        `  \n  根拠: ${item.evidenceIds.length ? links(item.evidenceIds) : 'ソース位置なし'}`);
     }
   } else out.push('診断なし。');
   out.push('');
@@ -295,7 +315,8 @@ export function renderMarkdown(input: RenderInput): RenderResult {
     }
   } else out.push('- 適用した上限なし');
   for (const item of report.limits.truncations) {
-    out.push(`- 打ち切り ${escapeInline(item.limit)}: ${escapeInline(item.reason)} 根拠: ${item.evidenceIds.length ? links(item.evidenceIds) : 'ソース位置なし'}`);
+    out.push(`- 打ち切り ${escapeInline(item.limit)}: ${escapeInline(item.reason)}  \n` +
+      `  根拠: ${item.evidenceIds.length ? links(item.evidenceIds) : 'ソース位置なし'}`);
   }
   out.push('');
 

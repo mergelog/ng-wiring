@@ -307,11 +307,18 @@ test('sections run from the child to the root, numbered and told apart by their 
   assert(body.includes('- 宣言元: SearchComponent（src/app/search.component.ts）'));
 
   const paths = text.slice(text.indexOf('## 1. 表示経路'), text.indexOf('## 2. コンポーネント節'));
-  assert(paths.includes('- 節: 節 01 input\\[data-id="searchInputField"\\] → 節 02 SearchComponent（src/app/search.component.ts）'));
+  assert(paths.includes('- 節:  \n  節 01: input\\[data-id="searchInputField"\\] [▶️](../src/app/search.component.ts) : ../src/app/search.component.ts  \n' +
+    '  節 02: SearchComponent（src/app/search.component.ts） [▶️](../src/app/root.component.html) : ../src/app/root.component.html'));
   assert(paths.includes('- 終端: bootstrap — RootComponent is bootstrapped in src/main.ts'));
   // §8 the cycle tail shows what it referred to and that the walk was cut off.
   assert(paths.includes('- 終端: cycle（参照先で循環したため打ち切り） — The walk returned to input'), paths);
-  assert(paths.includes('→ 節 03 SearchComponent（src/app/widgets/search.component.ts） → 節 01 '), paths);
+  assert(paths.includes('  節 03: SearchComponent（src/app/widgets/search.component.ts） [▶️](../src/app/widgets/search.component.ts) : ../src/app/widgets/search.component.ts  \n' +
+    '  節 01: input\\[data-id="searchInputField"\\]'), paths);
+  for (const line of paths.split('\n').filter((line) => /^  節 \d+:/.test(line))) {
+    const match = line.match(/\[▶️\]\(([^)]+)\) : (\S+)/);
+    assert(match, `no section link: ${line}`);
+    assert.equal(match[1], match[2], `section URL differs from the repeated URL: ${line}`);
+  }
   assert(paths.includes('src/main.ts が RootComponent を起動する。'), 'an edge between definitions stays with its path');
   assert.equal(ids.displayPath.startsWith('path:'), true);
 });
@@ -319,10 +326,12 @@ test('sections run from the child to the root, numbered and told apart by their 
 test('every sentence ends with evidence links and its conditions or unresolved reasons', () => {
   const { report } = buildReport();
   const text = render(report).text;
-  const sentences = text.split('\n').filter((line) => /^- `[a-z-]+`（/.test(line));
+  const lines = text.split('\n');
+  const sentences = lines.filter((line) => /^- `[a-z-]+`（/.test(line));
   assert.equal(sentences.length, report.edges.length + 2, 'each edge is stated once, plus the two restated requests');
   for (const line of sentences) {
-    assert(/根拠: (\[|.*相対リンク不可)/.test(line), `no evidence link: ${line}`);
+    assert(line.endsWith('  '), `no Markdown line break: ${line}`);
+    assert(/^  根拠: (\[|.*相対リンク不可)/.test(lines[lines.indexOf(line) + 1]), `no evidence link on the next line: ${line}`);
     assert(/確定度: (confirmed|conditional|unresolved)。/.test(line), `no confidence: ${line}`);
     if (line.includes('（未解決: ')) assert(line.includes('未解決: '), line);
   }
@@ -355,6 +364,14 @@ test('source links are relative to the output file and percent encoded', () => {
   assert(!crossDrive.text.includes('](C:'), 'no link is invented');
 });
 
+test('a section repeats its link URL exactly, including underscores and encoded characters', () => {
+  const { report, ids } = buildReport();
+  const input = report.nodes.find((node) => node.id === ids.occInput);
+  input.occurrence.span.file = 'src/app/odd_name #1.html';
+  const text = render(report).text;
+  assert(text.includes('[▶️](../src/app/odd_name%20%231.html) : ../src/app/odd_name%20%231.html'), text);
+});
+
 test('source text is escaped so it cannot act as Markdown or HTML', () => {
   assert.equal(escapeInline('[x](y)'), '\\[x\\]\\(y\\)');
   assert.equal(escapeInline('<script>a && b</script>'), '&lt;script&gt;a &amp;&amp; b&lt;/script&gt;');
@@ -385,7 +402,7 @@ test('events, communication, background input, excluded branches and diagnostics
   assert(dropped.includes('除外理由: excluded-branch: The search-button slot cannot match app-search'), dropped);
 
   const tail = text.slice(text.indexOf('## 6. 診断と制限'));
-  assert(tail.includes('- [warning] config-unapplied: budgets was not applied 根拠: ソース位置なし'));
+  assert(tail.includes('- [warning] config-unapplied: budgets was not applied  \n  根拠: ソース位置なし'));
   assert(tail.includes('関連する未検出:'));
   assert(tail.includes('- unresolved-provider: No provider found for SEARCH\\_CLIENT'));
   assert(tail.includes('解析全体の未検出範囲:'));
@@ -394,6 +411,7 @@ test('events, communication, background input, excluded branches and diagnostics
   assert(tail.includes('- dynamic-import: 2 件'));
   assert(tail.includes('- view-depth: 上限 200 / 停止 1 / 未探索 0'));
   assert(tail.includes('- 打ち切り view-depth: The widget cycle was cut at depth 200'));
+  assert(tail.includes('- 打ち切り view-depth: The widget cycle was cut at depth 200  \n  根拠: '));
 });
 
 test('a report with no request says so with its coverage instead of denying the API', () => {
