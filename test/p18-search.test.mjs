@@ -25,3 +25,19 @@ test('P18-01 input follows Subject.next through debounce and both filters to the
   assert(values.includes('value') && values.includes("''"), values.join(', '));
   assert.deepEqual(keys.filter(key => key.startsWith('http-')), []);
 });
+
+test('P18-02 this use takes the default false branch and retains timer(0) as asynchronous', async () => {
+  const {report} = await inputReport;
+  const bindings = edgesOfKind(report, 'input-binding');
+  const bound = name => bindings.find(edge => edge.toLabel === name && edge.fromLabel === 'SearchComponent');
+  assert.equal(bound('enableSearchOnSubmit')?.details.expression.value, 'false');
+  assert.equal(bound('minimumChars')?.details.expression.value, '1');
+  assert.equal(bound('debounceTime')?.details.expression.value, '0');
+  assert(!report.edges.some(edge => edge.details?.callee?.value === 'validateValue'));
+  const debounce = edgesOfKind(report, 'reactive-link').find(edge => edge.toLabel === 'debounce');
+  assert.equal(debounce?.details.scheduling.value, 'timer');
+  const predicates = report.conditions.filter(condition => condition.kind === 'predicate')
+    .map(condition => condition.expression);
+  assert(predicates.some(text => text.includes('timer(0)')));
+  assert(predicates.some(text => text.includes('timer must fire after its configured delay')));
+});
