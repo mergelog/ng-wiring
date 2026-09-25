@@ -1,3 +1,4 @@
+import { classMethod } from '../../index/catalog.js';
 import { importedApi, inspectPipe, location, operatorSemantics } from './reactive.js';
 const maxDepth = 64;
 const maxSteps = 10000;
@@ -77,7 +78,8 @@ function ownedMethod(context, owner, call) {
         return null;
     const symbol = context.checker.getSymbolAtLocation(call.expression.name);
     const method = symbol?.valueDeclaration;
-    return method && t.isMethodDeclaration(method) && method.parent === owner.node ? method : null;
+    return method && t.isMethodDeclaration(method) &&
+        context.sourceFiles.includes(method.getSourceFile().fileName) ? method : null;
 }
 /** Bounded, forward-only trace from one confirmed component method call. */
 export function traceOperation(context, owner, methodName) {
@@ -85,8 +87,8 @@ export function traceOperation(context, owner, methodName) {
     const steps = [];
     const diagnostics = [];
     const registrations = registrationIndex(context, owner);
-    const root = owner.node.members.find(member => t.isMethodDeclaration(member) && member.name.getText() === methodName);
-    if (!root || !t.isMethodDeclaration(root))
+    const root = classMethod(context, owner.node, methodName);
+    if (!root)
         return { steps, evidence: [], registrations,
             diagnostics: [`No method ${methodName} in ${owner.id}`] };
     const active = new Set();

@@ -2,7 +2,7 @@ import type ts from 'typescript';
 import type { AnalysisContext } from '../../workspace/context.js';
 import type { Declaration } from '../../index/catalog.js';
 import type { Catalog } from '../../index/catalog.js';
-import { classAt, idForClass, unwrap } from '../../index/catalog.js';
+import { classAt, classMethod, idForClass, unwrap } from '../../index/catalog.js';
 import type { IndexedElement } from '../../index/templates.js';
 import { resolveElementBindings } from './bindings.js';
 import { importedApi, location } from './reactive.js';
@@ -360,9 +360,8 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
         }
         if (callee.expression.kind === t.SyntaxKind.ThisKeyword) {
           const declaration = method.parent;
-          const target = t.isClassDeclaration(declaration) ? declaration.members.find(member =>
-            t.isMethodDeclaration(member) && member.name.getText() === callee.name.text) : null;
-          if (target && t.isMethodDeclaration(target)) {
+          const target = t.isClassDeclaration(declaration) ? classMethod(context, declaration, callee.name.text) : null;
+          if (target) {
             add('call',receiver,callee.name.text,node,nextPath,localConditions);
             visitMethod(target,receiver,nextPath,localConditions,level+1,node,node.arguments,currentLayers);
             return;
@@ -428,11 +427,11 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       conditions:item.conditions.slice(conditions.length)})));
     active.delete(key);
   };
-  const root = owner.node.members.find(member => t.isMethodDeclaration(member) && member.name.getText() === methodName);
-  if (root && t.isMethodDeclaration(root)) visitMethod(root,owner.id,[location(context,root)],[],0,root,
+  const root = classMethod(context, owner.node, methodName);
+  if (root) visitMethod(root,owner.id,[location(context,root)],[],0,root,
     options.rootArguments ?? []);
   else diagnostics.push(`No method ${methodName} in ${owner.id}`);
-  if (root && t.isMethodDeclaration(root) && !limitReported) {
+  if (root && !limitReported) {
     const operation = traceOperation(context,owner,methodName);
     const registered = new Set(operation.registrations.map(item => item.location));
     const calls = new Map<string,ts.CallExpression>();
@@ -443,6 +442,7 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       t.forEachChild(node,scan);
     };
     scan(owner.node);
+    if (root.parent !== owner.node) scan(root);
     for (const step of operation.steps.filter(item => item.kind === 'action-dispatch' &&
       item.path.some(place => registered.has(place)))) {
       const call = calls.get(step.location);
@@ -484,9 +484,8 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
           }();
           handler.visit(visitor);
           for (const name of methods) {
-            const parentMethod = element.owner.node.members.find(member => t.isMethodDeclaration(member) &&
-              member.name.getText() === name);
-            if (!parentMethod || !t.isMethodDeclaration(parentMethod)) {
+            const parentMethod = classMethod(context, element.owner.node, name);
+            if (!parentMethod) {
               add('boundary',owner.id,name,root,emitted.path,
                 [...emitted.conditions,...relation.conditions],'output handler method is unresolved');
               continue;

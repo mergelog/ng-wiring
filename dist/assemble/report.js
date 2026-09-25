@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { classMethod } from '../index/catalog.js';
 import { resolveEventListeners } from '../resolve/operation/events.js';
 import { componentInjectorLayers } from '../resolve/operation/di.js';
 import { analyzeStore, storeInputsForSelection } from '../resolve/operation/store.js';
@@ -630,10 +631,9 @@ function addOperations(input) {
         const method = handlerMethod(listener.handler, contextualInputs);
         const owner = catalog.declarations.get(ownerId);
         if (method && owner) {
-            const declaration = owner.node.members.find(member => t.isMethodDeclaration(member) &&
-                member.name.getText() === method);
-            const file = relative(owner.node.getSourceFile().fileName);
-            const range = declaration ? { file, start: declaration.getStart(), end: declaration.getEnd() } : null;
+            const declaration = classMethod(context, owner.node, method);
+            const range = declaration ? { file: relative(declaration.getSourceFile().fileName),
+                start: declaration.getStart(), end: declaration.getEnd() } : null;
             const inside = (location) => {
                 if (!range)
                     return false;

@@ -10,6 +10,8 @@ import { createContext, selectProjects } from '../dist/workspace/context.js';
 import { buildCatalog } from '../dist/index/catalog.js';
 import { indexTemplates, matchingElements } from '../dist/index/templates.js';
 import { analyzeStore, traceStoreDispatch, componentInjectorLayers, storeInputsForSelection } from '../dist/resolve/operation/index.js';
+import { traceOperation } from '../dist/resolve/operation/index.js';
+import { buildRouteGraph } from '../dist/resolve/view/routes.js';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 async function fixture(source, check) {
@@ -66,6 +68,73 @@ export const rootProviders=[provideStore(),provideState('count',countReducer)];
   const collided=traceStoreDispatch(context,graph,owner,'runDuplicate');
   assert(collided.diagnostics.some(d=>d.includes('Action type collision')));
   assert(collided.steps.some(s=>s.kind==='action-consume'&&s.target===graph.reducers[0].id));
+}));
+
+test('template handler inherited from a base component reaches its NgRx dispatch', async () => fixture(`
+import {Component, inject} from '@angular/core';
+import {Store, createAction, props} from '@ngrx/store';
+const PREFIX = '[Task] ';
+export const renamed = createAction(PREFIX + 'Renamed', props<{name:string}>());
+export class BaseOutput {
+  store = inject(Store);
+  updateExperimentName(name: string) {
+    if (name.trim().length > 2) this.store.dispatch(renamed({name}));
+  }
+}
+@Component({selector:'app-root',template:'<input (change)="updateExperimentName($event.target.value)">'})
+export class Output extends BaseOutput {}
+`, ({context,catalog}) => {
+  const owner = [...catalog.declarations.values()].find(d => d.className === 'Output');
+  const graph = analyzeStore(context,catalog,{rootProviders:[]});
+  assert.equal(graph.actions.find(action => action.id.endsWith(':renamed'))?.type, '[Task] Renamed');
+  const operation = traceOperation(context,owner,'updateExperimentName');
+  assert(operation.steps.some(step => step.kind === 'action-dispatch'));
+  const trace = traceStoreDispatch(context,graph,owner,'updateExperimentName');
+  assert(trace.steps.some(step => step.kind === 'action-dispatch' && step.target.endsWith(':renamed')));
+  assert(!trace.diagnostics.some(message => message.includes('No method updateExperimentName')));
+}));
+
+test('makeEnvironmentProviders exposes route registered effects to a dispatched action', async () => fixture(`
+import {Component, Injectable, inject, makeEnvironmentProviders} from '@angular/core';
+import {Store, createAction, provideStore} from '@ngrx/store';
+import {Actions, createEffect, ofType, provideEffects} from '@ngrx/effects';
+import {tap} from 'rxjs';
+const PREFIX = '[Task] ';
+export const renamed = createAction(PREFIX + 'Renamed');
+@Injectable() export class RenameEffects {
+  actions$ = inject(Actions);
+  save$ = createEffect(() => this.actions$.pipe(ofType(renamed), tap(() => {})), {dispatch:false});
+}
+export const rootProviders = [provideStore()];
+export const routeProviders = makeEnvironmentProviders([provideEffects([RenameEffects])]);
+@Component({selector:'app-root',template:''}) export class Root {
+  store = inject(Store);
+  run() { this.store.dispatch(renamed()); }
+}
+`, ({context,catalog,expr}) => {
+  const graph = analyzeStore(context,catalog,{rootProviders:[expr('rootProviders')],
+    routeProviders:[expr('routeProviders')]});
+  assert(graph.effects.some(effect => effect.owner?.endsWith(':RenameEffects') && effect.registered));
+  const owner = [...catalog.declarations.values()].find(d => d.className === 'Root');
+  const trace = traceStoreDispatch(context,graph,owner,'run');
+  assert(trace.steps.some(step => step.kind === 'action-consume' &&
+    step.target.endsWith(':save$')));
+}));
+
+test('a bootstrap config function with a single return supplies root Store providers', async () => fixture(`
+import {Component} from '@angular/core';
+import {bootstrapApplication} from '@angular/platform-browser';
+import {provideStore} from '@ngrx/store';
+const coreProviders = [provideStore()];
+function getAppConfig() { return {providers: [coreProviders]}; }
+@Component({selector:'app-root',template:''}) export class Root {}
+bootstrapApplication(Root, getAppConfig());
+`, ({context,catalog}) => {
+  const routes = buildRouteGraph(context,catalog);
+  const inputs = storeInputsForSelection(context,catalog,routes,routes.bootstraps[0]);
+  const graph = analyzeStore(context,catalog,inputs);
+  assert(graph.registrations.some(registration => registration.kind === 'root' &&
+    registration.status === 'resolved'));
 }));
 
 test('selected bootstrap and route ancestry supply only their active Store providers', async () => fixture(`

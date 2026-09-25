@@ -36,6 +36,20 @@ export function storeInputsForSelection(context, catalog, routes, bootstrap, rou
         }
         if (t.isCallExpression(node) && angularApi(context, t.isPropertyAccessExpression(node.expression) ? node.expression.name : node.expression, 'mergeApplicationConfig'))
             return node.arguments.flatMap(arg => configProviders(arg, active));
+        if (t.isCallExpression(node)) {
+            const callee = t.isPropertyAccessExpression(node.expression) ? node.expression.name : node.expression;
+            const declaration = symbol(context, callee)?.valueDeclaration;
+            const body = declaration && t.isFunctionDeclaration(declaration) ? declaration.body :
+                declaration && t.isVariableDeclaration(declaration) && declaration.initializer &&
+                    (t.isArrowFunction(declaration.initializer) || t.isFunctionExpression(declaration.initializer))
+                    ? declaration.initializer.body : undefined;
+            const returned = body && t.isBlock(body)
+                ? body.statements.length === 1 && t.isReturnStatement(body.statements[0])
+                    ? body.statements[0].expression : undefined
+                : body;
+            if (returned)
+                return configProviders(returned, active);
+        }
         return [];
     };
     const bootstrapNode = at(bootstrap.span.file, bootstrap.span.start);
@@ -134,11 +148,19 @@ function array(context, expression) {
     }
     return result;
 }
-function stringValue(context, expression) {
+function stringValue(context, expression, seen = new Set()) {
     if (!expression)
         return null;
     const t = context.toolchain.typescript;
     const node = definition(context, expression);
+    if (seen.has(node))
+        return null;
+    seen.add(node);
+    if (t.isBinaryExpression(node) && node.operatorToken.kind === t.SyntaxKind.PlusToken) {
+        const left = stringValue(context, node.left, seen);
+        const right = stringValue(context, node.right, seen);
+        return left !== null && right !== null ? left + right : null;
+    }
     return t.isStringLiteralLike(node) ? node.text : null;
 }
 function actionId(context, expression) {
@@ -166,6 +188,11 @@ function register(context, input, scope, output, diagnostics) {
             if (t.isArrayLiteralExpression(node))
                 for (const item of node.elements)
                     register(context, item, scope, output, diagnostics);
+            continue;
+        }
+        if (angularApi(context, t.isPropertyAccessExpression(node.expression) ? node.expression.name : node.expression, 'makeEnvironmentProviders')) {
+            for (const arg of node.arguments)
+                register(context, arg, scope, output, diagnostics);
             continue;
         }
         const root = callName(context, node, 'provideStore', 'store') || callName(context, node, 'forRoot', 'store');

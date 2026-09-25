@@ -2,6 +2,7 @@ import path from 'node:path';
 import type ts from 'typescript';
 import type { CliOptions } from '../cli/arguments.js';
 import type { Declaration } from '../index/catalog.js';
+import { classMethod } from '../index/catalog.js';
 import type { IndexedCandidate } from '../index/candidates.js';
 import type { IndexedElement, Span } from '../index/templates.js';
 import type { ViewPath, ViewStep } from '../resolve/view/index.js';
@@ -649,10 +650,9 @@ function addOperations(input: OperationInput): void {
     const method = handlerMethod(listener.handler, contextualInputs);
     const owner = catalog.declarations.get(ownerId);
     if (method && owner) {
-      const declaration = owner.node.members.find(member => t.isMethodDeclaration(member) &&
-        member.name.getText() === method);
-      const file = relative(owner.node.getSourceFile().fileName);
-      const range = declaration ? { file, start: declaration.getStart(), end: declaration.getEnd() } : null;
+      const declaration = classMethod(context, owner.node, method);
+      const range = declaration ? { file: relative(declaration.getSourceFile().fileName),
+        start: declaration.getStart(), end: declaration.getEnd() } : null;
       const inside = (location: string): boolean => {
         if (!range) return false;
         const at = evidence.offsetOf(location);

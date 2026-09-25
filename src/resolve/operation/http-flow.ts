@@ -1,6 +1,7 @@
 import type ts from 'typescript';
 import type { AnalysisContext } from '../../workspace/context.js';
 import type { Catalog, Declaration } from '../../index/catalog.js';
+import { classMethod } from '../../index/catalog.js';
 import { matchIdentifier } from '../../adapters/reactive/capabilities.js';
 import type { ReactiveMethodGraph } from '../../adapters/reactive/methods.js';
 import { storeLifetime, type SignalStoreCatalog } from '../../adapters/reactive/signal-store.js';
@@ -476,9 +477,8 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
         const callee = node.expression;
         const nextPath = [...path, location(context, node)];
         if (callee.expression.kind === t.SyntaxKind.ThisKeyword && t.isClassDeclaration(declaration.parent)) {
-          const target = declaration.parent.members.find(item => t.isMethodDeclaration(item) &&
-            item.name.getText() === callee.name.text);
-          if (target && t.isMethodDeclaration(target)) {
+          const target = classMethod(context, declaration.parent, callee.name.text);
+          if (target) {
             add('call', receiver, callee.name.text, node, nextPath, localConditions);
             visitMethod(target, receiver, nextPath, localConditions, depth + 1);
             return;
@@ -518,9 +518,8 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
     visit(body, conditions);
     active.delete(declaration);
   };
-  const root = owner.node.members.find(member => t.isMethodDeclaration(member) &&
-    member.name.getText() === methodName);
-  if (root && t.isMethodDeclaration(root)) visitMethod(root, owner.id, [location(context, root)], [], 0);
+  const root = classMethod(context, owner.node, methodName);
+  if (root) visitMethod(root, owner.id, [location(context, root)], [], 0);
   else diagnostics.push(`No method ${methodName} in ${owner.id}`);
   return { steps, flows, diagnostics: [...new Set(diagnostics)] };
 }

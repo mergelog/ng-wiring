@@ -49,4 +49,6 @@ export declare function getProperty(tsApi: typeof ts, object: ts.ObjectLiteralEx
 export declare function unwrap(tsApi: typeof ts, node: ts.Expression): ts.Expression;
 export declare function classAt(context: AnalysisContext, expression: ts.Expression): ts.ClassDeclaration | undefined;
 export declare function idForClass(context: AnalysisContext, declaration: ts.ClassDeclaration): string | undefined;
+/** Resolve the implementation visible on a class, including methods inherited from its base classes. */
+export declare function classMethod(context: AnalysisContext, node: ts.ClassDeclaration, name: string): ts.MethodDeclaration | null;
 export declare function buildCatalog(context: AnalysisContext): Promise<Catalog>;

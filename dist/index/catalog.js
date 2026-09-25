@@ -27,6 +27,14 @@ export function idForClass(context, declaration) {
         ? `external:${slash(file)}#${declaration.name.text}`
         : `${slash(path.relative(context.workspaceRoot, file))}#${declaration.name.text}`;
 }
+/** Resolve the implementation visible on a class, including methods inherited from its base classes. */
+export function classMethod(context, node, name) {
+    const t = context.toolchain.typescript;
+    const member = context.checker.getTypeAtLocation(node).getProperty(name);
+    const declaration = member?.valueDeclaration ?? member?.declarations?.find(t.isMethodDeclaration);
+    return declaration && t.isMethodDeclaration(declaration) &&
+        context.sourceFiles.includes(declaration.getSourceFile().fileName) ? declaration : null;
+}
 function decorator(context, node) {
     const t = context.toolchain.typescript;
     for (const item of t.getDecorators(node) ?? []) {

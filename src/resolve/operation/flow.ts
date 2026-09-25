@@ -1,6 +1,7 @@
 import type ts from 'typescript';
 import type { AnalysisContext } from '../../workspace/context.js';
 import type { Declaration } from '../../index/catalog.js';
+import { classMethod } from '../../index/catalog.js';
 import { importedApi, inspectPipe, location, operatorSemantics, type OperatorRecord } from './reactive.js';
 
 export interface OperationStep {
@@ -83,7 +84,8 @@ function ownedMethod(context: AnalysisContext, owner: Declaration, call: ts.Call
   if (!t.isPropertyAccessExpression(call.expression) || call.expression.expression.kind !== t.SyntaxKind.ThisKeyword) return null;
   const symbol = context.checker.getSymbolAtLocation(call.expression.name);
   const method = symbol?.valueDeclaration;
-  return method && t.isMethodDeclaration(method) && method.parent === owner.node ? method : null;
+  return method && t.isMethodDeclaration(method) &&
+    context.sourceFiles.includes(method.getSourceFile().fileName) ? method : null;
 }
 
 /** Bounded, forward-only trace from one confirmed component method call. */
@@ -92,8 +94,8 @@ export function traceOperation(context: AnalysisContext, owner: Declaration, met
   const steps: OperationStep[] = [];
   const diagnostics: string[] = [];
   const registrations = registrationIndex(context, owner);
-  const root = owner.node.members.find(member => t.isMethodDeclaration(member) && member.name.getText() === methodName);
-  if (!root || !t.isMethodDeclaration(root)) return { steps, evidence: [], registrations,
+  const root = classMethod(context, owner.node, methodName);
+  if (!root) return { steps, evidence: [], registrations,
     diagnostics: [`No method ${methodName} in ${owner.id}`] };
   const active = new Set<ts.Node>();
   const add = (kind: OperationStep['kind'], source: string, target: string, node: ts.Node, path: string[],
