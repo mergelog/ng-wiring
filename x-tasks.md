@@ -4,7 +4,7 @@
 
 対象設計: [x-structure.md](x-structure.md)（2026-09-24 改訂）
 
-現状: **実装中**。P0〜P17 を実施済みで、`ng-wiring` は候補選択から資料出力まで通り、配布・インストール・対応 Node 版・性能の検査も入った。残りは P18（実例シナリオ）、P16 の台帳が示す R 契約 28 subcase の未達（P10〜P12 の解析側）、および P17 が測って残した 2 件（他 OS の CI 結果、実アプリで資料 1 本が 900 秒で完了しないこと）である（§1, §2）。
+現状: **実装中**。P18 の検索 input 実例は [受け入れ記録](docs/p18-search-acceptance.md) のとおり完了し、`ng-wiring` は候補選択から資料出力まで通る。残りは P16 の台帳が示す R 契約 28 subcase の未達（P10〜P12 の解析側）、および P17 が測って残した 2 件（他 OS の CI 結果、当時の実アプリ資料生成の性能未達）である（§1, §2）。
 
 ## 進捗サマリ
 
@@ -28,9 +28,9 @@
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 6 | P13 |
 | P16 fixture・期待台帳・CI | `test/` | 15 | 15 | 各フェーズ並行 |
 | P17 配布・性能 | 配布・計測 | 7 | 5 | P14, P16 |
-| P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 7 | P14 |
+| P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 8 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **230** | |
+| **合計** | | **237** | **231** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -366,7 +366,7 @@ P17-07 の測定は [docs/performance.md](docs/performance.md) に記録した�
 
 ## P18 実例シナリオの受け入れ（検索 input、§8）
 
-> 出力済みの実測ではなく、受け入れ時の期待値。
+> 実例の検証結果は [docs/p18-search-acceptance.md](docs/p18-search-acceptance.md) に記録。
 
 - [x] P18-01 SearchComponent: `input` → `onValueChange` → `value$.next` → `debounce(timer(0))` → `filter` → emit。空値/親 value との差異・`minimumChars` の条件を保持（§8）
 - [x] P18-02 使用コンテキストの入出力評価（`enableSearchOnSubmit` 既定 `false` で束縛なし、`minimumChars=1`、`debounceTime=0`、`timer(0)` を非同期境界として残す）（§2, §8）
@@ -375,7 +375,7 @@ P17-07 の測定は [docs/performance.md](docs/performance.md) に記録した�
 - [x] P18-05 子表の枝: `searchedText` の input 変更 → `ngOnChanges` の再計算 → `searchCounterChanged`/`scrollToResultCounterReset`。即時ジャンプより後に再計算され得ることを区別（§2, §8）
 - [x] P18-06 「前へ」操作: アイコン自体ではなく親 button の click、`findNext(true)` が `output<string>()` に `null` を渡す点、strictNullChecks 設定の記録（型エラーと断定しない）（§2）
 - [x] P18-07 選択 route の祖先と bootstrap まで条件・出典付きで到達（`SearchComponent → EditableSectionComponent → ExperimentInfoHyperParametersFormContainerComponent → … → AppComponent → AppRootComponent`、終端を `sm-root` に固定しない）（§1, §8）
-- [ ] P18-08 通信: 起点から検出した要求だけを載せ、未検出なら「この探索範囲で通信への接続は未検出」を coverage/停止理由付きで出す（「アプリに API がない」と書かない）。検索 input に無関係な保存 API を出さない（§8, A14）
+- [x] P18-08 通信: 起点から検出した要求だけを載せ、未検出なら「この探索範囲で通信への接続は未検出」を coverage/停止理由付きで出す（「アプリに API がない」と書かない）。検索 input に無関係な保存 API を出さない（§8, A14）
 
 ## 受け入れ条件 A01〜A24
 

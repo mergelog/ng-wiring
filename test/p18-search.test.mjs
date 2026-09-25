@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {analyzeFixture, edgeKeys, edgesOfKind} from './fixtures/harness.mjs';
+import {renderMarkdown} from '../dist/render/markdown.js';
 
 const inputReport = analyzeFixture('search-scenario', {target: 'data-id=searchInputField', event: 'input'});
 const previousReport = analyzeFixture('search-scenario', {target: 'data-id=previousSearchResultButton', event: 'click'});
@@ -102,4 +103,18 @@ test('P18-06 previous icon bubbles to its button, which emits null under non-str
   assert.equal(report.context.strictNullChecks, false);
   assert(!keys.includes('state-write|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent|searchedText'),
     'backward null must not start a new search term');
+});
+
+test('P18-08 communication is scoped to the search operation and reports its coverage', async () => {
+  const {report} = await inputReport;
+  const keys = edgeKeys(report);
+  assert.deepEqual(keys.filter(key => key.startsWith('http-')), []);
+  const text = renderMarkdown({report, outputDir: '/tmp', fileNameSource: 'searchInputField',
+    heading: 'SearchComponent.data-id="searchInputField"'}).text;
+  const communication = text.slice(text.indexOf('### 通信'), text.indexOf('## 4. 背景入力'));
+  assert(communication.includes('この探索範囲で通信への接続は未検出。'));
+  assert(communication.includes(`coverage: 全体 ${report.coverage.overall}。`));
+  assert(communication.includes('停止理由: bootstrap:'));
+  assert(communication.includes('アプリに通信が無いことを示すものではない。'));
+  assert(!communication.includes('/api/save'), 'an unrelated save request was attributed to search');
 });
