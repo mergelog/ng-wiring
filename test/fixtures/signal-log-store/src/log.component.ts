@@ -1,11 +1,11 @@
 import { Component, inject } from '@angular/core';
 import { injectDispatch } from '@ngrx/signals/events';
-import { experimentOutputLogEvents } from './log.events';
-import { ExperimentOutputLogStore } from './log.store';
+import { logViewerEvents } from './log.events';
+import { LogViewerStore } from './log.store';
 
 @Component({
-  selector: 'app-experiment-output-log',
-  providers: [ExperimentOutputLogStore],
+  selector: 'app-log-viewer',
+  providers: [LogViewerStore],
   template: `
     <button data-id="refreshLogButton" (click)="refresh()">refresh</button>
     <button data-id="resetLogButton" (click)="reset()">reset</button>
@@ -14,9 +14,9 @@ import { ExperimentOutputLogStore } from './log.store';
     <span class="creator">{{ store.creator() }}</span>
   `,
 })
-export class ExperimentOutputLogComponent {
-  readonly store = inject(ExperimentOutputLogStore);
-  private readonly dispatch = injectDispatch(experimentOutputLogEvents);
+export class LogViewerComponent {
+  readonly store = inject(LogViewerStore);
+  private readonly dispatch = injectDispatch(logViewerEvents);
 
   refresh(): void {
     this.dispatch.getLogs({ id: 'task-1', direction: 'prev', refresh: true });

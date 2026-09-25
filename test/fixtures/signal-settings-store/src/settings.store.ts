@@ -1,8 +1,8 @@
 import { signalStore, withMethods } from '@ngrx/signals';
-import { withProjectSettingsStore } from './settings.feature';
+import { withSettingsStore } from './settings.feature';
 
-export const ProjectSettingsStore = signalStore(
-  withProjectSettingsStore,
+export const SettingsStore = signalStore(
+  withSettingsStore,
   withMethods(() => ({
     checkPermissions(): boolean {
       return false;

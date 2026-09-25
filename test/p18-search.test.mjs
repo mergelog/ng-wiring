@@ -3,8 +3,8 @@ import {test} from 'node:test';
 import {analyzeFixture, edgeKeys, edgesOfKind} from './fixtures/harness.mjs';
 import {renderMarkdown} from '../dist/render/markdown.js';
 
-const inputReport = analyzeFixture('search-scenario', {target: 'data-id=searchInputField', event: 'input'});
-const previousReport = analyzeFixture('search-scenario', {target: 'data-id=previousSearchResultButton', event: 'click'});
+const inputReport = analyzeFixture('search-scenario', {target: 'data-id=targetInput', event: 'input'});
+const previousReport = analyzeFixture('search-scenario', {target: 'data-id=previousButton', event: 'click'});
 
 test('P18-01 input follows Subject.next through debounce and both filters to the output', async () => {
   const {report} = await inputReport;
@@ -48,12 +48,12 @@ test('P18-03 the search is projected into the section while the form declares it
   const {report} = await inputReport;
   const keys = edgeKeys(report);
   assert(keys.includes('projection|ng-content select="[search-button]"|SearchComponent'));
-  assert(keys.includes('template-use|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent|SearchComponent'));
+  assert(keys.includes('template-use|src/container.ts#SearchFormComponent|SearchComponent'));
   assert(!keys.includes('template-use|src/section.ts#EditableSectionComponent|SearchComponent'));
   const output = edgesOfKind(report, 'output-subscription').find(edge => edge.fromLabel === 'valueChanged');
-  assert.equal(output?.toLabel, 'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent.searchTable');
+  assert.equal(output?.toLabel, 'src/container.ts#SearchFormComponent.searchTable');
   const binding = edgesOfKind(report, 'input-binding').find(edge => edge.toLabel === 'minimumChars');
-  assert.equal(binding?.details.owner.value, 'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent');
+  assert.equal(binding?.details.owner.value, 'src/container.ts#SearchFormComponent');
 });
 
 test('P18-04 valueChanged reaches searchTable, resets changed search state, then jumps', async () => {
@@ -62,11 +62,11 @@ test('P18-04 valueChanged reaches searchTable, resets changed search state, then
   assert(output.some(edge => edge.fromLabel === 'valueChanged' && edge.toLabel.endsWith('.searchTable')));
   assert(!edgesOfKind(report, 'event-propagation').some(edge => edge.details.event.value === 'valueChanged'));
   const writes = edgesOfKind(report, 'state-write').filter(edge => edge.fromLabel ===
-    'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent');
+    'src/container.ts#SearchFormComponent');
   for (const name of ['searchedText', 'scrollIndexCounter', 'searchResultsCount'])
     assert(writes.some(edge => edge.toLabel === name), name);
   const calls = edgesOfKind(report, 'call').filter(edge => edge.fromLabel ===
-    'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent');
+    'src/container.ts#SearchFormComponent');
   assert(calls.some(edge => edge.toLabel.endsWith('.resetIndex')));
   assert(calls.some(edge => edge.toLabel.endsWith('.jumpToNextResult')));
   const changeGate = report.conditions.filter(condition => condition.kind === 'predicate')
@@ -80,10 +80,10 @@ test('P18-05 searchedText causes a later child ngOnChanges branch and two output
   for (const edge of [
     'value-flow|searchedText|searchedText',
     'call|searchedText|ngOnChanges',
-    'output-emit|src/table.ts#ExperimentExecutionParametersComponent|this.searchCounterChanged',
-    'output-emit|src/table.ts#ExperimentExecutionParametersComponent|this.scrollToResultCounterReset',
-    'output-subscription|src/table.ts#ExperimentExecutionParametersComponent.searchCounterChanged|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent.searchCounterChanged',
-    'output-subscription|src/table.ts#ExperimentExecutionParametersComponent.scrollToResultCounterReset|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent.scrollIndexCounterReset',
+    'output-emit|src/table.ts#SearchResultsComponent|this.searchCounterChanged',
+    'output-emit|src/table.ts#SearchResultsComponent|this.scrollToResultCounterReset',
+    'output-subscription|src/table.ts#SearchResultsComponent.searchCounterChanged|src/container.ts#SearchFormComponent.searchCounterChanged',
+    'output-subscription|src/table.ts#SearchResultsComponent.scrollToResultCounterReset|src/container.ts#SearchFormComponent.scrollIndexCounterReset',
   ]) assert(keys.includes(edge), edge);
   const predicates = report.conditions.filter(condition => condition.kind === 'predicate')
     .map(condition => condition.expression);
@@ -102,7 +102,7 @@ test('P18-06 previous icon bubbles to its button, which emits null under non-str
   assert.equal(emitted?.details.valueExpression.value, 'null');
   assert.equal(emitted?.details.declaredType.value, 'string');
   assert.equal(report.context.strictNullChecks, false);
-  assert(!keys.includes('state-write|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent|searchedText'),
+  assert(!keys.includes('state-write|src/container.ts#SearchFormComponent|searchedText'),
     'backward null must not start a new search term');
 });
 
@@ -110,8 +110,8 @@ test('P18-08 communication is scoped to the search operation and reports its cov
   const {report} = await inputReport;
   const keys = edgeKeys(report);
   assert.deepEqual(keys.filter(key => key.startsWith('http-')), []);
-  const text = renderMarkdown({report, outputDir: '/tmp', fileNameSource: 'searchInputField',
-    heading: 'SearchComponent.data-id="searchInputField"'}).text;
+  const text = renderMarkdown({report, outputDir: '/tmp', fileNameSource: 'targetInput',
+    heading: 'SearchComponent.data-id="targetInput"'}).text;
   const communication = text.slice(text.indexOf('### 通信'), text.indexOf('## 4. 背景入力'));
   assert(communication.includes('この探索範囲で通信への接続は未検出。'));
   assert(communication.includes(`coverage: 全体 ${report.coverage.overall}。`));

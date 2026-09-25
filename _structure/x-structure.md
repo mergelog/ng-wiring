@@ -2,9 +2,9 @@
 
 作成日・改訂日: 2026-09-24
 
-対象: Angular 22 のソースコード。初期検証対象は `../000-learn-ClearML-pro`。
+対象: Angular 22 のソースコード。実アプリの検証先はローカル設定で指定し、リポジトリに案件固有のパスや解析結果を記録しない。
 
-範囲: CLI の実装に向けた設計。CLI 全体の実装・配布・受け入れ試験は次段階。
+範囲: CLI の設計・契約。実装の進捗と fixture の対応状況は `x-tasks.md` に記録する。外部 workspace の解析結果や案件固有の情報はこの文書に残さない。
 
 ## 1. 目的と保証範囲
 
@@ -12,39 +12,18 @@
 
 **ソース上の接続が確認できることと、実行時に必ず表示・実行されることを区別する。** 静的解析で任意の Angular アプリの全実行経路を証明することはできない。条件・未解決・探索打ち切りを出力し、名前の類似、同じ型、同じファイルにあるという理由では接続しない。実際の DOM インスタンス、ユーザーデータ、ネットワークの成否は特定しない。
 
-要素抽出と基礎グラフ取得は現物で確認済み。投影・起動点・操作・状態/API を統合した ng-wiring 全体は未実装であり、この設計の完了を CLI の実証完了とは扱わない。
+要素抽出、表示経路、操作、状態/API の接続について、設計上の根拠と未解決境界を定める。具体的な再現例は fixture に置く。
 
-この実例では、選択するルートに応じて `SearchComponent → EditableSectionComponent → ExperimentInfoHyperParametersFormContainerComponent → … → AppComponent → AppRootComponent` と表示する。終端は一般には**選択経路に属する bootstrap コンポーネント**であり、`sm-root` に固定しない。表示上の親と、式を評価する宣言元は別の関係として保持する。
+選択するルートに応じて、対象要素から bootstrap コンポーネントまでを表示する。終端は**選択経路に属する bootstrap コンポーネント**であり、特定の selector やクラス名に固定しない。表示上の親と、式を評価する宣言元は別の関係として保持する。
 
-## 2. 現物の再検証
+## 2. 設計上の確認事項
 
-以下は 2026-09-24 のローカルソースと ngmaze v0.1.0、リビジョン `6da35347018531df30659d34e66a11d1bfcc3f22` に対する確認結果。件数はこのソース状態での観測値であり、他のアプリに一般化しない。
-
-| 観点 | 確認結果・根拠 | 設計への反映 |
-| --- | --- | --- |
-| ツールチェーン | インストール済み Angular/compiler 22.1.5、TypeScript 6.0.3、Node.js 24.15.0 | 初期契約試験の基準版とする |
-| 要素 | [search.component.html](../000-learn-ClearML-pro/src/app/webapp-common/shared/ui-components/inputs/search/search.component.html#L16) の `data-id="searchInputField"` は 1 箇所。Angular `parseTemplate` で属性・イベント・位置を取得可能 | HTML の正規表現を主解析にしない |
-| 再利用数 | タグ境界付き `<sm-search(?=[\s/>])` は **13 HTML ファイル・13 箇所**。ngmaze の同コンポーネントへの `template` 辺も 13 件 | 旧記載の 15 ファイル・24 箇所は他のタグ名を前方一致で数えた誤り。件数差をスコープ解決の根拠にしない |
-| スコープ | [BaseImageViewerComponent](../000-learn-ClearML-pro/src/app/webapp-common/shared/debug-sample/image-viewer/base-image-viewer.component.ts#L37) と [ImageViewerComponent](../000-learn-ClearML-pro/src/app/webapp-common/shared/debug-sample/image-viewer/image-viewer.component.ts#L21) は同じ selector | 使用元の import / NgModule スコープで特定する |
-| 複数アプリ | [angular.json](../000-learn-ClearML-pro/angular.json) に `stackup` と `report-widgets`。`AppComponent` というクラス名も 2 箇所にある | 解析コンテキスト、ComponentId、起動点を区別する |
-| 起動点 | [main.ts](../000-learn-ClearML-pro/src/main.ts#L44) は `AppRootComponent`、[widgets/main.ts](../000-learn-ClearML-pro/src/app/webapp-common/clearml-applications/report-widgets/src/main.ts#L18) は widgets 側 `AppComponent` を bootstrap | 共有部品から複数アプリへの経路を混ぜない |
-| 最上位 route | [app.ts](../000-learn-ClearML-pro/src/app/app.ts#L7) に outlet、[app.routes.ts](../000-learn-ClearML-pro/src/app/app.routes.ts#L31) に `component: AppComponent` | `AppRootComponent → AppComponent` は router による配置。bootstrap が両方を生成するわけではない |
-| 実験 route | [experiment-routes.ts](../000-learn-ClearML-pro/src/app/webapp-common/experiments/experiment-routes.ts#L139) と [同ファイルの別定義](../000-learn-ClearML-pro/src/app/webapp-common/experiments/experiment-routes.ts#L211) から同じフォームコンテナに至る。上位は [loadChildren](../000-learn-ClearML-pro/src/app/app.routes.ts#L88) | 定義位置と loader 使用箇所を含めて経路を区別する |
-| 投影 | [フォームコンテナ](../000-learn-ClearML-pro/src/app/webapp-common/experiments/containers/experiment-info-hyper-parameters-form-container/experiment-info-hyper-parameters-form-container.component.html#L13) の `sm-search` が [検索スロット](../000-learn-ClearML-pro/src/app/webapp-common/shared/ui-components/panel/editable-section/editable-section.component.html#L19) に入る | 表示上は `EditableSectionComponent` を経由し、式の所有者はフォームコンテナのまま |
-| 入出力 | [SearchComponent](../000-learn-ClearML-pro/src/app/webapp-common/shared/ui-components/inputs/search/search.component.ts#L51) の `enableSearchOnSubmit` は既定 `false`。この使用箇所に束縛はなく、`minimumChars=1`、`debounceTime=0` を渡す | この使用コンテキストで分岐・条件を評価する。timer(0) も非同期境界として残す |
-| 検索処理 | [searchTable](../000-learn-ClearML-pro/src/app/webapp-common/experiments/containers/experiment-info-hyper-parameters-form-container/experiment-info-hyper-parameters-form-container.component.ts#L105) は検索語更新後、[jumpToNextResult](../000-learn-ClearML-pro/src/app/webapp-common/experiments/dumb/experiment-execution-parameters/experiment-execution-parameters.component.ts#L184) を即時呼び出す。再計算は後続の [ngOnChanges の searchedText 分岐](../000-learn-ClearML-pro/src/app/webapp-common/experiments/dumb/experiment-execution-parameters/experiment-execution-parameters.component.ts#L199) | 新しい一致位置リストへの移動を保証しない。関連しない保存 API を検索操作に載せない |
-| 前へ操作 | [アイコン](../000-learn-ClearML-pro/src/app/webapp-common/shared/ui-components/inputs/search/search.component.html#L54) 自体に click はなく、親 button にある。[findNext(true)](../000-learn-ClearML-pro/src/app/webapp-common/shared/ui-components/inputs/search/search.component.ts#L138) は `output<string>()` に `null` を渡す | リスナー位置と対象を分離し、宣言型・実際の emit 値・逆方向検索の判定を併記する。strictNullChecks の設定も記録し、必ず型エラーだとは断定しない |
-| 共有テンプレート | [ServingComponent](../000-learn-ClearML-pro/src/app/webapp-common/serving/serving.component.ts#L32) と [ServingLoadingComponent](../000-learn-ClearML-pro/src/app/webapp-common/serving/serving-loading.component.ts#L28) が同じ HTML を使用 | `--source` でも所有コンポーネント別の候補が必要 |
-| TemplateRef | [widgets テンプレート](../000-learn-ClearML-pro/src/app/webapp-common/clearml-applications/report-widgets/src/app/app.component.html#L61) が `csvButtonTemplate` を入力で渡し、[子の outlet](../000-learn-ClearML-pro/src/app/webapp-common/shared/single-value-summary-table/single-value-summary-table.component.html#L17) が描画 | 宣言元と挿入先を分ける。この実例の両コンポーネント自体は親子であり、「親子関係にない」という指摘の表現は不正確 |
-| 制御フロー | `@defer` は 5 HTML ファイル・10 箇所、`@switch` は 24 ファイル・27 箇所 | 分岐、遅延表示、補助ブロックも解析・fixture の対象 |
-| API | [保存 effect](../000-learn-ClearML-pro/src/app/webapp-common/experiments/effects/common-experiments-info.effects.ts#L537) → [生成クライアント](../000-learn-ClearML-pro/src/app/business-logic/api-services/tasks.service.ts#L974) → `SmApiRequestsService.post` | ラッパーと request/response 型、購読、effect 登録まで確認する |
-| SignalStore | [ログの Store](../000-learn-ClearML-pro/src/app/webapp-common/experiments/containers/experiment-output-log/experiment-output-log.store.ts#L56) は `signalStore/withState/withComputed/withReducer/withEventHandlers`、[再利用 feature](../000-learn-ClearML-pro/src/app/webapp-common/shared/project-dialog/project-settings/project-settings-dialog.store.ts#L22) は `signalStoreFeature/withMethods/patchState` を使用 | 通常のクラスや NgRx effect の探索だけでは不足。生成 Store・feature 合成・状態直接更新を専用アダプタで解析する |
-| dispatch の複数形 | [ログのコンポーネント](../000-learn-ClearML-pro/src/app/webapp-common/experiments/containers/experiment-output-log/experiment-output-log.component.ts#L60) は `injectDispatch`、[比較選択画面](../000-learn-ClearML-pro/src/app/webapp-common/experiments-compare/containers/select-experiments-for-compare/select-experiments-for-compare.component.ts#L57) は `Dispatcher`、[view bridge](../000-learn-ClearML-pro/src/app/webapp-common/core/state/view.store.ts#L12) は SignalStore event から `Store.dispatch` を呼ぶ | `.dispatch` という名前だけでなく受信オブジェクトと送信先を解決する。effect を経由しない dispatch/reducer も独立して対象にする |
-| ngmaze 全体解析 | 352 components、704 template edges、66 dynamic edges、157 route entries、153 route edges、1490 source files。gaps は 50 件（view-relocation 46、unresolved-dynamic-target 4）、owner=null は 4 件。named outlet は 0 件 | JSON を再利用するが、無い辺を「関係なし」の証拠にしない。named outlet は別 fixture で検証する |
-| ngmaze の限定解析 | `--angular-project report-widgets` では 1 component・0 edges・10 source files。一方、同アプリの tsconfig から通常の TS Program を作ると内部ソースは 436 件で共有部品への import も解決できる | 原因は [analysisFiles を rootNames 内に限定する実装](../ng-maze/src/project/program.ts)。tsconfig が共有部品を含められないという説明は採用しない |
-| 性能 | 同環境で ngmaze 単体を 1 回ずつ実行し、全体約 2.31 秒、stackup 約 2.20 秒、widgets 約 1.00 秒。全体 JSON は約 1.05 MB | 単発の参考値。ng-wiring 全体、ピーク RSS、cold/warm 差、大規模 fixture の測定は必要 |
-
-ng-maze の既存 196 テスト成功は先行調査・提示されたレビューでの報告として保持する。今回の変更は設計書のみで、そのテストは再実行していない。
+- Angular template は compiler API で解析し、属性・イベント・要素位置を AST から取得する。HTML の正規表現を主解析にしない。
+- 同一 selector の component や複数 project がある場合は、使用元の import / NgModule scope と解析 context で宣言元を特定する。
+- route、projection、TemplateRef、bootstrap は別の関係として保持し、表示上の親と式の宣言元を混同しない。
+- 条件や遅延処理を保持し、実行時に必ず通ると断定しない。操作に無関係な API を経路へ混ぜない。
+- SignalStore、NgRx、RxJS、HTTP の接続では登録、購読、消費まで追い、境界で止まる場合は根拠と理由を出す。
+- 基礎グラフで欠けた辺を補完するときは選択 context 内のソースを確認し、別 project の辺をコピーしない。
 
 ## 3. CLI 契約
 
@@ -53,9 +32,9 @@ ng-maze の既存 196 テスト成功は先行調査・提示されたレビュ�
 予定コマンド（実装・公開前のため現時点では利用不可）:
 
 ```bash
-npx github:mergelog/ng-wiring 'data-id="searchInputField"'
-npx github:mergelog/ng-wiring 'data-id="searchInputField"' --project stackup --through ExperimentInfoHyperParametersFormContainerComponent
-npx github:mergelog/ng-wiring --source 'src/app/webapp-common/experiments/dumb/experiment-execution-parameters/experiment-execution-parameters.component.html:51'
+npx ng-wiring 'data-id="targetInput"' --project app
+npx ng-wiring 'data-id="targetInput"' --project app --through SearchComponent
+npx ng-wiring --source 'src/app/search.component.html:12'
 ```
 
 `github:mergelog/ng-wiring` または `mergelog/ng-wiring` が npm の GitHub 指定形式。`github/mergelog/ng-wiring` は使わない。
@@ -67,7 +46,7 @@ npx github:mergelog/ng-wiring --source 'src/app/webapp-common/experiments/dumb/e
 | `--project <name>` | Angular project を選ぶ。`--tsconfig` と排他。同時指定は ngmaze 起動前にエラー |
 | `--tsconfig <path>` | 明示した TS 設定を 1 つの独立した解析コンテキストとして扱う。`angular.json` は必須でない。solution-style の複数 references は勝手に 1 つを選ばず、具体的な設定を要求する |
 | `--through <ClassNameまたはpath#ClassName>` | 親経路に指定コンポーネントを含む候補だけ残す。クラス名が複数 ComponentId に解決する場合は識別子一覧を返し、完全な ID で再指定を求める |
-| `--route <path>` | 再構築したルートパターンを完全一致で絞る。例 `/projects/:projectId/tasks/:experimentId/hyper-params/hyper-param/:hyperParamId`。実 URL、query、fragment、glob として解釈しない |
+| `--route <path>` | 再構築したルートパターンを完全一致で絞る。例 `/catalog/:groupId/items/:itemId/details/:detailId`。実 URL、query、fragment、glob として解釈しない |
 | `--selector <DevTools Copy selector>` | Chrome DevTools の「Copy selector」で得た `>` 区切りの DOM 経路を渡す。既知の Angular component host タグを表示経路と順序照合し、末尾の要素タグも照合する。HTML 要素、CSS class、id、`:nth-child()` は静的解析の絞り込み根拠には使わない。候補が複数残れば選択を要求する |
 | `--candidate <番号またはcand:ID>` | 下記の安定順序による 1 始まりの番号、または SHA-256 の全桁 ID。全フィルター適用後の候補から選ぶ。範囲外・存在しない ID はエラー |
 | `--event <name>` | 正規化したイベント名で絞る。`keydown` は `keydown.enter` 等も含み、修飾子付き指定は完全一致。該当リスナーなしならその理由を持つ経路資料を出す |
@@ -113,12 +92,12 @@ stdout は書き込みが完了したファイルの絶対パス 1 行のみ。�
 合意済みの基本形 **`ngwi-{処理名}-{YYMMDD.HHMMSS}.md`** を維持する。例:
 
 ```text
-ngwi-SearchComponent.data-id=searchInputField-260924.130024.md
+ngwi-SearchComponent.data-id=targetInput-260924.130024.md
 ```
 
 処理順を次に固定する。
 
-1. 属性クエリを解析し、外側の構文用引用符を除く。見出しは `SearchComponent.data-id="searchInputField"` のように表示するが、ファイル名の元文字列は `SearchComponent.data-id=searchInputField` とする。**値の内部にある引用符は除かない。** `--source` は `ComponentClass.要素名-L行番号-パスハッシュ` とし、パスハッシュは所有コンポーネント ID とソースパスの SHA-256 先頭 12 桁とする。
+1. 属性クエリを解析し、外側の構文用引用符を除く。見出しは `SearchComponent.data-id="targetInput"` のように表示するが、ファイル名の元文字列は `SearchComponent.data-id=targetInput` とする。**値の内部にある引用符は除かない。** `--source` は `ComponentClass.要素名-L行番号-パスハッシュ` とし、パスハッシュは所有コンポーネント ID とソースパスの SHA-256 先頭 12 桁とする。
 2. ファイル名用文字列だけ NFC 化し、ASCII 英数字・`_`・`-`・`.`・`=` 以外を UTF-8 の `%HH`（大文字 16 進）にする。`%` 自身もエンコードする。照合用属性値・識別子は正規化しない。
 3. エンコード結果が 160 ASCII 文字を超えたら、`%HH` を分断しない先頭 140 文字以内と `-h<元文字列のSHA-256先頭12桁>` に短縮する。元文字列は無損失で資料に残す。
 4. 解析開始時のローカル日時を付ける。本文には ISO 8601 の日時と UTC offset も残す。`--json` は拡張子のみ `.json` にする。
@@ -163,7 +142,7 @@ component クエリ、`--all`、`--with-routes` は渡さない。概要 JSON �
 
 project 集合は ngmaze の探索契約との比較に使う。project 指定では選択 project 1 件、明示 tsconfig では ngmaze が workspace から発見した project 集合が期待値となる。後者を ng-wiring の使用アプリ集合と読み替えず、解析対象集合と entry で再限定する。明示 tsconfig の compilerOptions に別 project の alias をマージしない。
 
-**ngmaze は基礎グラフであり、完全なカタログではない。** report-widgets のように import で到達した共有部品が省かれる場合、ng-wiring の Program のカタログで補完する。独立した scope resolver を持ち、standalone の imports、NgModule の declarations/imports/exports、継承した入出力、公開 `.d.ts` のメタデータをシンボルで解決する。Angular compiler の selector matcher を使用元の有効スコープにだけ適用する。component は唯一の対象と確認できたときに辺を作り、directive は同じ要素に複数適用されるため一致した全宣言を保持する。ngmaze の既存辺も自前の AST/span と照合する。欠落補完は `origin: ng-wiring`、受領辺は `origin: ngmaze` とする。
+**ngmaze は基礎グラフであり、完全なカタログではない。** import で到達した共有部品が省かれる場合、ng-wiring の Program のカタログで補完する。独立した scope resolver を持ち、standalone の imports、NgModule の declarations/imports/exports、継承した入出力、公開 `.d.ts` のメタデータをシンボルで解決する。Angular compiler の selector matcher を使用元の有効スコープにだけ適用する。component は唯一の対象と確認できたときに辺を作り、directive は同じ要素に複数適用されるため一致した全宣言を保持する。ngmaze の既存辺も自前の AST/span と照合する。欠落補完は `origin: ng-wiring`、受領辺は `origin: ngmaze` とする。
 
 静的な hostDirectives と公開 input/output alias も適用 directive に含める。未知の metadata、動的 hostDirectives、スコープ循環等で一意性を確認できない場合は未解決にする。別アプリの全体解析で見つかった辺をコピーして埋めない。scope resolver の実装は追加コストとして初期実装範囲に含め、ngmaze 自体の修正を前提条件にしない。
 
@@ -360,7 +339,7 @@ R08/R15 の RxJS 経路に必要な `of/from`、配列/Promise の ObservableInp
 
 ## 8. 出力形式と検査
 
-既定の Markdown は `x-issue-sample-ngwi.md` の短い root → API 追跡 Map とする。表示配置の途中にある単なる `div` を省き、イベント以降を `--belowData` で切り出せる。ソース根拠のない接続を作らず、API に届かなければその探索範囲で未検出と書く。`--detail` は以下に定める従来の詳細 Markdown、`--json` は従来の中間モデル全体を出す。
+既定の Markdown は短い root → operation 追跡 Map とする。表示配置の途中にある単なる `div` を省き、イベント以降を `--belowData` で切り出せる。ソース根拠のない接続を作らず、API に届かなければその探索範囲で未検出と書く。`--detail` は詳細 Markdown、`--json` は中間モデル全体を出す。
 
 以下の節構成と全辺描画・定型文の規則は `--detail` に適用する。短い Map は選んだ経路の節目を表示し、全辺の描画を要求しない。
 

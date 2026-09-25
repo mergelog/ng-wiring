@@ -6,7 +6,7 @@ import { repoRoot } from './fixtures/harness.mjs';
 
 /** §10 P16-15: the A01–A24 table is the place the acceptance conditions are managed, so it is checked. */
 async function acceptanceTable() {
-  const text = await readFile(path.join(repoRoot, 'x-tasks.md'), 'utf8');
+  const text = await readFile(path.join(repoRoot, '_structure/x-tasks.md'), 'utf8');
   const section = text.slice(text.indexOf('## 受け入れ条件 A01〜A24'));
   const rows = section.split('\n').filter(line => /^\| A\d\d \|/.test(line));
   return rows.map(row => {

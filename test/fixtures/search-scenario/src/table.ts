@@ -1,6 +1,6 @@
 import {Component, input, output, OnChanges, SimpleChanges} from '@angular/core';
-@Component({selector: 'sm-experiment-execution-parameters', template: '<p>{{ matchIndex }}</p>'})
-export class ExperimentExecutionParametersComponent implements OnChanges {
+@Component({selector: 'app-results-table', template: '<p>{{ matchIndex }}</p>'})
+export class SearchResultsComponent implements OnChanges {
   searchedText = input<string>();
   searchCounterChanged = output<number>();
   scrollToResultCounterReset = output();

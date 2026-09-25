@@ -5,10 +5,10 @@
 Angularプロジェクトのルートで、調べたい要素に付けた属性を指定します。
 
 ```sh
-npx ng-wiring 'data-id="searchInputField"' --project app --out-dir reports
+npx ng-wiring 'data-id="targetInput"' --project app --out-dir reports
 ```
 
-`searchInputField` の処理をたどったMarkdownレポートが `reports/` に出力されます。`--project app` はAngularプロジェクト名、`--out-dir reports` は出力先です。単一プロジェクトの場合、`--project` は省略できます。
+`targetInput` の処理をたどったMarkdownレポートが `reports/` に出力されます。`--project app` はAngularプロジェクト名、`--out-dir reports` は出力先です。単一プロジェクトの場合、`--project` は省略できます。
 
 対象には `data-id` 以外の属性も指定できます。たとえば、属性値がその文字列と完全に一致する要素を探すには次のようにします。
 
@@ -45,7 +45,7 @@ Angularプロジェクト内にインストール済みの場合は、`npx ng-wi
 基本形は `属性名=値` です。値に空白などが含まれる場合や、シェルで解釈される記号がある場合は、全体を引用符で囲みます。
 
 ```sh
-npx ng-wiring 'data-id="searchInputField"'
+npx ng-wiring 'data-id="targetInput"'
 npx ng-wiring 'class=cdk-virtual-scroll-content-wrapper'
 ```
 
@@ -64,7 +64,7 @@ npx ng-wiring --source src/app/search.component.ts:12
 同じ属性を持つ要素が複数の画面にある場合は、Chrome DevToolsで対象要素を右クリックし、**Copy > Copy selector** でセレクターをコピーして `--selector` に渡します。
 
 ```sh
-npx ng-wiring 'data-id=nameField' --project app \
+npx ng-wiring 'data-id="saveButton"' --project app \
   --selector 'body > app-root > app-shell > app-search > input'
 ```
 
@@ -96,4 +96,9 @@ npx ng-wiring 'data-id=nameField' --project app \
 node dist/cli/index.js --help
 ```
 
-解析対象のAngularプロジェクトにあるTypeScript、`@angular/compiler`、`@angular/core` を使って解析します。詳細な仕様と出力形式は [x-structure.md](x-structure.md)、計測結果は [docs/performance.md](docs/performance.md) を参照してください。
+任意の Angular workspace を使った統合確認では、`.env.example` を `.env` にコピーし、
+`NGWI_TEST_PROJECT_PATH`、`NGWI_TEST_PROJECT`、`NGWI_TEST_TARGET` を設定します。`.env` は git 管理対象外です。
+相対パスはこのリポジトリを基準に解決します。`npm test` に workspace の smoke check が追加され、
+`NGWI_TEST_CANDIDATE` も設定するとレポート生成まで確認します。
+
+解析対象のAngularプロジェクトにあるTypeScript、`@angular/compiler`、`@angular/core` を使って解析します。詳細な仕様と出力形式は [_structure/x-structure.md](_structure/x-structure.md) を参照してください。

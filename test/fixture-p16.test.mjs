@@ -9,7 +9,7 @@ const orphan = (candidates) => candidates.find(item => item.candidate.tuple.owne
 // P16-01
 test('the minimal Angular 22 fixture enumerates the displayed use and the false-positive twin', async () => {
   const selector = 'body > app-root > app-editable-section > app-search-page > app-search > input';
-  const { analysis, report } = await analyzeFixture('minimal-app', { target: 'data-id=searchInputField',
+  const { analysis, report } = await analyzeFixture('minimal-app', { target: 'data-id=targetInput',
     selector, pick: bootstrapped });
   const ids = analysis.candidates.map(item => item.candidate.tuple.ownerId);
   assert.deepEqual([...ids].sort(), ['src/legacy/search.ts#SearchComponent', 'src/search.ts#SearchComponent']);
@@ -79,7 +79,7 @@ const searchInputForbidden = [
 ];
 
 test('the displayed search input produces exactly the expected parent and causal edges', async () => {
-  const { report } = await analyzeFixture('minimal-app', { target: 'data-id=searchInputField',
+  const { report } = await analyzeFixture('minimal-app', { target: 'data-id=targetInput',
     pick: bootstrapped });
   const keys = edgeKeys(report).sort();
   assert.deepEqual(keys, [...searchInputEdges].sort());
@@ -96,7 +96,7 @@ test('the displayed search input produces exactly the expected parent and causal
 
 // P16-02: the undisplayed twin must not acquire the other one's root.
 test('the same-named class that is never displayed gets no root, route or projection edge', async () => {
-  const { report } = await analyzeFixture('minimal-app', { target: 'data-id=searchInputField', pick: orphan });
+  const { report } = await analyzeFixture('minimal-app', { target: 'data-id=targetInput', pick: orphan });
   const keys = edgeKeys(report);
   for (const kind of ['bootstrap', 'route-outlet', 'projection', 'template-use', 'display-parent']) {
     assert.deepEqual(keys.filter(key => key.startsWith(`${kind}|`)), [],

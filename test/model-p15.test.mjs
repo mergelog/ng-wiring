@@ -8,9 +8,9 @@ import { renderJson, renderMarkdown } from '../dist/render/index.js';
 
 const hex = (char) => char.repeat(64);
 
-const rootHtml = '<app-search data-id="searchInputField"></app-search>\n';
+const rootHtml = '<app-search data-id="targetInput"></app-search>\n';
 const searchTs = `import { Component } from '@angular/core';\n` +
-  `@Component({ selector: 'app-search', template: '<input data-id="searchInputField">' })\n` +
+  `@Component({ selector: 'app-search', template: '<input data-id="targetInput">' })\n` +
   `export class SearchComponent {\n  load() { return this.client.search(); }\n}\n`;
 const rootTs = `import { Component } from '@angular/core';\n` +
   `@Component({ selector: 'app-root', templateUrl: './root.component.html' })\n` +
@@ -99,15 +99,15 @@ function buildReport(options = {}) {
     routePattern: null, events: [], partialReasons: [],
   };
   const query = {
-    raw: 'data-id="searchInputField"',
-    target: { kind: 'attribute', name: 'data-id', value: 'searchInputField' },
+    raw: 'data-id="targetInput"',
+    target: { kind: 'attribute', name: 'data-id', value: 'targetInput' },
     filters: { project: null, tsconfig: null, through: null, route: null, candidate: null, event: null },
     candidates: [candidate], enumerationComplete: true,
   };
   const builder = new ReportBuilder({ toolVersion: '0.1.0', snapshotId: hex('c'),
     generatedAt: '2026-09-24T13:00:24.000+09:00', context, query, evidence, conditions });
 
-  const useSpan = at('src/app/root.component.html', '<app-search data-id="searchInputField"></app-search>');
+  const useSpan = at('src/app/root.component.html', '<app-search data-id="targetInput"></app-search>');
   const evUse = evidence.add(useSpan);
   const evRoot = evidence.add(at('src/app/root.component.ts', 'export class RootComponent {}'));
   const evSearch = evidence.add(at('src/app/search.component.ts', 'export class SearchComponent {'));
@@ -192,7 +192,7 @@ test('the document separates the local, the filled, the global and the out-of-sc
     { code: 'unresolved-provider', message: 'No provider found for LEGACY_CLIENT', owner: SEARCH,
       resolvedBy: ids.search, resolvedReason: 'the token is provided in the component providers' }] });
   const { text, problems } = renderMarkdown({ report, outputDir: '/ws/out',
-    fileNameSource: 'RootComponent.data-id=searchInputField', heading: 'RootComponent.data-id="searchInputField"' });
+    fileNameSource: 'RootComponent.data-id=targetInput', heading: 'RootComponent.data-id="targetInput"' });
   assert.deepEqual(problems, []);
   const tail = text.slice(text.indexOf('### 未検出範囲'));
   const section = (heading) => tail.slice(tail.indexOf(heading), tail.indexOf('\n\n', tail.indexOf(heading)));

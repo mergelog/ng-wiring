@@ -18,8 +18,8 @@ test('the short map follows output subscriptions before a propagated HTTP reques
       'host.ts': 'this.saved.emit(value)\n',
       'parent.html': '(saved)="onSaved($event)"\n',
       'parent.ts': 'this.store.dispatch(updated())\n',
-      'effect.ts': 'updateDetails$ = createEffect(() => {})\nthis.apiTasks.tasksUpdate({})\n',
-      'tasks.service.ts': 'return this.apiRequest.post(`${basePath}/tasks.update`)\n',
+      'effect.ts': 'updateDetails$ = createEffect(() => {})\nthis.apiRecords.recordsUpdate({})\n',
+      'records.service.ts': 'return this.apiRequest.post(`${basePath}/api/items/update`)\n',
     };
     await Promise.all(Object.entries(files).map(([file, source]) => writeFile(path.join(root, file), source)));
     const evidence = [];
@@ -42,9 +42,9 @@ test('the short map follows output subscriptions before a propagated HTTP reques
     const dispatch = add('action-dispatch', 'third', 'action', 'parent.ts', 1);
     const consume = add('action-consume', 'action', 'effect', 'parent.ts', 1,
       { consumer: 'effect.ts#updateDetails$' });
-    const call = add('call', 'effect', 'service', 'effect.ts', 2, { callee: 'apiTasks.tasksUpdate' });
-    const request = add('http-create', 'service', 'http', 'tasks.service.ts', 1,
-      { method: 'POST', urlExpression: '${basePath}/tasks.update' });
+    const call = add('call', 'effect', 'service', 'effect.ts', 2, { callee: 'apiRecords.recordsUpdate' });
+    const request = add('http-create', 'service', 'http', 'records.service.ts', 1,
+      { method: 'POST', urlExpression: '${basePath}/api/items/update' });
     evidence.push({ id: 'ev:view', file: 'view.html', startLine: 1, startOffset: 0, endOffset: 13 });
     const op = (id, event, file, edgeIds) => ({ id, event, listenerId: `def:${file}#${id}.${event}:handler`, edgeIds });
     const report = {
@@ -65,7 +65,7 @@ test('the short map follows output subscriptions before a propagated HTTP reques
     assert(rows[3].includes('Host.onChanged'));
     assert(rows[4].includes('this.saved.emit'));
     assert(rows[5].includes('Parent.onSaved'));
-    assert(rows.at(-1).includes('tasks.update'));
+    assert(rows.at(-1).includes('api/items/update'));
     const below = renderSimple({ report, outputDir: root, fileNameSource: '', heading: '', belowData: true });
     assert.equal(below.text.split('\n').filter(line => /^- \d\d\./.test(line)).length, 9);
     report.query.filters.event = 'keydown.enter';

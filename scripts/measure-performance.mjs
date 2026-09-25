@@ -19,9 +19,14 @@ import { locateNgmaze } from '../dist/adapters/ng-maze/index.js';
 import { generateLargeFixture } from './generate-large-fixture.mjs';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+try {
+  process.loadEnvFile(path.join(repo, '.env'));
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
 const cli = path.join(repo, 'dist/cli/index.js');
 const probe = pathToFileURL(path.join(repo, 'scripts/rss-probe.mjs')).href;
-const target = 'data-id="searchInputField"';
+const target = 'data-id="targetInput"';
 const mazeBin = (await locateNgmaze()).binPath;
 
 const argument = (name, fallback) => {
@@ -32,8 +37,10 @@ const runs = Number(argument('runs', '3'));
 const appRuns = Number(argument('app-runs', String(runs)));
 const capMs = Number(argument('cap', '900')) * 1000;
 const sizes = argument('sizes', '50,200,800,1600').split(',').map(Number);
-const appPath = argument('app', path.resolve(repo, '../000-learn-ClearML-pro'));
-const outFile = argument('out', path.join(repo, 'docs/performance.md'));
+const appPath = argument('app', process.env.NGWI_TEST_PROJECT_PATH ?? '');
+const appProject = argument('app-project', process.env.NGWI_TEST_PROJECT ?? '');
+const appTarget = argument('app-target', process.env.NGWI_TEST_TARGET ?? '');
+const outFile = argument('out', path.join(tmpdir(), 'ng-wiring-performance.md'));
 // The raw runs can be dumped and the document rebuilt from them, so changing its wording does not mean
 // measuring again on a machine that is no longer in the same state.
 const dumpFile = argument('dump', '');
@@ -191,19 +198,20 @@ async function measureAll() {
     results.push(await measureTarget({ name: `生成 fixture ${size} ページ（${size + 6} ファイル）`, cwd: root,
       args: [target, '--project', 'app', '--candidate', '1', '--out-dir', path.join(root, 'out')] }));
   }
-  const app = path.resolve(appPath);
-  const hasApp = await readFile(path.join(app, 'angular.json'), 'utf8').then(() => true, () => false);
-  if (hasApp) {
+  if (appPath) {
+    const app = path.isAbsolute(appPath) ? path.resolve(appPath) : path.resolve(repo, appPath);
+    if (!appTarget) throw new Error('Set NGWI_TEST_TARGET in .env or pass --app-target with the workspace query');
+    const hasApp = await readFile(path.join(app, 'angular.json'), 'utf8').then(() => true, () => false);
+    if (!hasApp) throw new Error(`No angular.json found in the configured workspace: ${app}`);
     const out = await mkdtemp(path.join(tmpdir(), 'ngwi-app-out-'));
     roots.push(out);
-    // §3.3 code 2 is the candidate list: the analysis ran and the selection is what is missing, which is the
-    // first half of the command and the part an interactive run always pays.
-    results.push(await measureTarget({ name: '実アプリ 候補列挙のみ（stackup）', cwd: app, repetitions: appRuns,
-      args: [target, '--project', 'stackup', '--out-dir', out], expect: [2], reuse: false }));
-    results.push(await measureTarget({ name: '実アプリ 資料 1 本（stackup）', cwd: app, repetitions: appRuns,
-      args: [target, '--project', 'stackup', '--candidate', '1', '--out-dir', out] }));
-  } else {
-    process.stderr.write(`\nthe real application was not found at ${app}; it is not in this run\n`);
+    // Exit code 2 means analysis completed and candidate selection is still needed.
+    const projectArgs = appProject ? ['--project', appProject] : [];
+    const appArgs = [appTarget, ...projectArgs, '--out-dir', out];
+    results.push(await measureTarget({ name: '対象 workspace 候補列挙', cwd: app, repetitions: appRuns,
+      args: appArgs, expect: [2], reuse: false }));
+    results.push(await measureTarget({ name: '対象 workspace 資料 1 本', cwd: app, repetitions: appRuns,
+      args: [...appArgs, '--candidate', '1'] }));
   }
   return results;
 }
@@ -258,7 +266,8 @@ ${findings(results).join('\n')}
 const now = new Date();
 const environment = {
   command: `node scripts/measure-performance.mjs --runs ${runs} --app-runs ${appRuns} ` +
-    `--cap ${capMs / 1000} --sizes ${sizes.join(',')}`,
+    `--cap ${capMs / 1000} --sizes ${sizes.join(',')}` +
+    (appPath ? ` --app "$NGWI_TEST_PROJECT_PATH" --app-target "$NGWI_TEST_TARGET"` : ''),
   repetitions: runs,
   today: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
   machine: `${osType()} ${release()} · ${cpus()[0].model} · ${cpus().length} 論理コア · ` +

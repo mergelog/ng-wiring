@@ -1,10 +1,10 @@
 import {Component, viewChild} from '@angular/core';
 import {SearchComponent} from './search';
 import {EditableSectionComponent} from './section';
-import {ExperimentExecutionParametersComponent} from './table';
-@Component({selector: 'sm-form-container', imports: [SearchComponent, EditableSectionComponent, ExperimentExecutionParametersComponent], templateUrl: './container.html'})
-export class ExperimentInfoHyperParametersFormContainerComponent {
-  executionParamsForm = viewChild(ExperimentExecutionParametersComponent);
+import {SearchResultsComponent} from './table';
+@Component({selector: 'app-search-form', imports: [SearchComponent, EditableSectionComponent, SearchResultsComponent], templateUrl: './container.html'})
+export class SearchFormComponent {
+  executionParamsForm = viewChild(SearchResultsComponent);
   searchedText: string;
   searchResultsCount: number;
   scrollIndexCounter: number;

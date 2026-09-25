@@ -69,7 +69,7 @@ try {
   check(npx.stdout.includes('0.1.0'), `unexpected npx output: ${npx.stdout.trim()}`);
 
   const report = step('ng-wiring on the installed workspace', bin,
-    ['data-id="searchInputField"', '--project', 'app', '--candidate', '2', '--out-dir', 'out'], { cwd: target });
+    ['data-id="targetInput"', '--project', 'app', '--candidate', '2', '--out-dir', 'out'], { cwd: target });
   check(report.status === 0, `the analysis exited ${report.status}: ${report.stderr}`);
   const written = await readdir(path.join(target, 'out')).catch(() => []);
   check(written.length === 1 && written[0].endsWith('.md'), `no report was written: ${written.join(', ')}`);
@@ -77,7 +77,7 @@ try {
   // §4.2 the same installed tree, with the toolchain no longer declared, is the hoisting case.
   await manifest({ '@angular/core': '22.1.5', 'ng-wiring': packedNgWiring });
   const refused = step('ng-wiring with an undeclared toolchain', bin,
-    ['data-id="searchInputField"', '--project', 'app', '--candidate', '2', '--out-dir', 'out'], { cwd: target });
+    ['data-id="targetInput"', '--project', 'app', '--candidate', '2', '--out-dir', 'out'], { cwd: target });
   check(refused.status === 3, `an undeclared toolchain exited ${refused.status}, expected 3`);
   check(/no manifest of the workspace declares it/.test(refused.stderr),
     `unexpected refusal: ${refused.stderr.trim()}`);

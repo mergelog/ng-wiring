@@ -1,7 +1,7 @@
 # ng-wiring
 
 Angular 22 source wiring analyzer. The implementation covers the library layers
-through P15 in [x-tasks.md](x-tasks.md): project contexts, the pinned ngmaze JSON
+through P15 in [_structure/x-tasks.md](_structure/x-tasks.md): project contexts, the pinned ngmaze JSON
 adapter, Angular scope and element indexing, projection, TemplateRef display
 paths, route/bootstrap reconstruction with outlet placement, control-flow
 blocks with the finitization limits around them, listener/template expression
@@ -21,8 +21,8 @@ whole analysis, the rest is counted per code, and a gap ng-wiring filled in
 itself keeps its record with the grounds for the fill-in.
 `src/assemble` connects those layers to the CLI, so the command runs from a
 target element to a written report. What is still open is listed in
-[x-tasks.md](x-tasks.md): 28 of the 110 reactive contract subcases have no
-passing fixture yet, and P18 has not been accepted.
+[_structure/x-tasks.md](_structure/x-tasks.md): 28 of the 110 reactive contract subcases have no
+passing fixture yet. The P18 usage scenario is accepted.
 
 ## Running it
 
@@ -41,7 +41,7 @@ node dist/cli/index.js --help
 Installed into a workspace, the same command is `npx ng-wiring`:
 
 ```sh
-npx ng-wiring 'data-id="searchInputField"' --project app --out-dir reports
+npx ng-wiring 'data-id="targetInput"' --project app --out-dir reports
 ```
 
 When one input appears on several screens, copy its selector from Chrome DevTools
@@ -50,20 +50,23 @@ final element tag; CSS classes and `:nth-child()` do not establish a source path
 If several source paths remain, it asks you to choose one.
 
 ```sh
-npx ng-wiring 'data-id=nameField' --project stackup \
-  --selector 'body > sm-root > sm-app-shell > sm-common-experiments > sm-experiment-output > sm-experiment-info-header > sm-inline-edit > input'
+npx ng-wiring 'data-id="saveButton"' --project app \
+  --selector 'body > app-root > app-settings > button'
 ```
 
 The default Markdown is a short root-to-operation map with source links. Use
 `--detail` for the previous full report, or `--belowData` to start the short map
 at the selected event. `--json` keeps the normalized intermediate model.
 
-Run times and peak memory for a real application and for generated workspaces
-of several sizes are recorded in [docs/performance.md](docs/performance.md),
-together with what that measurement could not obtain.
+Optional local workspace measurements read `.env`. Copy `.env.example` to
+`.env` and set `NGWI_TEST_PROJECT_PATH`, `NGWI_TEST_PROJECT`, and
+`NGWI_TEST_TARGET`; `.env` is ignored by git. `npm test` then runs an optional
+workspace smoke check; set `NGWI_TEST_CANDIDATE` to also generate a full report.
+Relative workspace paths use the repository root. Without a workspace path, the
+integration check is skipped.
 
 The analysed workspace supplies its own toolchain. ng-wiring resolves
 TypeScript, `@angular/compiler` and `@angular/core` from the target's
 `node_modules` (§4.2) and never falls back to a copy of its own; the pinned
 ngmaze is ng-wiring's own dependency and runs as a separate process. The command
-syntax and the output contract are documented in [x-structure.md](x-structure.md).
+syntax and the output contract are documented in [_structure/x-structure.md](_structure/x-structure.md).

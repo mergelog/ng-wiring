@@ -17,7 +17,7 @@ Angular の要素から表示経路、イベント、状態更新、Effect、通
 
 ## 1. 基準ケースを固定する
 
-1. `../000-learn-ClearML-pro` の `stackup` と `report-widgets` について、対象 revision と tsconfig、ツールチェーンを記録する。実アプリのファイルは調査中に変更しない。
+1. 任意の Angular workspace を統合確認に使う場合は `.env` の `NGWI_TEST_PROJECT_PATH` で指定し、対象 revision と tsconfig、ツールチェーンを記録する。`.env` は git 管理対象にしない。
 2. レポートは一時ディレクトリに出力し、候補一覧と Markdown を保存して比較する。調査後に生成した一時ファイルを片付ける。
 
 ## 2. 優先して調べる経路

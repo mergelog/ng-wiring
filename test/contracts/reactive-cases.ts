@@ -107,8 +107,8 @@ const patchFixture: FixtureRef = { id: 'signal-store-patch', target: 'data-id=fi
 const dispatchFixture: FixtureRef = { id: 'store-dispatch', target: 'data-id=termField' };
 const eventsFixture: FixtureRef = { id: 'events-reducer', target: 'data-id=termField' };
 const unsupported = (target: string): FixtureRef => ({ id: 'unsupported-apis', target });
-const logFixture: FixtureRef = { id: 'real-log-store', target: 'data-id=refreshLogButton' };
-const settingsFixture: FixtureRef = { id: 'real-settings-store', target: 'data-id=loadScalarsButton' };
+const logFixture: FixtureRef = { id: 'signal-log-store', target: 'data-id=refreshLogButton' };
+const settingsFixture: FixtureRef = { id: 'signal-settings-store', target: 'data-id=loadScalarsButton' };
 
 const ledger: ReactiveCase[] = [
   // ---- R01 Angular Signal state source, read, write, read-only alias ------------------------------
@@ -494,7 +494,7 @@ const ledger: ReactiveCase[] = [
     expectedEdges: ['event-consume|[Search] termChanged|src/store.ts:9:15'] }),
   entry({ contract: 'R13', id: 'R13/Events.on', package: '@ngrx/signals/events', export: 'Events', member: 'on',
     form: 'member', version: NGRX, expectation: '購読による受信を reducer と別に検知する', fixture: logFixture,
-    expectedEdges: ['event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15'] }),
+    expectedEdges: ['event-consume|[Log Viewer] getLogs|src/log.store.ts:43:15'] }),
   entry({ contract: 'R13', id: 'R13/ReducerEvents.on', package: '@ngrx/signals/events', export: 'ReducerEvents',
     member: 'on', form: 'member', version: NGRX, expectation: 'Events より先に受け取る順序を残す',
     fixture: eventsApis('data-id=directButton'),
@@ -502,13 +502,13 @@ const ledger: ReactiveCase[] = [
       'state-write|src/grid.store.ts:17:5|noted', 'state-read|noted|<span>'] }),
   entry({ contract: 'R13', id: 'R13/withEventHandlers', package: '@ngrx/signals/events', export: 'withEventHandlers',
     version: NGRX, expectation: '生成時の購読登録と void 副作用を検知する', fixture: logFixture,
-    expectedEdges: ['event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15'],
+    expectedEdges: ['event-consume|[Log Viewer] getLogs|src/log.store.ts:43:15'],
     forbiddenEdges: [{ kind: 'event-consume', to: 'src/log.store.ts:30:5',
       reason: 'getLogs は resetLog の case reducer には届かない' }] }),
   entry({ contract: 'R13', id: 'R13/withEventHandlers.redelivery', package: '@ngrx/signals/events',
     export: 'withEventHandlers', form: 'form', version: NGRX, expectation: 'handler の出力 event を自動再配送する',
     fixture: logFixture,
-    expectedEdges: ['event-dispatch|src/log.store.ts:43:15|[Experiment Output Log] setLog'] }),
+    expectedEdges: ['event-dispatch|src/log.store.ts:43:15|[Log Viewer] setLog'] }),
 
   // ---- R14 delivery scope --------------------------------------------------------------------------
   entry({ contract: 'R14', id: 'R14/provideDispatcher', package: '@ngrx/signals/events', export: 'provideDispatcher',
@@ -551,14 +551,14 @@ const ledger: ReactiveCase[] = [
     forbiddenEdges: [{ kind: 'event-consume',
       reason: '別 bus の同名 type を結ばない（明示 bridge があるときだけ接続する）' }] }),
 
-  // ---- R15 the real-world composite cases and the RxJS consumption they need ------------------------
+  // ---- R15 composite cases and the RxJS consumption they need ------------------------
   entry({ contract: 'R15', id: 'R15/log-store', package: '@ngrx/signals/events', export: 'injectDispatch',
     form: 'form', version: NGRX,
     expectation: 'ログ画面の injectDispatch→event→withReducer/withEventHandlers を実ソース由来 fixture で検証する',
     fixture: logFixture,
-    expectedEdges: ['event-dispatch|src/log.component.ts#ExperimentOutputLogComponent|[Experiment Output Log] getLogs',
-      'event-consume|[Experiment Output Log] getLogs|src/log.store.ts:31:5',
-      'event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15',
+    expectedEdges: ['event-dispatch|src/log.component.ts#LogViewerComponent|[Log Viewer] getLogs',
+      'event-consume|[Log Viewer] getLogs|src/log.store.ts:31:5',
+      'event-consume|[Log Viewer] getLogs|src/log.store.ts:43:15',
       'state-write|src/log.store.ts:31:5|loading',
       'action-dispatch|src/log.store.ts:43:15|src/view.events.ts#activateLoader'],
     forbiddenEdges: [{ kind: 'action-consume', to: 'src/log.store.ts:31:5',
@@ -567,24 +567,24 @@ const ledger: ReactiveCase[] = [
   entry({ contract: 'R15', id: 'R15/settings-store', package: '@ngrx/signals', export: 'withMethods', form: 'form',
     version: NGRX, expectation: '設定 Store の withMethods→lastValueFrom(forkJoin)→patchState を検証する',
     demonstratedBy: settingsFixture,
-    missingFixture: 'real-settings-store は signalStoreFeature 越しの method を解決できず、lastValueFrom(forkJoin) と patchState に到達しない（R05/R06 未達）' }),
+    missingFixture: 'signal-settings-store は signalStoreFeature 越しの method を解決できず、lastValueFrom(forkJoin) と patchState に到達しない（R05/R06 未達）' }),
   entry({ contract: 'R15', id: 'R15/rxjs.lastValueFrom', package: 'rxjs', export: 'lastValueFrom', version: RXJS,
     expectation: 'Promise 化した消費として購読開始を検知する',
     fixture: rxjsConsume('data-id=joinButton'),
-    expectedEdges: ['http-consume|GET /api/metrics/experiments|promise-consume',
+    expectedEdges: ['http-consume|GET /api/metrics/groups|promise-consume',
       'state-write|click → loadBoth()|total', 'state-read|total|<span>'] }),
   entry({ contract: 'R15', id: 'R15/rxjs.firstValueFrom', package: 'rxjs', export: 'firstValueFrom', version: RXJS,
     expectation: 'lastValueFrom と別形態として検知する',
     fixture: rxjsConsume('data-id=firstButton'),
-    expectedEdges: ['http-consume|GET /api/metrics/experiments|promise-consume',
+    expectedEdges: ['http-consume|GET /api/metrics/groups|promise-consume',
       'state-write|click → loadFirst()|total'],
-    forbiddenEdges: [{ kind: 'http-create', to: 'GET /api/metrics/models',
+    forbiddenEdges: [{ kind: 'http-create', to: 'GET /api/metrics/types',
       reason: 'この起点が到達しない要求を載せない' }] }),
   entry({ contract: 'R15', id: 'R15/rxjs.forkJoin', package: 'rxjs', export: 'forkJoin', version: RXJS,
     expectation: '複数 Observable の合流を保持する', fixture: rxjsConsume('data-id=joinButton'),
-    expectedEdges: ['http-create|src/api.ts#MetricsApi|GET /api/metrics/experiments',
-      'http-create|src/api.ts#MetricsApi|GET /api/metrics/models',
-      'http-consume|GET /api/metrics/models|promise-consume'] }),
+    expectedEdges: ['http-create|src/api.ts#MetricsApi|GET /api/metrics/groups',
+      'http-create|src/api.ts#MetricsApi|GET /api/metrics/types',
+      'http-consume|GET /api/metrics/types|promise-consume'] }),
   entry({ contract: 'R15', id: 'R15/rxjs.of', package: 'rxjs', export: 'of', version: RXJS,
     expectation: 'ObservableInput の生成として既知アダプタに含める', demonstratedBy: rxjsConsume('data-id=ofButton'),
     missingFixture: 'rxjs-consume の ofButton は state 書き換えまで追えるが、of による生成が辺として現れない（R15 未達）' }),

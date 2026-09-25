@@ -47,7 +47,7 @@ try {
   for (const [label, extra, extension] of [['markdown', [], '.md'], ['json', ['--json'], '.json']]) {
     const outDir = path.join(root, `out-${label}`);
     console.log(`\n> ng-wiring (${label})`);
-    const result = node([cli, 'data-id="searchInputField"', '--project', 'app', '--candidate', '2',
+    const result = node([cli, 'data-id="targetInput"', '--project', 'app', '--candidate', '2',
       '--out-dir', outDir, ...extra], { cwd: root });
     // §3.3 code 5 is a partial report, which is a written file; only 0 and 5 write one.
     check(result.status === 0 || result.status === 5,

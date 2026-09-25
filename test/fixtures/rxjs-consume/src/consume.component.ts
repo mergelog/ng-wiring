@@ -27,14 +27,14 @@ export class ConsumeComponent {
 
   /** Both requests must complete before the Promise resolves. */
   async loadBoth(): Promise<void> {
-    const metrics = await lastValueFrom(forkJoin([this.api.experiments(), this.api.models()]));
+    const metrics = await lastValueFrom(forkJoin([this.api.sets(), this.api.types()]));
     this.total.set(metrics[0] + metrics[1]);
   }
 
   /** The first value settles the Promise. */
   async loadFirst(): Promise<void> {
-    const experiments = await firstValueFrom(this.api.experiments());
-    this.total.set(experiments);
+    const sets = await firstValueFrom(this.api.sets());
+    this.total.set(sets);
   }
 
   /** A created Observable, with a comparison that may suppress an unchanged value. */

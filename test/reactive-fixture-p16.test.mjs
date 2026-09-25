@@ -335,17 +335,17 @@ test('events-apis: a single event creator reaches both reducers, ReducerEvents f
 test('rxjs-consume: a Promise-consumed join starts both requests and a subscribe starts one', async () => {
   const join = await analyzeFixture('rxjs-consume', { target: 'data-id=joinButton' });
   const joinKeys = edgeKeys(join.report);
-  assert(joinKeys.includes('http-create|src/api.ts#MetricsApi|GET /api/metrics/experiments'));
-  assert(joinKeys.includes('http-create|src/api.ts#MetricsApi|GET /api/metrics/models'));
-  assert(joinKeys.includes('http-consume|GET /api/metrics/experiments|promise-consume'));
+  assert(joinKeys.includes('http-create|src/api.ts#MetricsApi|GET /api/metrics/sets'));
+  assert(joinKeys.includes('http-create|src/api.ts#MetricsApi|GET /api/metrics/types'));
+  assert(joinKeys.includes('http-consume|GET /api/metrics/sets|promise-consume'));
   assert(joinKeys.includes('state-write|click → loadBoth()|total'));
   assert(joinKeys.includes('state-read|total|<span>'));
 
   // Only the request this starting point reaches is reported.
   const first = await analyzeFixture('rxjs-consume', { target: 'data-id=firstButton' });
   const firstKeys = edgeKeys(first.report);
-  assert(firstKeys.includes('http-consume|GET /api/metrics/experiments|promise-consume'));
-  assert.deepEqual(firstKeys.filter(key => key.includes('/api/metrics/models')), [],
+  assert(firstKeys.includes('http-consume|GET /api/metrics/sets|promise-consume'));
+  assert.deepEqual(firstKeys.filter(key => key.includes('/api/metrics/types')), [],
     'a request this operation never reaches was attributed to it');
 });
 

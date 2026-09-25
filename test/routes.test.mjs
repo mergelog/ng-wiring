@@ -307,7 +307,7 @@ test('a local application config factory connects its lazy route to the selected
       " import {RouterOutlet} from '@angular/router';"),
     'src/shell.ts': component('app-shell', 'Shell', '<router-outlet></router-outlet>',
       " import {RouterOutlet} from '@angular/router';"),
-    'src/form.ts': component('app-form', 'Form', '<input data-id=searchInputField>'),
+    'src/form.ts': component('app-form', 'Form', '<input data-id=targetInput>'),
     'src/top.routes.ts': "import {Routes} from '@angular/router'; import {Shell} from './shell';\n" +
       "export const routes: Routes = [{path: '', component: Shell, children: [{path: 'tasks', loadChildren: () => import('./task.routes').then(m => m.routes)}]}];\n",
     'src/task.routes.ts': "import {Routes} from '@angular/router'; import {Form} from './form';\n" +
@@ -317,10 +317,10 @@ test('a local application config factory connects its lazy route to the selected
     const graph = buildRouteGraph(context, catalog);
     const route = graph.byComponent.get('src/form.ts#Form')?.[0];
     assert(route?.rooted);
-    assert.equal(route.pattern, '/tasks/:id/hyper-params');
+    assert.equal(route.pattern, '/items/:id/details');
     assert(route.loaders.some(span => span.file.endsWith('/src/top.routes.ts')));
     const target = matchingElements(index,
-      { kind: 'attribute', name: 'data-id', value: 'searchInputField' })[0];
+      { kind: 'attribute', name: 'data-id', value: 'targetInput' })[0];
     const paths = resolveViewPaths(target, context, catalog, index, 1_000, undefined, graph).paths;
     assert(paths.some(item => item.end === 'bootstrap' &&
       item.steps.some(step => step.ownerId === 'src/shell.ts#Shell') &&

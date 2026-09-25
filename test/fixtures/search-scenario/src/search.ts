@@ -1,7 +1,7 @@
 import {Component, ElementRef, OnInit, input, output, viewChild} from '@angular/core';
 import {Subject, timer} from 'rxjs';
 import {debounce, filter, tap} from 'rxjs/operators';
-@Component({selector: 'sm-search', templateUrl: './search.html'})
+@Component({selector: 'app-search', templateUrl: './search.html'})
 export class SearchComponent implements OnInit {
   value$ = new Subject<string>();
   minimumChars = input(3);

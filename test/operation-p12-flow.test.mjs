@@ -211,31 +211,31 @@ import {HttpClient, provideHttpClient} from '@angular/common/http';
 import {Actions, createEffect, ofType, provideEffects} from '@ngrx/effects';
 import {createAction, provideStore} from '@ngrx/store';
 import {catchError, filter, mergeMap} from 'rxjs';
-export const save = createAction('[Task] Save');
-export const saved = createAction('[Task] Saved');
-export const extra = createAction('[Task] Extra');
-export const failed = createAction('[Task] Failed');
+export const save = createAction('[Record] Save');
+export const saved = createAction('[Record] Saved');
+export const extra = createAction('[Record] Extra');
+export const failed = createAction('[Record] Failed');
 @Injectable() export class Transport {
   constructor(private http: HttpClient) {}
   post(url: string) { return this.http.post(url, {}); }
 }
-@Injectable() export class TaskApi {
+@Injectable() export class RecordApi {
   constructor(private transport: Transport) {}
-  update() { return this.transport.post('/tasks.update'); }
+  update() { return this.transport.post('/api/items/update'); }
   unrelated() { return this.transport.post('/unrelated'); }
 }
 @Injectable() export class SaveEffects {
-  constructor(private actions$: Actions, private api: TaskApi) {}
+  constructor(private actions$: Actions, private api: RecordApi) {}
   save$ = createEffect(() => this.actions$.pipe(ofType(save), filter((action: any) => action.valid),
     mergeMap((action: any) => this.api.update().pipe(
       mergeMap(() => [saved(), ...(action.more ? [extra()] : [])]),
       catchError(() => [failed()])))));
 }
 @Injectable() export class UnusedEffects {
-  constructor(private actions$: Actions, private api: TaskApi) {}
+  constructor(private actions$: Actions, private api: RecordApi) {}
   unused$ = createEffect(() => this.actions$.pipe(ofType(save), mergeMap(() => this.api.unrelated())));
 }
-export const rootProviders = [provideStore(), provideHttpClient(), Transport, TaskApi, provideEffects(SaveEffects)];`,
+export const rootProviders = [provideStore(), provideHttpClient(), Transport, RecordApi, provideEffects(SaveEffects)];`,
 }, ({ context, catalog, expr }) => {
   const providers = [expr('rootProviders')];
   const store = analyzeStore(context, catalog, { rootProviders: providers });
@@ -247,9 +247,9 @@ export const rootProviders = [provideStore(), provideHttpClient(), Transport, Ta
   assert.equal(unused.registered, false);
   const trace = traceHttpFromEffect(context, http, selected, { catalog, store, layers });
   assert.deepEqual(trace.steps.filter(step => step.kind === 'http-consume').map(step => step.source),
-    ['POST /tasks.update']);
+    ['POST /api/items/update']);
   assert.deepEqual(httpTraceEdges(trace).filter(edge => edge.kind === 'http-create')
-    .map(edge => edge.details.urlExpression.value), ['/tasks.update']);
+    .map(edge => edge.details.urlExpression.value), ['/api/items/update']);
   assert(!trace.steps.some(step => JSON.stringify(step).includes('/unrelated')));
   assert(trace.steps.find(step => step.kind === 'http-consume').conditions.some(item =>
     item.includes('filter requires')));
@@ -342,7 +342,7 @@ export const logEvents = eventGroup({source: 'Log', events: {download: type<void
 export const LogStore = signalStore(withState({ready: false}),
   withEventHandlers((store, events = inject(Events)) => ({
     download$: events.on(logEvents.download).pipe(switchMap(() => store.ready()
-      ? fromFetch('/events.download_task_log', {method: 'POST'}) : of(null))),
+      ? fromFetch('/api/logs/download', {method: 'POST'}) : of(null))),
   })));
 export const IdleStore = signalStore(withState({ready: false}),
   withEventHandlers((store, events = inject(Events)) => ({
@@ -359,7 +359,7 @@ export class Root { private readonly store = inject(LogStore); }`,
   assert(live && idle);
   const trace = traceHttpFromEventConsumer(context, http, live, { catalog, stores });
   assert.deepEqual(trace.steps.filter(step => step.kind === 'http-consume').map(step => step.source),
-    ['POST /events.download_task_log']);
+    ['POST /api/logs/download']);
   assert(trace.steps.find(step => step.kind === 'http-consume').conditions.some(item =>
     item.includes('store.ready()')));
   assert(!trace.steps.some(step => JSON.stringify(step).includes('/unused')));
@@ -374,21 +374,21 @@ import {HttpClient, provideHttpClient} from '@angular/common/http';
 import {Store, createAction, provideStore} from '@ngrx/store';
 import {Actions, createEffect, ofType, provideEffects} from '@ngrx/effects';
 import {mergeMap, tap} from 'rxjs';
-export const save = createAction('[Task] Save');
+export const save = createAction('[Record] Save');
 @Injectable() export class Audit { note() { return 1; } }
-@Injectable() export class TaskApi {
+@Injectable() export class RecordApi {
   constructor(private http: HttpClient) {}
-  update() { return this.http.post('/tasks.update', {}); }
+  update() { return this.http.post('/api/items/update', {}); }
 }
 @Injectable() export class SaveEffects {
-  constructor(private actions$: Actions, private api: TaskApi, private store: Store,
+  constructor(private actions$: Actions, private api: RecordApi, private store: Store,
     private audit: Audit) {}
   save$ = createEffect(() => this.actions$.pipe(ofType(save),
     tap(() => this.store.dispatch(save())),
     tap(() => this.audit.note()),
     mergeMap(() => this.api.update())));
 }
-export const rootProviders = [provideStore(), provideHttpClient(), TaskApi, provideEffects(SaveEffects)];`,
+export const rootProviders = [provideStore(), provideHttpClient(), RecordApi, provideEffects(SaveEffects)];`,
 }, ({ context, catalog, expr }) => {
   const providers = [expr('rootProviders')];
   const store = analyzeStore(context, catalog, { rootProviders: providers });
@@ -404,6 +404,6 @@ export const rootProviders = [provideStore(), provideHttpClient(), TaskApi, prov
   const unresolved = stops.filter(step => step.detail.includes('not uniquely resolved by DI'));
   assert.deepEqual(unresolved.map(step => step.target), ['audit.note']);
   assert(unresolved[0].conditions.some(item => item.startsWith('no provider for')));
-  assert(trace.steps.some(step => step.kind === 'http-consume' && step.source === 'POST /tasks.update'),
+  assert(trace.steps.some(step => step.kind === 'http-consume' && step.source === 'POST /api/items/update'),
     'the request the effect does reach is unaffected');
 }));

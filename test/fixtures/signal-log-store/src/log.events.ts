@@ -3,8 +3,8 @@ import { eventGroup } from '@ngrx/signals/events';
 
 export interface LogLine { timestamp: number; msg: string; worker: string }
 
-export const experimentOutputLogEvents = eventGroup({
-  source: 'Experiment Output Log',
+export const logViewerEvents = eventGroup({
+  source: 'Log Viewer',
   events: {
     getLogs: type<{ id: string; direction: string; refresh?: boolean }>(),
     resetLog: type<void>(),

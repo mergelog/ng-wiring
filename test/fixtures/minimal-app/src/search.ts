@@ -2,7 +2,7 @@ import { Component, signal } from '@angular/core';
 
 @Component({
   selector: 'app-search',
-  template: '<input data-id="searchInputField" (input)="onValueChange($event)"><span class="result">{{ value() }}</span>',
+  template: '<input data-id="targetInput" (input)="onValueChange($event)"><span class="result">{{ value() }}</span>',
 })
 export class SearchComponent {
   readonly value = signal('');

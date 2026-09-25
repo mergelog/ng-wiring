@@ -15,7 +15,7 @@
 
 ## 作成場所
 ng-wiring
-ng-wiring/x-structure.md
+ng-wiring/_structure/x-structure.md
 
 ## 概要
 コンポーネント遷移で、どのようにデータを渡しているかも記載する。
@@ -44,15 +44,15 @@ npx github/mergelog/ng-wiring {data-idなど部品を特定できる指定部分
 
 コマンド例:
 ```
-npx github/mergelog/ng-wiring data-id="searchInputField" body > sm-root > sm-app-shell > div > div > sm-common-experiments > div > as-split > as-split-area:nth-child(2) > sm-experiment-output > div > div > sm-experiment-info-hyper-parameters > as-split > as-split-area:nth-child(2) > sm-experiment-info-hyper-parameters-form-container > sm-editable-section > div > div > sm-search > span > span > input
+npx ng-wiring 'data-id="targetInput"' 'body > app-root > app-shell > app-search > input'
 ```
 
 上記の例の元となった要素のコピー
 ```html
-<input _ngcontent-ng-c2747600649="" data-id="searchInputField" placeholder="Type to search" class="">
+<input _ngcontent-ng-c2747600649="" data-id="targetInput" placeholder="Type to search" class="">
 ```
 
-※data-id="searchInputField" のところはこのプロジェクト固有かもしれないので key and value の指定にしている。難易度は高いと思うので費用対効果により "data-id"固定でも良い。その場合は、data-idの付いていない部品があるか一旦調査してください
+※data-id="targetInput" のところはこのプロジェクト固有かもしれないので key and value の指定にしている。難易度は高いと思うので費用対効果により "data-id"固定でも良い。その場合は、data-idの付いていない部品があるか一旦調査してください
 
 ## 出力
 
@@ -60,16 +60,16 @@ npx github/mergelog/ng-wiring data-id="searchInputField" body > sm-root > sm-app
 
 ngwi-{処理名}-{YYMMDD.HHMMSS}.md
 
-処理名は、以下例の場合、SearchComponent.data-id="searchInputField"
+処理名は、以下例の場合、SearchComponent.data-id="targetInput"
 
-例: ngwi-SearchComponent.data-id="searchInputField"-260924.130024.md
+例: ngwi-SearchComponent.data-id="targetInput"-260924.130024.md
 
 ### 出力例
 
 以下が最終出力例です。さらに案があれば提案してください
 
 ````md
-# SearchComponent.data-id="searchInputField"
+# SearchComponent.data-id="targetInput"
 
 ## {連番}: CatalogAssetsTableComponent
 

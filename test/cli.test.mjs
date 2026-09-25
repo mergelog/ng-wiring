@@ -33,8 +33,8 @@ test('argument validation occurs before analysis', () => {
   assert.equal(parsed.options.tsconfig, '/work/config/tsconfig.json');
   assert.equal(parsed.options.outDir, '/work/reports');
   assert.equal(parsed.options.json, true);
-  assert.equal(parseArguments(['x=y', '--selector', 'body > sm-root > input']).options.selector,
-    'body > sm-root > input');
+  assert.equal(parseArguments(['x=y', '--selector', 'body > app-root > input']).options.selector,
+    'body > app-root > input');
   assert.equal(resolveWorkspacePath('/workspace', 'src/view.html'), '/workspace/src/view.html');
   assert.equal(resolveWorkspacePath('/workspace', 'C:\\src\\view.html'), 'C:\\src\\view.html');
 });
@@ -56,22 +56,22 @@ const candidate = (start, owner = 'src/owner.ts#Owner') => makeCandidate({
 }, { snapshotId: 'snapshot', class: 'declaration', parentIds: [owner], routePattern: '/a/:id', events: ['keydown.enter'], partialReasons: [] });
 
 test('DevTools selector chooses the matching component display path', () => {
-  const copied = 'body > sm-root > sm-app-shell > div > sm-common-experiments > as-split-area:nth-child(2) > ' +
-    'sm-experiment-output > sm-experiment-info-header > sm-inline-edit > div.input > form > input';
-  assert.deepEqual(parseDomSelector(copied), ['body', 'sm-root', 'sm-app-shell', 'div',
-    'sm-common-experiments', 'as-split-area', 'sm-experiment-output', 'sm-experiment-info-header',
-    'sm-inline-edit', 'div', 'form', 'input']);
-  assert.deepEqual(parseDomSelector('#app > sm-inline-edit > input'), ['sm-inline-edit', 'input']);
-  const shared = ['sm-root', 'sm-app-shell'];
-  const header = ['sm-experiment-output', 'sm-experiment-info-header', 'sm-inline-edit'];
-  const insideExperiments = { ...candidate(2), dom: { componentTags: [...shared, 'sm-common-experiments', ...header],
+  const copied = 'body > app-root > app-shell > div > app-search-area > as-split-area:nth-child(2) > ' +
+    'app-search-page > app-search-form > app-inline-edit > div.input > form > input';
+  assert.deepEqual(parseDomSelector(copied), ['body', 'app-root', 'app-shell', 'div',
+    'app-search-area', 'as-split-area', 'app-search-page', 'app-search-form',
+    'app-inline-edit', 'div', 'form', 'input']);
+  assert.deepEqual(parseDomSelector('#app > app-inline-edit > input'), ['app-inline-edit', 'input']);
+  const shared = ['app-root', 'app-shell'];
+  const header = ['app-search-page', 'app-search-form', 'app-inline-edit'];
+  const insideExperiments = { ...candidate(2), dom: { componentTags: [...shared, 'app-search-area', ...header],
     targetTag: 'input' } };
   const directOutput = { ...candidate(3), dom: { componentTags: [...shared, ...header], targetTag: 'input' } };
   assert.deepEqual(filterCandidates([insideExperiments, directOutput], { selector: copied }), [insideExperiments]);
   assert.deepEqual(filterCandidates([insideExperiments, directOutput], {
-    selector: 'sm-inline-edit > div > form > input',
+    selector: 'app-inline-edit > div > form > input',
   }), [insideExperiments, directOutput]);
-  assert.deepEqual(filterCandidates([insideExperiments], { selector: 'sm-inline-edit > span' }), []);
+  assert.deepEqual(filterCandidates([insideExperiments], { selector: 'app-inline-edit > span' }), []);
   assert.throws(() => filterCandidates([insideExperiments], { selector: 'body > div > input' }), UsageError);
 });
 

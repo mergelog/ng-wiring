@@ -27,10 +27,8 @@ jobs:
           node-version: 24.15.0
       - run: npm run check:install
 
-  # §4.2 the supported systems are Linux/WSL, macOS and Windows, and A18 requires the pinned ngmaze bin
-  # to start on each of them. WSL is covered by the Linux runner and by the local runs recorded in
-  # docs/performance.md. Only the smoke test runs here: the rest of the suite fixes POSIX paths in its
-  # expectations, so a red Windows job would not be a distribution failure.
+  # §4.2 supports Linux/WSL, macOS and Windows. A18 requires the pinned ngmaze bin to start on each.
+  # The full suite has POSIX-specific expectations, so a red Windows job is not a distribution failure.
   smoke:
     name: smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

@@ -1,7 +1,7 @@
 import { signalStoreFeature, withProps } from '@ngrx/signals';
 
 /**
- * Stands for the build-time environment object of the real application. The feature it returns is
+ * Stands for a build-time environment object. The feature it returns is
  * produced by a call this analysis cannot identify, so it is a boundary rather than a transparent one.
  */
 export const environment = {

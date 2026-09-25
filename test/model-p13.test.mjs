@@ -12,8 +12,8 @@ import {
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const hex = (char) => char.repeat(64);
 
-const rootHtml = '<app-search data-id="searchInputField"></app-search>\n<p>tail</p>\n';
-const templateBody = '<input data-id="searchInputField" (input)="onInput($event)">';
+const rootHtml = '<app-search data-id="targetInput"></app-search>\n<p>tail</p>\n';
+const templateBody = '<input data-id="targetInput" (input)="onInput($event)">';
 const searchTs = `import { Component } from '@angular/core';\n` +
   `@Component({ selector: 'app-search', template: '${templateBody}' })\n` +
   `export class SearchComponent {\n  onInput(event: Event) { this.load(); }\n` +
@@ -107,8 +107,8 @@ function fixture(evidence = newEvidence()) {
     routePattern: null, events: ['input'], partialReasons: [],
   };
   const query = {
-    raw: 'data-id="searchInputField"',
-    target: { kind: 'attribute', name: 'data-id', value: 'searchInputField' },
+    raw: 'data-id="targetInput"',
+    target: { kind: 'attribute', name: 'data-id', value: 'targetInput' },
     filters: { project: null, tsconfig: null, through: null, route: null, candidate: null, event: null },
     // §5 another context appears in the candidate list only; its graph is never stored here.
     candidates: [candidate, { ...candidate, id: `cand:${hex('e')}`, contextId: hex('f') }],
@@ -122,7 +122,7 @@ function fixture(evidence = newEvidence()) {
 function buildReport() {
   const { builder, evidence, conditions, candidate } = fixture();
   const ev = (span, options) => evidence.add({ ...span, ...options });
-  const useSpan = at('src/app/root.component.html', '<app-search data-id="searchInputField"></app-search>');
+  const useSpan = at('src/app/root.component.html', '<app-search data-id="targetInput"></app-search>');
   const evUse = ev(useSpan);
   const evRootClass = ev(at('src/app/root.component.ts', 'export class RootComponent {}'));
   const evSearchClass = ev(at('src/app/search.component.ts', 'export class SearchComponent {'));
@@ -174,7 +174,7 @@ function buildReport() {
     confidence: 'conditional', origin: 'ng-wiring',
     conditionId: conditions.all([conditions.phase({ phase: 'lifecycle', detail: 'after the view is created' }),
       conditions.predicate({ expression: 'value.length >= minimumChars', scope: 'SearchComponent', evidenceId: evHandler })]),
-    details: { event: detail('input'), selected: detail('input[data-id="searchInputField"]'),
+    details: { event: detail('input'), selected: detail('input[data-id="targetInput"]'),
       listener: detail('SearchComponent'), handler: detail('onInput') } });
   const call = builder.edge({ kind: 'call', from: occListener, to: load, evidenceIds: [evHandler],
     confidence: 'confirmed', origin: 'ng-wiring',

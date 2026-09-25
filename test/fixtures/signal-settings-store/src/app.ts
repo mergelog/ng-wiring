@@ -4,6 +4,6 @@ import { ProjectSettingsComponent } from './settings.component';
 @Component({
   selector: 'app-root',
   imports: [ProjectSettingsComponent],
-  template: '<app-project-settings></app-project-settings>',
+  template: '<app-workspace-settings></app-workspace-settings>',
 })
 export class AppComponent {}

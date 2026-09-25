@@ -6,12 +6,12 @@ import type { Observable } from 'rxjs';
 export class MetricsApi {
   private readonly http = inject(HttpClient);
 
-  experiments(): Observable<number> {
-    return this.http.get<number>('/api/metrics/experiments');
+  sets(): Observable<number> {
+    return this.http.get<number>('/api/metrics/sets');
   }
 
-  models(): Observable<number> {
-    return this.http.get<number>('/api/metrics/models');
+  types(): Observable<number> {
+    return this.http.get<number>('/api/metrics/types');
   }
 
   /** Its own request site, so the consumption this one reaches is not shared with another caller. */

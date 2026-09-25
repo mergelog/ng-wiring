@@ -111,7 +111,7 @@ test('every fixture the ledger names exists on disk', async () => {
 
 /** The second column of the §7.6 table, as the design writes it. */
 async function designTableApis() {
-  const text = await readFile(path.join(repoRoot, 'x-structure.md'), 'utf8');
+  const text = await readFile(path.join(repoRoot, '_structure/x-structure.md'), 'utf8');
   const section = text.slice(text.indexOf('#### API と fixture の対応表'));
   const rows = section.split('\n').filter(line => /^\| R\d\d \|/.test(line));
   const table = new Map();
@@ -208,7 +208,7 @@ test('no subcase is dropped, and only R16 may be an unsupported range', () => {
 
 /** The R01–R16 table of x-tasks.md, which records how far each contract has got. */
 async function contractTable() {
-  const text = await readFile(path.join(repoRoot, 'x-tasks.md'), 'utf8');
+  const text = await readFile(path.join(repoRoot, '_structure/x-tasks.md'), 'utf8');
   const section = text.slice(text.indexOf('## 必須検知契約 R01〜R16'));
   return section.split('\n').filter(line => /^\| R\d\d \|/.test(line)).map(row => {
     const cells = row.split('|').map(cell => cell.trim());

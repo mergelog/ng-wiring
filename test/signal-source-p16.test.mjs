@@ -3,28 +3,27 @@ import { test } from 'node:test';
 import { analyzeFixture, edgeKeys, findings } from './fixtures/harness.mjs';
 
 /**
- * §10 P16-11: fixtures taken from the real application. Their expected results include the boundaries
- * this version does not cross, so a minimal fixture passing never stands for support of an external
- * toolkit feature or of a composed Store feature.
+ * §10 P16-11: composite fixtures include boundaries this version does not cross, so a minimal fixture
+ * passing never stands for support of an external toolkit feature or of a composed Store feature.
  */
 
 // R15: the log screen — injectDispatch -> event -> withReducer and withEventHandlers.
-test('real-log-store: the event reaches the reducer and the handler, and the bridge stays explicit', async () => {
-  const { report } = await analyzeFixture('real-log-store', { target: 'data-id=refreshLogButton' });
+test('signal-log-store: the event reaches the reducer and the handler, and the bridge stays explicit', async () => {
+  const { report } = await analyzeFixture('signal-log-store', { target: 'data-id=refreshLogButton' });
   const keys = edgeKeys(report);
   // The dispatch, both consumers, the state the reducer writes, and the display of it.
-  assert(keys.includes('event-dispatch|src/log.component.ts#ExperimentOutputLogComponent|[Experiment Output Log] getLogs'));
-  assert(keys.includes('event-consume|[Experiment Output Log] getLogs|src/log.store.ts:31:5'), keys.join('\n'));
-  assert(keys.includes('event-consume|[Experiment Output Log] getLogs|src/log.store.ts:43:15'), keys.join('\n'));
+  assert(keys.includes('event-dispatch|src/log.component.ts#LogViewerComponent|[Log Viewer] getLogs'));
+  assert(keys.includes('event-consume|[Log Viewer] getLogs|src/log.store.ts:31:5'), keys.join('\n'));
+  assert(keys.includes('event-consume|[Log Viewer] getLogs|src/log.store.ts:43:15'), keys.join('\n'));
   assert(keys.includes('state-write|src/log.store.ts:31:5|loading'));
   assert(keys.includes('state-write|src/log.store.ts:31:5|id'));
   assert(keys.includes('state-read|loading|<span>'));
   // The handler's output is a new event of the same bus and is redelivered.
-  assert(keys.includes('event-dispatch|src/log.store.ts:43:15|[Experiment Output Log] setLog'));
+  assert(keys.includes('event-dispatch|src/log.store.ts:43:15|[Log Viewer] setLog'));
   // The bridge to the NgRx bus is an explicit dispatch; it is never implied by a shared payload shape.
   assert(keys.includes('action-dispatch|src/log.store.ts:43:15|src/view.events.ts#activateLoader'), keys.join('\n'));
   assert.deepEqual(keys.filter(key => key.startsWith('action-consume|') &&
-    key.includes('[Experiment Output Log]')), [], 'a SignalStore event was delivered to the action bus');
+    key.includes('[Log Viewer]')), [], 'a SignalStore event was delivered to the action bus');
 
   // The external toolkit feature is part of the expected result, as the boundary it is.
   const found = findings(report);
@@ -42,17 +41,17 @@ test('real-log-store: the event reaches the reducer and the handler, and the bri
     'the redelivered event was followed although this fixture records it as a boundary');
 });
 
-test('real-log-store: an event with only a reducer needs no handler and no API', async () => {
-  const { report } = await analyzeFixture('real-log-store', { target: 'data-id=resetLogButton' });
+test('signal-log-store: an event with only a reducer needs no handler and no API', async () => {
+  const { report } = await analyzeFixture('signal-log-store', { target: 'data-id=resetLogButton' });
   const keys = edgeKeys(report);
-  assert(keys.includes('event-dispatch|src/log.component.ts#ExperimentOutputLogComponent|[Experiment Output Log] resetLog'));
-  assert(keys.includes('event-consume|[Experiment Output Log] resetLog|src/log.store.ts:30:5'), keys.join('\n'));
+  assert(keys.includes('event-dispatch|src/log.component.ts#LogViewerComponent|[Log Viewer] resetLog'));
+  assert(keys.includes('event-consume|[Log Viewer] resetLog|src/log.store.ts:30:5'), keys.join('\n'));
   assert.deepEqual(keys.filter(key => key.startsWith('http-')), [], 'a request was attributed to resetLog');
 });
 
 // R15: the settings Store — withMethods -> lastValueFrom(forkJoin) -> patchState behind a composed feature.
-test('real-settings-store: the composed feature and the unidentified one are recorded as boundaries', async () => {
-  const { report } = await analyzeFixture('real-settings-store', { target: 'data-id=loadScalarsButton' });
+test('signal-settings-store: the composed feature and the unidentified one are recorded as boundaries', async () => {
+  const { report } = await analyzeFixture('signal-settings-store', { target: 'data-id=loadScalarsButton' });
   const keys = edgeKeys(report);
   const found = findings(report);
   // The feature the build environment supplies cannot be identified, so the Store range stays partial.

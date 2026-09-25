@@ -57,7 +57,7 @@ export async function generateLargeFixture(root, size) {
 
 @Component({
   selector: 'app-search',
-  template: '<input data-id="searchInputField" [value]="value()" (input)="onValueChange($event)" (keydown.enter)="submit()"><button (click)="clear()">x</button>',
+  template: '<input data-id="targetInput" [value]="value()" (input)="onValueChange($event)" (keydown.enter)="submit()"><button (click)="clear()">x</button>',
 })
 export class SearchComponent {
   readonly minimumChars = input(0);

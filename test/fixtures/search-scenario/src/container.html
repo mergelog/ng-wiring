@@ -1,5 +1,5 @@
-<sm-editable-section>
-  <sm-search search-button [value]="searchedText" [minimumChars]="1" [debounceTime]="0" (valueChanged)="searchTable($event)"></sm-search>
-  <sm-experiment-execution-parameters [searchedText]="searchedText" (searchCounterChanged)="searchCounterChanged($event)" (scrollToResultCounterReset)="scrollIndexCounterReset()"></sm-experiment-execution-parameters>
+<app-section>
+  <app-search search-button [value]="searchedText" [minimumChars]="1" [debounceTime]="0" (valueChanged)="searchTable($event)"></app-search>
+  <app-results-table [searchedText]="searchedText" (searchCounterChanged)="searchCounterChanged($event)" (scrollToResultCounterReset)="scrollIndexCounterReset()"></app-results-table>
   <button data-id="saveButton" (click)="save()"></button>
-</sm-editable-section>
+</app-section>

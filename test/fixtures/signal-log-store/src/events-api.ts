@@ -7,8 +7,8 @@ import type { LogLine } from './log.events';
 export class ApiEventsService {
   private readonly http = inject(HttpClient);
 
-  eventsGetTaskLog(request: { task: string; batch_size: number; navigate_earlier: boolean }):
+  getLogEntries(request: { itemId: string; batch_size: number; navigate_earlier: boolean }):
   Observable<{ events: LogLine[]; total: number }> {
-    return this.http.post<{ events: LogLine[]; total: number }>('/events.get_task_log', request);
+    return this.http.post<{ events: LogLine[]; total: number }>('/api/logs/list', request);
   }
 }

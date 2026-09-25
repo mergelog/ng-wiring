@@ -21,8 +21,8 @@ const hex = (char) => char.repeat(64);
 const workspaceRoot = '/ws';
 const startedAt = new Date(2026, 8, 24, 13, 0, 24);
 
-const rootHtml = '<app-search data-id="searchInputField"></app-search>\n<p>tail</p>\n';
-const templateBody = '<input data-id="searchInputField" (input)="onValueChange($event)">';
+const rootHtml = '<app-search data-id="targetInput"></app-search>\n<p>tail</p>\n';
+const templateBody = '<input data-id="targetInput" (input)="onValueChange($event)">';
 const searchTs = `import { Component } from '@angular/core';\n` +
   `@Component({ selector: 'app-search', template: '${templateBody}' })\n` +
   `export class SearchComponent {\n  onValueChange(event: Event) { this.load(); }\n` +
@@ -50,8 +50,8 @@ const inTemplate = (text) => ({ file: inlineKey, start: templateBody.indexOf(tex
 
 const owner = 'src/app/search.component.ts#SearchComponent';
 const query = {
-  raw: 'data-id="searchInputField"',
-  target: { kind: 'attribute', name: 'data-id', value: 'searchInputField' },
+  raw: 'data-id="targetInput"',
+  target: { kind: 'attribute', name: 'data-id', value: 'targetInput' },
   filters: { project: 'app', tsconfig: null, through: null, route: null, candidate: null, event: 'input' },
   candidates: [],
   enumerationComplete: true,
@@ -79,7 +79,7 @@ function buildReport() {
     query: { ...query, candidates: [candidate] }, evidence, conditions });
 
   const ev = (span, options) => evidence.add({ ...span, ...options });
-  const useSpan = at('src/app/root.component.html', '<app-search data-id="searchInputField"></app-search>');
+  const useSpan = at('src/app/root.component.html', '<app-search data-id="targetInput"></app-search>');
   const evUse = ev(useSpan);
   const evRootClass = ev(at('src/app/root.component.ts', 'export class RootComponent {}'));
   const evSearchClass = ev(at('src/app/search.component.ts', 'export class SearchComponent {'));
@@ -103,7 +103,7 @@ function buildReport() {
   const token = builder.definition({ kind: 'service', symbolId: `${oddFile}#SEARCH_CLIENT`, evidenceIds: [evToken] });
 
   const occInput = builder.occurrence({ kind: 'element', evidenceIds: [evInput],
-    details: { label: detail('input[data-id="searchInputField"]') },
+    details: { label: detail('input[data-id="targetInput"]') },
     key: { ownerId: owner, definitionId: null, span: evidence.map(inTemplate(templateBody)),
       insertion: null, projection: 'search-button', route: null } });
   const occSearch = builder.occurrence({ kind: 'component', evidenceIds: [evUse],
@@ -145,7 +145,7 @@ function buildReport() {
     confidence: 'conditional', origin: 'ng-wiring',
     conditionId: conditions.all([conditions.phase({ phase: 'lifecycle', detail: 'after the view is created' }),
       conditions.predicate({ expression: 'value.length >= minimumChars', scope: 'SearchComponent', evidenceId: evHandler })]),
-    details: { event: detail('input'), selected: detail('input[data-id="searchInputField"]'),
+    details: { event: detail('input'), selected: detail('input[data-id="targetInput"]'),
       listener: detail('SearchComponent'), handler: detail('onValueChange') } });
   const call = builder.edge({ kind: 'call', from: occListener, to: load, evidenceIds: [evHandler],
     confidence: 'confirmed', origin: 'ng-wiring',
@@ -181,7 +181,7 @@ function buildReport() {
     end: 'bootstrap', endReason: 'RootComponent is bootstrapped in src/main.ts' });
   // §8 the cycle tail names what it referred back to and shows that the walk was cut off.
   const cyclePath = builder.path({ occurrenceIds: [occInput, occWidget, occInput], edgeIds: [widgetParent],
-    declarationIds: [widget], end: 'cycle', endReason: 'The walk returned to input[data-id="searchInputField"]' });
+    declarationIds: [widget], end: 'cycle', endReason: 'The walk returned to input[data-id="targetInput"]' });
   const operation = builder.operation({ event: 'input', eventId: occEvent, listenerId: occListener,
     nodeIds: [occListener, load, occHttp, unknown],
     edgeIds: [listener, call, httpCreate, httpConsume, boundary, dispatch],
@@ -200,7 +200,7 @@ function buildReport() {
 
 const outputDir = '/ws/out';
 const render = (report) => renderMarkdown({ report, outputDir,
-  fileNameSource: 'SearchComponent.data-id=searchInputField', heading: 'SearchComponent.data-id="searchInputField"' });
+  fileNameSource: 'SearchComponent.data-id=targetInput', heading: 'SearchComponent.data-id="targetInput"' });
 
 test('the sentence table covers every kind and matches the model contract', () => {
   assert.deepEqual(sentenceSlotProblems(), []);
@@ -272,10 +272,10 @@ test('the report head carries the target, settings, candidate, coverage and the 
   const { text, problems } = render(report);
   assert.deepEqual(problems, []);
   const head = text.slice(0, text.indexOf('## 1. 表示経路'));
-  assert(head.startsWith('# ng-wiring 経路資料: SearchComponent.data-id="searchInputField"'));
+  assert(head.startsWith('# ng-wiring 経路資料: SearchComponent.data-id="targetInput"'));
   // §3.3 P14-22 a partial result says so at the top of the document and in the JSON status.
   assert(head.includes('- status: **partial**'), head);
-  assert(head.includes('data-id="searchInputField"'));
+  assert(head.includes('data-id="targetInput"'));
   assert(head.includes(`- 所有者: ${owner.replace(/_/g, '\\_')}`) || head.includes('- 所有者: src/app/search.component.ts#SearchComponent'));
   assert(head.includes('- project: app（application） / tsconfig: tsconfig.app.json'));
   assert(head.includes('TypeScript 6.0.3'));
@@ -286,7 +286,7 @@ test('the report head carries the target, settings, candidate, coverage and the 
   assert(head.includes('- confidence: 表示経路 conditional / input unresolved'));
   assert(head.includes('- coverage: 全体 partial / 表示経路 partial / input partial'));
   assert(head.includes('- 未適用の設定: budgets'));
-  assert(head.includes('- ファイル名元文字列: SearchComponent.data-id=searchInputField'));
+  assert(head.includes('- ファイル名元文字列: SearchComponent.data-id=targetInput'));
   assert(head.includes('- 重要な未解決理由:'));
   assert(head.includes('The runtime client behind SearchComponent.load was not resolved'));
   assert(head.includes('bootstrap: Application'));
@@ -297,7 +297,7 @@ test('sections run from the child to the root, numbered and told apart by their 
   const { report, ids } = buildReport();
   const text = render(report).text;
   const body = text.slice(text.indexOf('## 2. コンポーネント節'));
-  assert(body.includes('### 01. input\\[data-id="searchInputField"\\]'), body.slice(0, 400));
+  assert(body.includes('### 01. input\\[data-id="targetInput"\\]'), body.slice(0, 400));
   // §8 the same class name in two files is shown with its path; each use site keeps its own number.
   assert(body.includes('### 02. SearchComponent（src/app/search.component.ts）'), body.slice(0, 900));
   assert(body.includes('### 03. SearchComponent（src/app/widgets/search.component.ts）'), body.slice(0, 1200));
@@ -307,13 +307,13 @@ test('sections run from the child to the root, numbered and told apart by their 
   assert(body.includes('- 宣言元: SearchComponent（src/app/search.component.ts）'));
 
   const paths = text.slice(text.indexOf('## 1. 表示経路'), text.indexOf('## 2. コンポーネント節'));
-  assert(paths.includes('- 節:  \n  節 01: input\\[data-id="searchInputField"\\] [▶️](../src/app/search.component.ts) : ../src/app/search.component.ts  \n' +
+  assert(paths.includes('- 節:  \n  節 01: input\\[data-id="targetInput"\\] [▶️](../src/app/search.component.ts) : ../src/app/search.component.ts  \n' +
     '  節 02: SearchComponent（src/app/search.component.ts） [▶️](../src/app/root.component.html) : ../src/app/root.component.html'));
   assert(paths.includes('- 終端: bootstrap — RootComponent is bootstrapped in src/main.ts'));
   // §8 the cycle tail shows what it referred to and that the walk was cut off.
   assert(paths.includes('- 終端: cycle（参照先で循環したため打ち切り） — The walk returned to input'), paths);
   assert(paths.includes('  節 03: SearchComponent（src/app/widgets/search.component.ts） [▶️](../src/app/widgets/search.component.ts) : ../src/app/widgets/search.component.ts  \n' +
-    '  節 01: input\\[data-id="searchInputField"\\]'), paths);
+    '  節 01: input\\[data-id="targetInput"\\]'), paths);
   for (const line of paths.split('\n').filter((line) => /^  節 \d+:/.test(line))) {
     const match = line.match(/\[▶️\]\(([^)]+)\) : (\S+)/);
     assert(match, `no section link: ${line}`);
@@ -438,7 +438,7 @@ test('both renderers read the same model and cover the same edges', () => {
   assert.equal(parsed.generatedAt, report.generatedAt);
   assert(markdown.text.includes(report.generatedAt), 'the ISO time with its offset stays in the Markdown body');
   assert(simple.text.startsWith(`# ${report.query.raw} 解析結果\n`));
-  assert(simple.text.includes('## searchInputField の 遷移'));
+  assert(simple.text.includes('## targetInput の 遷移'));
   assert(!simple.text.includes('## 6. 診断と制限'), 'the default document is the short map');
 });
 
@@ -448,8 +448,8 @@ const temp = () => mkdtemp(path.join(tmpdir(), 'ng-wiring-p14-'));
 test('the process name keeps the value the file name needs and the heading shows it quoted', () => {
   // §3.4-1 the outer syntactic quotes are already gone; quotes inside the value belong to the value.
   const plain = processName(nameInput);
-  assert.equal(plain.raw, 'SearchComponent.data-id=searchInputField');
-  assert.equal(plain.heading, 'SearchComponent.data-id="searchInputField"');
+  assert.equal(plain.raw, 'SearchComponent.data-id=targetInput');
+  assert.equal(plain.heading, 'SearchComponent.data-id="targetInput"');
   const quoted = processName({ ...nameInput, target: { kind: 'attribute', name: 'data-id', value: 'a"b\'c' } });
   assert.equal(quoted.raw, 'SearchComponent.data-id=a"b\'c');
   assert.equal(quoted.heading, 'SearchComponent.data-id="a"b\'c"');
@@ -506,13 +506,13 @@ test('an over-long name is shortened without splitting an escape and keeps the o
 test('the file name is built in the order §3.4 fixes and stays decomposable', () => {
   assert.equal(timestamp(startedAt), '260924.130024');
   assert.equal(timestamp(new Date(2100, 0, 2, 3, 4, 5)), '000102.030405');
-  const name = buildFileName({ raw: 'SearchComponent.data-id=searchInputField', startedAt, json: false });
-  assert.equal(name, 'ngwi-SearchComponent.data-id=searchInputField-260924.130024.md');
-  const json = buildFileName({ raw: 'SearchComponent.data-id=searchInputField', startedAt, json: true });
-  assert.equal(json, 'ngwi-SearchComponent.data-id=searchInputField-260924.130024.json');
+  const name = buildFileName({ raw: 'SearchComponent.data-id=targetInput', startedAt, json: false });
+  assert.equal(name, 'ngwi-SearchComponent.data-id=targetInput-260924.130024.md');
+  const json = buildFileName({ raw: 'SearchComponent.data-id=targetInput', startedAt, json: true });
+  assert.equal(json, 'ngwi-SearchComponent.data-id=targetInput-260924.130024.json');
   assert.equal(buildFileName({ raw: 'A.b=c', startedAt, json: false, collision: 2 }), 'ngwi-A.b=c-c2-260924.130024.md');
   const match = fileNamePattern.exec(name);
-  assert.deepEqual([match[1], match[2], match[3]], ['SearchComponent.data-id=searchInputField', '260924.130024', 'md']);
+  assert.deepEqual([match[1], match[2], match[3]], ['SearchComponent.data-id=targetInput', '260924.130024', 'md']);
   assert(fileNamePattern.exec(buildFileName({ raw: 'a-b.c=d', startedAt, json: false })),
     'a process name holding - and . is still decomposable from the fixed-width stamp');
 });
@@ -524,17 +524,17 @@ test('a complete report is written once, with the path only returned after the f
   assert.equal(result.partial, true, 'a partial model is reported as partial');
   assert.deepEqual(result.problems, []);
   assert.equal(path.isAbsolute(result.path), true);
-  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=searchInputField-260924.130024.md');
+  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=targetInput-260924.130024.md');
   assert.deepEqual(await readdir(directory), [path.basename(result.path)], 'one file and no leftover lock');
   const written = await readFile(result.path, 'utf8');
   assert.equal(written, renderMarkdown({ report, outputDir: directory,
-    fileNameSource: 'SearchComponent.data-id=searchInputField',
-    heading: 'SearchComponent.data-id="searchInputField"' }).text);
+    fileNameSource: 'SearchComponent.data-id=targetInput',
+    heading: 'SearchComponent.data-id="targetInput"' }).text);
   assert(written.includes('2026-09-24T13:00:24.000+09:00'), 'the body keeps ISO 8601 with its UTC offset');
 
   // §3.4-5 an existing name is never overwritten; the collision suffix goes on the process name side.
   const second = await produceReport({ report, outDir: directory, json: false, startedAt, name: nameInput });
-  assert.equal(path.basename(second.path), 'ngwi-SearchComponent.data-id=searchInputField-c1-260924.130024.md');
+  assert.equal(path.basename(second.path), 'ngwi-SearchComponent.data-id=targetInput-c1-260924.130024.md');
   assert.equal(await readFile(result.path, 'utf8'), written);
 });
 
@@ -542,7 +542,7 @@ test('--json writes exactly one file that differs only in its extension', async 
   const directory = await temp();
   const { report } = buildReport();
   const result = await produceReport({ report, outDir: directory, json: true, startedAt, name: nameInput });
-  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=searchInputField-260924.130024.json');
+  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=targetInput-260924.130024.json');
   assert.deepEqual(await readdir(directory), [path.basename(result.path)]);
   const parsed = JSON.parse(await readFile(result.path, 'utf8'));
   assert.deepEqual(parsed, JSON.parse(JSON.stringify(report)));
@@ -554,7 +554,7 @@ test('a name that differs only in case counts as a collision', async () => {
   const { report } = buildReport();
   await writeFile(path.join(directory, 'NGWI-searchcomponent.DATA-ID=searchinputfield-260924.130024.md'), 'taken');
   const result = await produceReport({ report, outDir: directory, json: false, startedAt, name: nameInput });
-  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=searchInputField-c1-260924.130024.md');
+  assert.equal(path.basename(result.path), 'ngwi-SearchComponent.data-id=targetInput-c1-260924.130024.md');
 });
 
 test('output is serialized through a lock that another run keeps', async () => {
@@ -601,7 +601,7 @@ test('the CLI writes one --json file and prints only its path', async () => {
   let captured = '';
   const sink = (keep) => new Writable({ write(chunk, _encoding, done) { keep(chunk.toString()); done(); } });
   const io = { stdin: Readable.from([]), stdout: sink((value) => { captured += value; }), stderr: sink(() => undefined) };
-  const code = await runCli(['data-id=searchInputField', '--out-dir', directory, '--json'], {
+  const code = await runCli(['data-id=targetInput', '--out-dir', directory, '--json'], {
     async analyze() { return { candidates: [target], truncated: false, targetDetectionIncomplete: false }; },
     async write(_item, options) {
       return produceReport({ report, outDir: options.outDir, json: options.json, startedAt, name: nameInput });
