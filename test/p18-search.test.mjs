@@ -53,3 +53,20 @@ test('P18-03 the search is projected into the section while the form declares it
   const binding = edgesOfKind(report, 'input-binding').find(edge => edge.toLabel === 'minimumChars');
   assert.equal(binding?.details.owner.value, 'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent');
 });
+
+test('P18-04 valueChanged reaches searchTable, resets changed search state, then jumps', async () => {
+  const {report} = await inputReport;
+  const output = edgesOfKind(report, 'output-subscription');
+  assert(output.some(edge => edge.fromLabel === 'valueChanged' && edge.toLabel.endsWith('.searchTable')));
+  const writes = edgesOfKind(report, 'state-write').filter(edge => edge.fromLabel ===
+    'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent');
+  for (const name of ['searchedText', 'scrollIndexCounter', 'searchResultsCount'])
+    assert(writes.some(edge => edge.toLabel === name), name);
+  const calls = edgesOfKind(report, 'call').filter(edge => edge.fromLabel ===
+    'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent');
+  assert(calls.some(edge => edge.toLabel.endsWith('.resetIndex')));
+  assert(calls.some(edge => edge.toLabel.endsWith('.jumpToNextResult')));
+  const changeGate = report.conditions.filter(condition => condition.kind === 'predicate')
+    .map(condition => condition.expression);
+  assert(changeGate.some(text => text.includes('this.searchedText !== value && !searchBackward')));
+});
