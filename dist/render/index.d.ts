@@ -7,14 +7,18 @@ export * from './markdown.js';
 export * from './sentences.js';
 export * from './text.js';
 export * from './write.js';
-/** §8 both renderers take the same intermediate model; only the serialization differs. */
+/** §8 the three views read the same report; the selected view controls how much it prints. */
 export declare function renderReport(input: RenderInput & {
     json: boolean;
+    detail?: boolean;
+    belowData?: boolean;
 }): RenderResult;
 export interface ProduceInput {
     report: WiringReport;
     outDir: string;
     json: boolean;
+    detail?: boolean;
+    belowData?: boolean;
     /** §3.4-4 the local time the analysis started, which names the file. */
     startedAt: Date;
     name: ProcessNameInput;

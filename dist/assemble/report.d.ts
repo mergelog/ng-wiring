@@ -11,6 +11,8 @@ export interface AssembleInput {
     toolVersion: string;
     startedAt: Date;
     enumerationComplete: boolean;
+    /** Simple output needs downstream output operations even when --event selects one starting event. */
+    includeAllEvents?: boolean;
 }
 /**
  * §5 the assembly: the analysis layers are normalized into the one model both renderers read. Nothing

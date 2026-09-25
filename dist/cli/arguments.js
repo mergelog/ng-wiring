@@ -50,6 +50,8 @@ export function parseArguments(argv, cwd = process.cwd()) {
     const seen = new Set();
     const values = {};
     let json = false;
+    let detail = false;
+    let belowData = false;
     const positional = [];
     for (let i = 0; i < argv.length; i++) {
         const token = argv[i];
@@ -57,6 +59,18 @@ export function parseArguments(argv, cwd = process.cwd()) {
             if (json)
                 throw new UsageError('Duplicate --json');
             json = true;
+            continue;
+        }
+        if (token === '--detail') {
+            if (detail)
+                throw new UsageError('Duplicate --detail');
+            detail = true;
+            continue;
+        }
+        if (token === '--belowData') {
+            if (belowData)
+                throw new UsageError('Duplicate --belowData');
+            belowData = true;
             continue;
         }
         const key = valueOptions.get(token);
@@ -82,6 +96,10 @@ export function parseArguments(argv, cwd = process.cwd()) {
     if (values.project !== undefined && values.tsconfig !== undefined) {
         throw new UsageError('--project and --tsconfig are mutually exclusive');
     }
+    if (detail && json)
+        throw new UsageError('--detail and --json are mutually exclusive');
+    if (belowData && (detail || json))
+        throw new UsageError('--belowData requires the simple output');
     if (values.candidate && !/^(?:[1-9][0-9]*|cand:[a-f0-9]{64})$/.test(values.candidate)) {
         throw new UsageError('--candidate must be a positive number or full cand:SHA-256 ID');
     }
@@ -95,6 +113,7 @@ export function parseArguments(argv, cwd = process.cwd()) {
             target, project: values.project, tsconfig: values.tsconfig && path.resolve(cwd, values.tsconfig),
             through: values.through, route: values.route, selector: values.selector, candidate: values.candidate,
             event: values.event, outDir: path.resolve(cwd, values.outDir ?? '.'), json,
+            ...(detail ? { detail } : {}), ...(belowData ? { belowData } : {}),
         } };
 }
 export function resolveWorkspacePath(workspaceRoot, input) {

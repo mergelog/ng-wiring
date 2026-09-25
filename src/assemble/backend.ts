@@ -40,11 +40,13 @@ export function createBackend(input: BackendInput): CliBackend {
       const selected = { candidate, path: found.path };
       const report = assembleReport({ analysis: contextOf(analysis, found), selected,
         candidates: analysis.candidates, options, toolVersion: input.toolVersion ?? toolVersion,
-        startedAt, enumerationComplete: !analysis.truncated });
+        startedAt, enumerationComplete: !analysis.truncated,
+        includeAllEvents: !options.detail && !options.json });
       const ownerId = candidate.tuple.ownerId;
       const element = contextOf(analysis, found).index.elements.find(item => item.owner.id === ownerId &&
         item.span.start === candidate.tuple.element.start);
-      const result = await produceReport({ report, outDir: options.outDir, json: options.json, startedAt,
+      const result = await produceReport({ report, outDir: options.outDir, json: options.json,
+        detail: options.detail, belowData: options.belowData, startedAt,
         signal, name: { target: report.query.target, ownerClass: ownerId.slice(ownerId.lastIndexOf('#') + 1),
           ownerId, elementName: element?.tag } });
       return { path: result.path, partial: result.partial };

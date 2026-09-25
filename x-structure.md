@@ -72,6 +72,8 @@ npx github:mergelog/ng-wiring --source 'src/app/webapp-common/experiments/dumb/e
 | `--candidate <番号またはcand:ID>` | 下記の安定順序による 1 始まりの番号、または SHA-256 の全桁 ID。全フィルター適用後の候補から選ぶ。範囲外・存在しない ID はエラー |
 | `--event <name>` | 正規化したイベント名で絞る。`keydown` は `keydown.enter` 等も含み、修飾子付き指定は完全一致。該当リスナーなしならその理由を持つ経路資料を出す |
 | `--out-dir <dir>` | 既定は実行ディレクトリ。存在しなければ作成。ソースへのリンクはこの出力先を基準にする |
+| `--detail` | 従来の詳細 Markdown を出す。`--json` と排他 |
+| `--belowData` | 既定の短い追跡 Map で、選んだイベント以降だけを出す。`--detail` / `--json` と排他 |
 | `--json` | Markdown の代わりに JSON ファイルを **1 個**作る。stdout に JSON 本文は流さない |
 
 解析は Angular ワークスペースのルートで実行する。明示 tsconfig で angular.json がない場合はその設定のディレクトリを workspace root とする。tsconfig/out-dir の相対引数は実行ディレクトリ、source/ComponentId は workspace root を基準とする。指定がなければ全 application project を**それぞれの設定で直列解析**し、候補の一覧だけ統合する。application がなければ具体的な project/tsconfig を要求して code 3 とする。library は参照された範囲を含め、library 単独指定時は bootstrap 未到達の資料を許す。project が異なるグラフ同士は接続しない。
@@ -102,7 +104,7 @@ bootstrap 到達済み、宣言/使用のみ確認、未生成 TemplateRef、動
 | 5 | 選択対象に未解決・非対応・打ち切りがある、または解析欠落で対象有無を判定できない | 対象を選べた場合だけ部分資料 |
 | 130 | Ctrl-C / SIGINT | 正常資料のパスを出さない |
 
-stdout は書き込みが完了したファイルの絶対パス 1 行のみ。診断・候補・進捗は stderr。部分資料も `status: partial` を本文冒頭/JSON に示す。対象外の局所的な gap だけでは選択結果を partial にしない。起動点・スコープ全体を壊す gap は関連するとして扱う。
+stdout は書き込みが完了したファイルの絶対パス 1 行のみ。診断・候補・進捗は stderr。部分資料の `status: partial` は詳細 Markdown / JSON に示し、短い追跡 Map では実際に追跡が止まった位置を示す。対象外の局所的な gap だけでは選択結果を partial にしない。起動点・スコープ全体を壊す gap は関連するとして扱う。
 
 判定順は引数/依存・設定エラー → 解析不能な致命的失敗 → 対象なし（欠落が原因なら 5、そうでなければ 1）→ 選択要求 2 → 出力成功時の 0/5。選択段階の TTY 入力が EOF なら 2 で終了する。`--help` / `--version` は通常の案内を stdout に出して 0 とし、対象引数は不要。未知・重複した単値オプション、対象指定なし/両方指定は 3 とする。
 
@@ -357,6 +359,10 @@ R08/R15 の RxJS 経路に必要な `of/from`、配列/Promise の ObservableInp
 中間モデルの state details に framework（angular-signal/signal-state/signal-store/ngrx-store）、宣言/インスタンス/状態 key を持たせる。`state-read` に tracking（tracked/snapshot/untracked）を持ち、effect の framework/実行 phase も保存する。配送は `action-dispatch/action-consume` と `event-dispatch/event-consume` を分け、それぞれ busId、送信形式、scope、登録/生存条件を保持する。Store method は `call`、patchState は `state-write`、computed 等は `reactive-link` で表し、全てを effect ノードに変換しない。
 
 ## 8. 出力形式と検査
+
+既定の Markdown は `x-issue-sample-ngwi.md` の短い root → API 追跡 Map とする。表示配置の途中にある単なる `div` を省き、イベント以降を `--belowData` で切り出せる。ソース根拠のない接続を作らず、API に届かなければその探索範囲で未検出と書く。`--detail` は以下に定める従来の詳細 Markdown、`--json` は従来の中間モデル全体を出す。
+
+以下の節構成と全辺描画・定型文の規則は `--detail` に適用する。短い Map は選んだ経路の節目を表示し、全辺の描画を要求しない。
 
 資料の先頭は対象/所有者、project・snapshot・適用設定、候補 ID、選択した表示経路と root、イベント、confidence/coverage、重要な未解決理由。続いて `01` から子→root のコンポーネント節、宣言元/挿入先への参照、イベント別の処理、背景入力、診断・制限を置く。同名クラスはパスを併記し、同一クラスの別出現も別番号とする。循環末尾は参照先と打ち切りを表示し、存在しない root を番号付きで追加しない。
 

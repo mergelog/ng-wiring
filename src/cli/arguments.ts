@@ -19,6 +19,8 @@ export interface CliOptions {
   event?: string;
   outDir: string;
   json: boolean;
+  detail?: boolean;
+  belowData?: boolean;
 }
 
 export type ParsedArguments = { kind: 'help' } | { kind: 'version' } | { kind: 'run'; options: CliOptions };
@@ -71,12 +73,24 @@ export function parseArguments(argv: readonly string[], cwd = process.cwd()): Pa
   const seen = new Set<string>();
   const values: Record<string, string> = {};
   let json = false;
+  let detail = false;
+  let belowData = false;
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (token === '--json') {
       if (json) throw new UsageError('Duplicate --json');
       json = true;
+      continue;
+    }
+    if (token === '--detail') {
+      if (detail) throw new UsageError('Duplicate --detail');
+      detail = true;
+      continue;
+    }
+    if (token === '--belowData') {
+      if (belowData) throw new UsageError('Duplicate --belowData');
+      belowData = true;
       continue;
     }
     const key = valueOptions.get(token);
@@ -98,6 +112,8 @@ export function parseArguments(argv: readonly string[], cwd = process.cwd()): Pa
   if (values.project !== undefined && values.tsconfig !== undefined) {
     throw new UsageError('--project and --tsconfig are mutually exclusive');
   }
+  if (detail && json) throw new UsageError('--detail and --json are mutually exclusive');
+  if (belowData && (detail || json)) throw new UsageError('--belowData requires the simple output');
   if (values.candidate && !/^(?:[1-9][0-9]*|cand:[a-f0-9]{64})$/.test(values.candidate)) {
     throw new UsageError('--candidate must be a positive number or full cand:SHA-256 ID');
   }
@@ -110,6 +126,7 @@ export function parseArguments(argv: readonly string[], cwd = process.cwd()): Pa
     target, project: values.project, tsconfig: values.tsconfig && path.resolve(cwd, values.tsconfig),
     through: values.through, route: values.route, selector: values.selector, candidate: values.candidate,
     event: values.event, outDir: path.resolve(cwd, values.outDir ?? '.'), json,
+    ...(detail ? { detail } : {}), ...(belowData ? { belowData } : {}),
   } };
 }
 

@@ -427,7 +427,8 @@ test('a report with no request says so with its coverage instead of denying the 
 
 test('both renderers read the same model and cover the same edges', () => {
   const { report } = buildReport();
-  const markdown = renderReport({ report, outputDir, fileNameSource: 'x', heading: 'x', json: false });
+  const simple = renderReport({ report, outputDir, fileNameSource: 'x', heading: 'x', json: false });
+  const markdown = renderReport({ report, outputDir, fileNameSource: 'x', heading: 'x', json: false, detail: true });
   const json = renderReport({ report, outputDir, fileNameSource: 'x', heading: 'x', json: true });
   assert.deepEqual(markdown.edgeIds, json.edgeIds);
   assert.deepEqual(markdown.edgeIds, [...report.edges.map((edge) => edge.id)].sort());
@@ -436,6 +437,9 @@ test('both renderers read the same model and cover the same edges', () => {
   assert.deepEqual(parsed, JSON.parse(JSON.stringify(report)));
   assert.equal(parsed.generatedAt, report.generatedAt);
   assert(markdown.text.includes(report.generatedAt), 'the ISO time with its offset stays in the Markdown body');
+  assert(simple.text.startsWith(`# ${report.query.raw} 解析結果\n`));
+  assert(simple.text.includes('## searchInputField の 遷移'));
+  assert(!simple.text.includes('## 6. 診断と制限'), 'the default document is the short map');
 });
 
 const nameInput = { target: query.target, ownerClass: 'SearchComponent', ownerId: owner };
@@ -516,7 +520,7 @@ test('the file name is built in the order §3.4 fixes and stays decomposable', (
 test('a complete report is written once, with the path only returned after the file exists', async () => {
   const directory = await temp();
   const { report } = buildReport();
-  const result = await produceReport({ report, outDir: directory, json: false, startedAt, name: nameInput });
+  const result = await produceReport({ report, outDir: directory, json: false, detail: true, startedAt, name: nameInput });
   assert.equal(result.partial, true, 'a partial model is reported as partial');
   assert.deepEqual(result.problems, []);
   assert.equal(path.isAbsolute(result.path), true);

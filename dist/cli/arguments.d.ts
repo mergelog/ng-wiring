@@ -23,6 +23,8 @@ export interface CliOptions {
     event?: string;
     outDir: string;
     json: boolean;
+    detail?: boolean;
+    belowData?: boolean;
 }
 export type ParsedArguments = {
     kind: 'help';

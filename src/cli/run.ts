@@ -17,7 +17,7 @@ export const help = `Usage: ng-wiring ATTRIBUTE=VALUE [options]
        ng-wiring --source PATH:LINE [options]
 Options: --project NAME | --tsconfig PATH, --through CLASS|PATH#CLASS,
          --route PATH, --selector DEVTOOLS_PATH, --candidate NUMBER|cand:SHA256, --event NAME,
-         --out-dir DIR, --json, --help, --version
+         --out-dir DIR, --detail, --belowData, --json, --help, --version
 `;
 
 export async function runCli(argv: readonly string[], backend: CliBackend, io: Io, cwd = process.cwd(), signal?: AbortSignal): Promise<ExitCode> {

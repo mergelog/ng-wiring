@@ -11,7 +11,8 @@ state and the separate SignalStore event bus, and HTTP request sites with their
 method, URL, used types and the consumer that starts them. The normalized
 intermediate model lives in `src/model` with its JSON Schema in
 [docs/ng-wiring.schema.json](docs/ng-wiring.schema.json), and `src/render` turns
-that one model into either the Markdown report or the `--json` file, names the
+that one model into the short tracking map, the detailed Markdown report
+(`--detail`), or the `--json` file, names the
 output file as §3.4 fixes it and serializes writing through an output lock.
 Detection gaps are placed against the selection before they are reported: a gap
 is local when its owner, one of its candidates or its location belongs to the
@@ -52,6 +53,10 @@ If several source paths remain, it asks you to choose one.
 npx ng-wiring 'data-id=nameField' --project stackup \
   --selector 'body > sm-root > sm-app-shell > sm-common-experiments > sm-experiment-output > sm-experiment-info-header > sm-inline-edit > input'
 ```
+
+The default Markdown is a short root-to-operation map with source links. Use
+`--detail` for the previous full report, or `--belowData` to start the short map
+at the selected event. `--json` keeps the normalized intermediate model.
 
 Run times and peak memory for a real application and for generated workspaces
 of several sizes are recorded in [docs/performance.md](docs/performance.md),

@@ -39,6 +39,16 @@ test('argument validation occurs before analysis', () => {
   assert.equal(resolveWorkspacePath('/workspace', 'C:\\src\\view.html'), 'C:\\src\\view.html');
 });
 
+test('simple is the default and detail and belowData have distinct contracts', () => {
+  assert.equal(parseArguments(['x=y']).options.detail, undefined);
+  assert.equal(parseArguments(['x=y', '--detail']).options.detail, true);
+  assert.equal(parseArguments(['x=y', '--belowData']).options.belowData, true);
+  for (const args of [['--detail', '--json'], ['--belowData', '--detail'], ['--belowData', '--json'],
+    ['--detail', '--detail'], ['--belowData', '--belowData']]) {
+    assert.throws(() => parseArguments(['x=y', ...args]), UsageError);
+  }
+});
+
 const point = (offset) => ({ path: 'src/owner.ts', line: 1, column: offset, offset });
 const candidate = (start, owner = 'src/owner.ts#Owner') => makeCandidate({
   contextId: 'context', ownerId: owner, element: { path: 'src/owner.html', start, end: start + 1 },

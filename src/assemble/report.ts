@@ -45,6 +45,8 @@ export interface AssembleInput {
   toolVersion: string;
   startedAt: Date;
   enumerationComplete: boolean;
+  /** Simple output needs downstream output operations even when --event selects one starting event. */
+  includeAllEvents?: boolean;
 }
 
 const handlerMethod = (handler: string, inputs: ReadonlyMap<string, string>): string | null => {
@@ -301,7 +303,8 @@ export function assembleReport(input: AssembleInput): WiringReport {
   if (target && targetElement) {
     addOperations({ analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
       targetElement, targetNodeId: target.id, targetKind: target.placed.kind, placed,
-      viewPath: selected.path, options, operationIds, problems, resolvedGaps, stores });
+      viewPath: selected.path, options: input.includeAllEvents ? { ...options, event: undefined } : options,
+      operationIds, problems, resolvedGaps, stores });
   }
 
   // ---- background inputs --------------------------------------------------------------------------

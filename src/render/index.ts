@@ -4,6 +4,7 @@ import type { WiringReport } from '../model/types.js';
 import { buildFileName, processName, type ProcessNameInput } from './filename.js';
 import { renderJson } from './json.js';
 import { renderMarkdown, type RenderInput, type RenderResult } from './markdown.js';
+import { renderSimple } from './simple.js';
 import { RenderError } from './text.js';
 import { writeOutput } from './write.js';
 
@@ -14,15 +15,17 @@ export * from './sentences.js';
 export * from './text.js';
 export * from './write.js';
 
-/** §8 both renderers take the same intermediate model; only the serialization differs. */
-export function renderReport(input: RenderInput & { json: boolean }): RenderResult {
-  return input.json ? renderJson(input) : renderMarkdown(input);
+/** §8 the three views read the same report; the selected view controls how much it prints. */
+export function renderReport(input: RenderInput & { json: boolean; detail?: boolean; belowData?: boolean }): RenderResult {
+  return input.json ? renderJson(input) : input.detail ? renderMarkdown(input) : renderSimple(input);
 }
 
 export interface ProduceInput {
   report: WiringReport;
   outDir: string;
   json: boolean;
+  detail?: boolean;
+  belowData?: boolean;
   /** §3.4-4 the local time the analysis started, which names the file. */
   startedAt: Date;
   name: ProcessNameInput;
@@ -42,10 +45,10 @@ export async function produceReport(input: ProduceInput): Promise<ProduceResult>
   }
   const { raw, heading } = processName(input.name);
   const rendered = renderReport({ report: input.report, outputDir: input.outDir,
-    fileNameSource: raw, heading, json: input.json });
+    fileNameSource: raw, heading, json: input.json, detail: input.detail, belowData: input.belowData });
   const covered = new Set(rendered.edgeIds);
   const missing = input.report.edges.filter(edge => !covered.has(edge.id));
-  if (missing.length) {
+  if (missing.length && (input.json || input.detail)) {
     throw new RenderError(`The renderer left ${missing.length} edges out, starting at ${missing[0]!.id} (${missing[0]!.kind})`);
   }
   await mkdir(input.outDir, { recursive: true });

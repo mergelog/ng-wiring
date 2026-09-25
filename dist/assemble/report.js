@@ -299,7 +299,8 @@ export function assembleReport(input) {
     if (target && targetElement) {
         addOperations({ analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
             targetElement, targetNodeId: target.id, targetKind: target.placed.kind, placed,
-            viewPath: selected.path, options, operationIds, problems, resolvedGaps, stores });
+            viewPath: selected.path, options: input.includeAllEvents ? { ...options, event: undefined } : options,
+            operationIds, problems, resolvedGaps, stores });
     }
     // ---- background inputs --------------------------------------------------------------------------
     // §8 what enters the components of this path from outside the selected operation: the input bindings
