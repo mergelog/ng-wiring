@@ -41,3 +41,15 @@ test('P18-02 this use takes the default false branch and retains timer(0) as asy
   assert(predicates.some(text => text.includes('timer(0)')));
   assert(predicates.some(text => text.includes('timer must fire after its configured delay')));
 });
+
+test('P18-03 the search is projected into the section while the form declares its bindings', async () => {
+  const {report} = await inputReport;
+  const keys = edgeKeys(report);
+  assert(keys.includes('projection|ng-content select="[search-button]"|SearchComponent'));
+  assert(keys.includes('template-use|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent|SearchComponent'));
+  assert(!keys.includes('template-use|src/section.ts#EditableSectionComponent|SearchComponent'));
+  const output = edgesOfKind(report, 'output-subscription').find(edge => edge.fromLabel === 'valueChanged');
+  assert.equal(output?.toLabel, 'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent.searchTable');
+  const binding = edgesOfKind(report, 'input-binding').find(edge => edge.toLabel === 'minimumChars');
+  assert.equal(binding?.details.owner.value, 'src/container.ts#ExperimentInfoHyperParametersFormContainerComponent');
+});
