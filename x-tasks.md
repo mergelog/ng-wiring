@@ -28,9 +28,9 @@
 | P15 診断の関連付けと coverage | `src/model`, `src/render` | 6 | 6 | P13 |
 | P16 fixture・期待台帳・CI | `test/` | 15 | 15 | 各フェーズ並行 |
 | P17 配布・性能 | 配布・計測 | 7 | 5 | P14, P16 |
-| P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 5 | P14 |
+| P18 実例シナリオの受け入れ | 検索 input 一式 | 8 | 6 | P14 |
 | 完了時の報告規約 | リリース判定 | 4 | 0 | P16, P17 |
-| **合計** | | **237** | **228** | |
+| **合計** | | **237** | **229** | |
 
 別表: 受け入れ条件 A01〜A24（24 行 × 実装/fixture/CI）、必須検知契約 R01〜R16（16 行 × matcher/意味モデル/台帳/fixture）。フェーズ側を埋めても、この 2 表が埋まるまで完了ではない。
 
@@ -372,7 +372,7 @@ P17-07 の測定は [docs/performance.md](docs/performance.md) に記録した�
 - [x] P18-02 使用コンテキストの入出力評価（`enableSearchOnSubmit` 既定 `false` で束縛なし、`minimumChars=1`、`debounceTime=0`、`timer(0)` を非同期境界として残す）（§2, §8）
 - [x] P18-03 EditableSectionComponent: `search-button` スロットへの投影と、式の宣言元としてのフォームコンテナ参照（§2, §8）
 - [x] P18-04 フォームコンテナ: `valueChanged` → `searchTable`（検索語変更時の state 更新・resetIndex と同ハンドラ内の `jumpToNextResult`）（§2, §8）
-- [ ] P18-05 子表の枝: `searchedText` の input 変更 → `ngOnChanges` の再計算 → `searchCounterChanged`/`scrollToResultCounterReset`。即時ジャンプより後に再計算され得ることを区別（§2, §8）
+- [x] P18-05 子表の枝: `searchedText` の input 変更 → `ngOnChanges` の再計算 → `searchCounterChanged`/`scrollToResultCounterReset`。即時ジャンプより後に再計算され得ることを区別（§2, §8）
 - [ ] P18-06 「前へ」操作: アイコン自体ではなく親 button の click、`findNext(true)` が `output<string>()` に `null` を渡す点、strictNullChecks 設定の記録（型エラーと断定しない）（§2）
 - [x] P18-07 選択 route の祖先と bootstrap まで条件・出典付きで到達（`SearchComponent → EditableSectionComponent → ExperimentInfoHyperParametersFormContainerComponent → … → AppComponent → AppRootComponent`、終端を `sm-root` に固定しない）（§1, §8）
 - [ ] P18-08 通信: 起点から検出した要求だけを載せ、未検出なら「この探索範囲で通信への接続は未検出」を coverage/停止理由付きで出す（「アプリに API がない」と書かない）。検索 input に無関係な保存 API を出さない（§8, A14）

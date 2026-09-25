@@ -247,6 +247,14 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                 return;
             }
             if (t.isIfStatement(node)) {
+                if (method.name.getText() === 'ngOnChanges' && options.changedInput) {
+                    const changed = /\bchanges\?\.([A-Za-z_$][\w$]*)/.exec(node.expression.getText())?.[1];
+                    if (changed && changed !== options.changedInput) {
+                        if (node.elseStatement)
+                            visit(node.elseStatement, localConditions, level);
+                        return;
+                    }
+                }
                 visit(node.thenStatement, [...localConditions, `if ${node.expression.getText()}`], level);
                 if (node.elseStatement)
                     visit(node.elseStatement, [...localConditions, `else of ${node.expression.getText()}`], level);

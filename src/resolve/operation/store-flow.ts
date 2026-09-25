@@ -16,7 +16,7 @@ export interface StoreStep { kind: StoreStepKind; source: string; target: string
   path: string[]; conditions: string[]; detail: string | null }
 export interface StoreTrace { steps: StoreStep[]; diagnostics: string[]; backgroundReads: string[] }
 export interface StoreTraceOptions { outputElement?: IndexedElement; catalog?: Catalog;
-  parentLayers?: InjectorLayer[] }
+  parentLayers?: InjectorLayer[]; changedInput?: string }
 const LIMIT = 10000;
 const DEPTH = 64;
 const slash = (s: string): string => s.replaceAll('\\', '/');
@@ -235,6 +235,13 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       if (!enter(node,path)) return;
       if (level >= DEPTH) { add('boundary',receiver,'call stack depth limit',node,path,localConditions); return; }
       if (t.isIfStatement(node)) {
+        if (method.name.getText() === 'ngOnChanges' && options.changedInput) {
+          const changed = /\bchanges\?\.([A-Za-z_$][\w$]*)/.exec(node.expression.getText())?.[1];
+          if (changed && changed !== options.changedInput) {
+            if (node.elseStatement) visit(node.elseStatement, localConditions, level);
+            return;
+          }
+        }
         visit(node.thenStatement,[...localConditions,`if ${node.expression.getText()}`],level);
         if (node.elseStatement) visit(node.elseStatement,[...localConditions,`else of ${node.expression.getText()}`],level);
         return;

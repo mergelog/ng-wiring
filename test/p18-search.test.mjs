@@ -70,3 +70,21 @@ test('P18-04 valueChanged reaches searchTable, resets changed search state, then
     .map(condition => condition.expression);
   assert(changeGate.some(text => text.includes('this.searchedText !== value && !searchBackward')));
 });
+
+test('P18-05 searchedText causes a later child ngOnChanges branch and two outputs', async () => {
+  const {report} = await inputReport;
+  const keys = edgeKeys(report);
+  for (const edge of [
+    'value-flow|searchedText|searchedText',
+    'call|searchedText|ngOnChanges',
+    'output-emit|src/table.ts#ExperimentExecutionParametersComponent|this.searchCounterChanged',
+    'output-emit|src/table.ts#ExperimentExecutionParametersComponent|this.scrollToResultCounterReset',
+    'output-subscription|src/table.ts#ExperimentExecutionParametersComponent.searchCounterChanged|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent.searchCounterChanged',
+    'output-subscription|src/table.ts#ExperimentExecutionParametersComponent.scrollToResultCounterReset|src/container.ts#ExperimentInfoHyperParametersFormContainerComponent.scrollIndexCounterReset',
+  ]) assert(keys.includes(edge), edge);
+  const predicates = report.conditions.filter(condition => condition.kind === 'predicate')
+    .map(condition => condition.expression);
+  assert(predicates.some(text => text.includes('later change-detection pass')));
+  assert(predicates.some(text => text.includes('if changes?.searchedText')));
+  assert(!keys.some(key => key.includes('resetSearch')), 'an unrelated formData change was followed');
+});

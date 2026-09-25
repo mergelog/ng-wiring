@@ -23,6 +23,7 @@ export interface StoreTraceOptions {
     outputElement?: IndexedElement;
     catalog?: Catalog;
     parentLayers?: InjectorLayer[];
+    changedInput?: string;
 }
 /** Traverses a chosen method and its confirmed DI callees, then registered NgRx transitions. */
 export declare function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, owner: Declaration, methodName: string, layers?: InjectorLayer[], options?: StoreTraceOptions): StoreTrace;

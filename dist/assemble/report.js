@@ -680,6 +680,61 @@ function addOperations(input) {
                 storeMemberFor, memberClassFor });
             materialize(reconcile(storeTraceEdges(storeTrace), ownerId), scope);
             materialize(reconcile(httpTraceEdges(httpTrace), ownerId), scope);
+            // A write to a member bound to a sibling component input can trigger that component's
+            // ngOnChanges on a later change-detection pass. It is a separate branch from calls in the
+            // current handler; in particular, an immediate jump does not use the recalculated list yet.
+            const changedByOwner = new Map();
+            for (const step of storeTrace.steps.filter(item => item.kind === 'state-write' &&
+                catalog.declarations.has(item.source))) {
+                const members = changedByOwner.get(step.source) ?? new Set();
+                members.add(step.target);
+                changedByOwner.set(step.source, members);
+            }
+            for (const [parentId, changed] of changedByOwner)
+                for (const child of index.byOwner.get(parentId) ?? []) {
+                    if (!child.component || !changed.size)
+                        continue;
+                    const childOwner = catalog.declarations.get(child.component);
+                    if (!childOwner)
+                        continue;
+                    const bindings = resolveElementBindings(child, context, catalog).relations;
+                    for (const bound of bindings.filter(item => item.kind === 'input-binding' &&
+                        changed.has(item.expression.trim()) && item.targetId === child.component)) {
+                        const onChange = bindings.find(item => item.kind === 'input-change' && item.alias === bound.alias);
+                        if (!onChange)
+                            continue;
+                        const at = evidence.span(bound.span ?? child.span, 'exact');
+                        if (!at)
+                            continue;
+                        const phase = [`${bound.expression} input may change on a later change-detection pass`,
+                            'ngOnChanges runs only when Angular records an input change'];
+                        const gate = conditions.all(phase.map(expression => conditions.predicate({ expression, scope: parentId, evidenceId: at })));
+                        const state = builder.definition({ kind: 'state', symbolId: `state:${bound.expression.trim()}`,
+                            evidenceIds: [at], details: { name: detail(bound.expression.trim()), label: detail(bound.expression.trim()) } });
+                        const inputNode = builder.definition({ kind: 'symbol',
+                            symbolId: `${child.component}.${bound.member ?? bound.alias}`, evidenceIds: [at],
+                            details: { name: detail(bound.alias), label: detail(bound.alias) } });
+                        const lifecycle = builder.definition({ kind: 'symbol', symbolId: `${child.component}.ngOnChanges`,
+                            evidenceIds: [at], details: { name: detail('ngOnChanges'), label: detail('ngOnChanges') } });
+                        const flow = connect({ kind: 'value-flow', from: state, fromKind: 'state', to: inputNode,
+                            toKind: 'symbol', evidenceIds: [at], conditionId: gate,
+                            details: { valueExpression: detail(bound.expression), destination: detail(`${child.component}.${bound.alias}`) } });
+                        const lifecycleCall = connect({ kind: 'call', from: inputNode, fromKind: 'symbol', to: lifecycle,
+                            toKind: 'symbol', evidenceIds: [at], conditionId: gate,
+                            details: { caller: detail(`${child.component}.${bound.alias}`), callee: detail('ngOnChanges'),
+                                arguments: detail(`SimpleChanges.${bound.alias}`) } });
+                        if (flow)
+                            scope.edges.push(flow);
+                        if (lifecycleCall)
+                            scope.edges.push(lifecycleCall);
+                        scope.nodes.add(state);
+                        scope.nodes.add(inputNode);
+                        scope.nodes.add(lifecycle);
+                        const downstream = traceStoreDispatch(context, storeGraph, childOwner, 'ngOnChanges', layers, { outputElement: child, catalog, parentLayers: layers, changedInput: bound.alias });
+                        materialize(storeTraceEdges(downstream).map(edge => ({ ...edge,
+                            conditions: [...phase, ...edge.conditions] })), scope);
+                    }
+                }
             if (!declaration) {
                 builder.diagnostic({ code: 'handler-unresolved', severity: 'warning',
                     message: `${ownerId} に ${method} の本体が無いため処理を追跡していない`,
