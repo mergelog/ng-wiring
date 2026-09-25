@@ -4,6 +4,10 @@
 
 作業ごとに commit, push すること
 
+## local固有指示
+
+AGENTS.local.mdを確認する
+
 ## その他
 
 - hoと言われたら、引き継ぎファイル x-handoff.md を作成する

@@ -27,7 +27,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-x-memo*
+x-local/
+AGENTS.local.md
 
 # Claude Code local settings
 .claude/settings.local.json
