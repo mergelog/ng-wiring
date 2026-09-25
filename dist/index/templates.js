@@ -464,9 +464,12 @@ export async function indexTemplates(context, catalog, maze) {
     return { elements, slots, byOwner, diagnostics, verifiedMazeEdges, unmatchedMazeEdges, lets, unsupported };
 }
 export function matchingElements(index, target) {
-    if (target.kind === 'attribute')
-        return index.elements.filter(element => [...element.staticAttributes].some(([name, value]) => name.toLowerCase() === target.name.toLowerCase() &&
-            value === target.value));
-    return index.elements.filter(element => path.resolve(element.span.file) === path.resolve(target.file) &&
+    const matches = target.kind === 'attribute' ? index.elements.filter(element => [...element.staticAttributes].some(([name, value]) => name.toLowerCase() === target.name.toLowerCase() &&
+        value === target.value)) : index.elements.filter(element => path.resolve(element.span.file) === path.resolve(target.file) &&
         element.span.line <= target.line && target.line <= element.span.endLine);
+    // Custom structural microsyntax duplicates the host attributes on a synthetic Template node.
+    // Keep the real element while retaining the established built-in directive candidates.
+    return matches.filter(element => !matches.some(child => child !== element && child.parent === element &&
+        element.node.constructor.name === 'Template' && child.span.start === element.span.start &&
+        element.node.templateAttrs.some(attribute => !['ngIf', 'ngFor', 'ngForOf', 'ngSwitchCase', 'ngSwitchDefault'].includes(attribute.name))));
 }

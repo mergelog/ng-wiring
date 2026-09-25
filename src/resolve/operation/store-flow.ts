@@ -18,6 +18,8 @@ export interface StoreTrace { steps: StoreStep[]; diagnostics: string[]; backgro
 export interface StoreTraceOptions { outputElement?: IndexedElement; catalog?: Catalog;
   outputUses?: ReadonlyMap<string, IndexedElement>;
   parentLayers?: InjectorLayer[]; changedInput?: string; rootArguments?: readonly ts.Expression[];
+  /** A verified MatDialogRef instance delivers its close value to this afterClosed call. */
+  afterClosedLocation?: string;
   /** The selection reaches no route, so a route provided registration can be neither confirmed nor denied. */
   routeInjectorUnknown?: boolean }
 const LIMIT = 10000;
@@ -106,7 +108,15 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
   };
   const actionFor = (expression: ts.Expression): StoreAction | undefined => {
     const callee = t.isCallExpression(expression) ? expression.expression : expression;
-    const id = tokenId(context,callee);
+    let id = tokenId(context,callee);
+    if (t.isPropertyAccessExpression(callee) && t.isIdentifier(callee.expression)) {
+      let symbol = context.checker.getSymbolAtLocation(callee.expression);
+      if (symbol && symbol.flags & t.SymbolFlags.Alias) symbol = context.checker.getAliasedSymbol(symbol);
+      const group = symbol?.valueDeclaration;
+      if (group && t.isVariableDeclaration(group) && group.initializer && t.isCallExpression(group.initializer) &&
+        (t.isIdentifier(group.initializer.expression) && group.initializer.expression.text === 'createActionGroup'))
+        id = `${tokenId(context, group.name)}:${callee.name.text}`;
+    }
     return graph.actions.find(action => action.id === id);
   };
   const selectorDependsOn = (selectorId: string, feature: string, seen = new Set<string>()): boolean => {
@@ -326,6 +336,17 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression)) {
         const callee = node.expression;
         const nextPath = [...path,location(context,node)];
+        if (callee.name.text === 'subscribe' && options.afterClosedLocation &&
+          t.isCallExpression(callee.expression) && t.isPropertyAccessExpression(callee.expression.expression) &&
+          callee.expression.expression.name.text === 'afterClosed' &&
+          location(context, callee.expression) === options.afterClosedLocation) {
+          add('reactive-link', receiver, 'MatDialogRef.afterClosed', callee.expression, nextPath,
+            [...localConditions, 'the same dialog ref emits its close value']);
+          const callback = node.arguments[0];
+          if (callback && (t.isArrowFunction(callback) || t.isFunctionExpression(callback)))
+            visit(callback.body, [...localConditions, 'afterClosed emits {confirmed: true, queue}'], level + 1);
+          return;
+        }
         if (callee.name.text === 'dispatch' && storeReceiver(context,callee.expression)) {
           let actionExpression: ts.Expression | undefined = node.arguments[0];
           if (actionExpression && (t.isArrowFunction(actionExpression) || t.isFunctionExpression(actionExpression))) {

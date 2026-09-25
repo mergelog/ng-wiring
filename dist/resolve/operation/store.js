@@ -166,6 +166,12 @@ function stringValue(context, expression, seen = new Set()) {
 function actionId(context, expression) {
     const t = context.toolchain.typescript;
     const node = t.isCallExpression(expression) ? expression.expression : expression;
+    if (t.isPropertyAccessExpression(node) && t.isIdentifier(node.expression)) {
+        const group = symbol(context, node.expression)?.valueDeclaration;
+        if (group && t.isVariableDeclaration(group) && group.initializer &&
+            t.isCallExpression(group.initializer) && callName(context, group.initializer, 'createActionGroup', 'store'))
+            return `${tokenId(context, group.name)}:${node.name.text}`;
+    }
     return tokenId(context, node);
 }
 function expressions(context, node, predicate) {
@@ -344,6 +350,19 @@ export function analyzeStore(context, catalog, inputs) {
                 if (callName(context, call, 'createAction', 'store'))
                     actions.push({ id: tokenId(context, node.name), type: stringValue(context, call.arguments[0]),
                         source: location(context, node) });
+                if (callName(context, call, 'createActionGroup', 'store') && call.arguments[0] &&
+                    t.isObjectLiteralExpression(call.arguments[0])) {
+                    const sourceName = stringValue(context, getProperty(t, call.arguments[0], 'source'));
+                    const events = getProperty(t, call.arguments[0], 'events');
+                    if (sourceName && events && t.isObjectLiteralExpression(events))
+                        for (const event of events.properties) {
+                            if (!t.isPropertyAssignment(event) || !t.isStringLiteralLike(event.name))
+                                continue;
+                            const member = event.name.text.toLowerCase().replace(/[^a-z0-9]+([a-z0-9])/g, (_match, letter) => letter.toUpperCase());
+                            actions.push({ id: `${tokenId(context, node.name)}:${member}`,
+                                type: `[${sourceName}] ${event.name.text}`, source: location(context, event) });
+                        }
+                }
                 if (callName(context, call, 'createSelector', 'store'))
                     selectors.push({ id: tokenId(context, node.name), dependencies: call.arguments.slice(0, -1).flatMap(arg => {
                             const value = [actionId(context, arg)];

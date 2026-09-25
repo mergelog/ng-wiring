@@ -452,7 +452,7 @@ const sameOwnerId = (reference: string, other: string | null | undefined): boole
  */
 function addOperations(input: OperationInput): void {
   const { analysis, builder, evidence, conditions, connect, declarationNode, relative, spanOf,
-    targetElement, targetNodeId, targetKind, placed, viewPath, dynamicCallers, options, operationIds, problems,
+    targetElement, targetNodeId, targetKind, placed, viewPath, dynamicCallers: suppliedCallers, options, operationIds, problems,
     resolvedGaps, stores } = input;
   const { context, catalog, index, routes } = analysis;
   const t = context.toolchain.typescript;
@@ -480,6 +480,81 @@ function addOperations(input: OperationInput): void {
   const displayRoute: RouteOccurrence | undefined = placed
     .map(item => item.step.routeRef && routes.byId.get(item.step.routeRef.occurrenceId))
     .find((item): item is RouteOccurrence => !!item);
+  const requiredMode = viewPath.steps.flatMap(item =>
+    [...(item.displayCondition ?? '').matchAll(/\bmode\s*===\s*['"]([^'"]+)['"]/g)].map(match => match[1]!))[0];
+  const fixedDialogMode = (call: DynamicCaller): string | null => {
+    const source = context.program.getSourceFile(path.resolve(context.workspaceRoot, call.file));
+    if (!source) return null;
+    const offset = source.getPositionOfLineAndCharacter(call.line - 1, call.column - 1);
+    let mode: string | null = null;
+    const visit = (node: ts.Node): void => {
+      if (node.getStart(source) > offset || node.getEnd() <= offset) return;
+      if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'open') {
+        const config = node.arguments[1];
+        if (config && t.isObjectLiteralExpression(config)) {
+          const data = config.properties.find(item => t.isPropertyAssignment(item) && item.name.getText(source) === 'data');
+          if (data && t.isPropertyAssignment(data) && t.isObjectLiteralExpression(data.initializer)) {
+            const field = data.initializer.properties.find(item => t.isPropertyAssignment(item) && item.name.getText(source) === 'mode');
+            if (field && t.isPropertyAssignment(field) && t.isStringLiteralLike(field.initializer)) mode = field.initializer.text;
+          }
+        }
+      }
+      t.forEachChild(node, visit);
+    };
+    visit(source);
+    return mode;
+  };
+  const dynamicCallers = suppliedCallers.filter(call => !requiredMode || !fixedDialogMode(call) ||
+    fixedDialogMode(call) === requiredMode);
+  for (const call of suppliedCallers.filter(item => !dynamicCallers.includes(item)))
+    builder.diagnostic({ code: 'dynamic-call-site-excluded', severity: 'info',
+      message: `${call.file}:${call.line} は data.mode が ${fixedDialogMode(call)} 固定で、表示条件 mode === ${requiredMode} を満たさない` });
+  const dialogResultMethod = (call: DynamicCaller): { owner: Declaration; method: string; location: string } | null => {
+    if (call.kind !== 'dialog') return null;
+    const owner = catalog.declarations.get(call.ownerId);
+    if (!owner) return null;
+    const source = context.program.getSourceFile(path.resolve(context.workspaceRoot, call.file));
+    if (!source) return null;
+    const offset = source.getPositionOfLineAndCharacter(call.line - 1, call.column - 1);
+    let open: ts.CallExpression | null = null;
+    const findOpen = (node: ts.Node): void => {
+      if (node.getStart(source) > offset || node.getEnd() <= offset) return;
+      if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'open') open = node;
+      t.forEachChild(node, findOpen);
+    };
+    findOpen(owner.node);
+    if (!open) return null;
+    const openCall = open as ts.CallExpression;
+    const variable = t.isVariableDeclaration(openCall.parent) && t.isIdentifier(openCall.parent.name)
+      ? openCall.parent.name.text : null;
+    let method: ts.MethodDeclaration | null = null;
+    for (let parent = openCall.parent; parent && parent !== owner.node; parent = parent.parent)
+      if (t.isMethodDeclaration(parent)) { method = parent; break; }
+    if (!method || !method.body) return null;
+    let delivered: ts.CallExpression | null = null;
+    const findResult = (node: ts.Node): void => {
+      if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'afterClosed') {
+        const receiver = node.expression.expression;
+        const sameRef = variable ? t.isIdentifier(receiver) && receiver.text === variable :
+          receiver === openCall;
+        if (sameRef) {
+          let ancestor: ts.Node | undefined = node.parent;
+          while (ancestor && ancestor !== method && !(
+            t.isCallExpression(ancestor) && t.isPropertyAccessExpression(ancestor.expression) &&
+            ancestor.expression.name.text === 'subscribe')) ancestor = ancestor.parent;
+          if (ancestor && ancestor !== method) delivered = node;
+        }
+      }
+      t.forEachChild(node, findResult);
+    };
+    findResult(method.body);
+    const resultCall = delivered as ts.CallExpression | null;
+    if (!resultCall) return null;
+    const point = source.getLineAndCharacterOfPosition(resultCall.getStart(source));
+    return { owner, method: method.name.getText(source),
+      location: `${call.file}:${point.line + 1}:${point.character + 1}` };
+  };
   const defaultDialogInjector = (call: DynamicCaller): boolean => {
     if (call.kind !== 'dialog') return false;
     const source = context.program.getSourceFile(path.resolve(context.workspaceRoot, call.file));
@@ -525,10 +600,44 @@ function addOperations(input: OperationInput): void {
     callerRoutes.every(list => list.length === 1) &&
     uniqueRoutes.length === 1 ? uniqueRoutes[0] : undefined;
   const routeOccurrence = displayRoute ?? callerRoute;
-  const routeBootstrapId = routeOccurrence && routes.configs.get(routeOccurrence.configId)?.bootstrapId;
+  const allCallerRoutesKnown = !!dynamicCallers.length && dynamicCallers.every(defaultDialogInjector) &&
+    callerRoutes.every(list => list.length > 0);
+  const callerBootstrapIds = [...new Set(uniqueRoutes.map(route => routes.configs.get(route.configId)?.bootstrapId))];
+  const commonCallerBootstrapId = allCallerRoutesKnown && callerBootstrapIds.length === 1
+    ? callerBootstrapIds[0] : undefined;
+  const routeBootstrapId = routeOccurrence
+    ? routes.configs.get(routeOccurrence.configId)?.bootstrapId : commonCallerBootstrapId;
   const selectedBootstrap = routeBootstrapId
     ? routes.bootstraps.find(item => item.id === routeBootstrapId)
     : dynamicCallers.length && routes.bootstraps.length !== 1 ? undefined : bootstrap;
+  const commonCallerProviders = !routeOccurrence && allCallerRoutesKnown && selectedBootstrap &&
+    uniqueRoutes.length > 1 ? uniqueRoutes.map(route =>
+      storeInputsForSelection(context, catalog, routes, selectedBootstrap, route)) : [];
+  const expandProviders = (nodes: readonly ts.Expression[], visited = new Set<ts.Node>()): ts.Expression[] => {
+    const result: ts.Expression[] = [];
+    for (const node of nodes) {
+      if (visited.has(node)) continue;
+      visited.add(node);
+      if (t.isArrayLiteralExpression(node)) {
+        result.push(...expandProviders(node.elements.filter(t.isExpression), visited));
+      } else if (t.isSpreadElement(node)) {
+        result.push(...expandProviders([node.expression], visited));
+      } else if (t.isIdentifier(node)) {
+        let symbol = context.checker.getSymbolAtLocation(node);
+        if (symbol && symbol.flags & t.SymbolFlags.Alias) symbol = context.checker.getAliasedSymbol(symbol);
+        const declaration = symbol?.valueDeclaration;
+        if (declaration && t.isVariableDeclaration(declaration) && declaration.initializer)
+          result.push(...expandProviders([declaration.initializer], visited));
+        else result.push(node);
+      } else result.push(node);
+    }
+    return result;
+  };
+  const providerKey = (node: ts.Expression): string => `${node.getSourceFile().fileName}:${node.getStart()}`;
+  const sharedRouteProviders = commonCallerProviders.length
+    ? expandProviders(commonCallerProviders[0]?.routeProviders ?? []).filter(node => commonCallerProviders.every(input =>
+      expandProviders(input.routeProviders ?? []).some(other => providerKey(other) === providerKey(node)))) : [];
+  const commonRouteContext = commonCallerProviders.length > 0;
   if (dynamicCallers.length) {
     for (const call of dynamicCallers) {
       const site = evidence.location(`${call.file}:${call.line}:${call.column}`);
@@ -537,11 +646,14 @@ function addOperations(input: OperationInput): void {
         evidenceIds: site ? [site] : [] });
     }
     if (!routeOccurrence) builder.diagnostic({ code: 'dynamic-route-context', severity: 'info',
-      message: '動的生成の呼び出し元に一意の route injector を確認できないため、route provider の接続は境界に留める',
-      stopReason: 'Dynamic caller route injector is ambiguous or unresolved' });
+      message: commonRouteContext
+        ? `複数の呼び出し元 route (${uniqueRoutes.map(route => route.pattern).join(', ')}) に共通する provider のみ接続する`
+        : '動的生成の呼び出し元 route injector を確認できないため、route provider の接続は境界に留める',
+      ...(commonRouteContext ? {} : { stopReason: 'Dynamic caller route injector is ambiguous or unresolved' }) });
   }
   const storeInputs = selectedBootstrap ? storeInputsForSelection(context, catalog, routes, selectedBootstrap, routeOccurrence)
     : { rootProviders: [], routeProviders: [] };
+  if (commonRouteContext) storeInputs.routeProviders = sharedRouteProviders;
   const storeGraph: StoreGraph = analyzeStore(context, catalog, storeInputs);
   const layers: InjectorLayer[] = selfOwner
     ? componentInjectorLayers(selfOwner, owners.filter(item => item !== selfOwner), storeInputs.rootProviders,
@@ -737,8 +849,8 @@ function addOperations(input: OperationInput): void {
         const at = evidence.offsetOf(location);
         return !!at && at.file === range.file && at.offset >= range.start && at.offset < range.end;
       };
-      const callConditions = callerRoute && !displayRoute
-        ? [`route ${callerRoute.pattern} is active`,
+      const callConditions = (callerRoute || commonRouteContext) && !displayRoute
+        ? [`route ${uniqueRoutes.map(route => route.pattern).join(' or ')} is active`,
           `one of ${dynamicCallers.length} verified dialog creation calls executes`]
         : [];
       const scope = { nodes: scopeNodes, edges: scopeEdges, conditions: [...listenerConditions, ...callConditions] };
@@ -748,7 +860,7 @@ function addOperations(input: OperationInput): void {
         ? action.expression.arguments : [];
       const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers,
         { outputElement: selectedUse ?? targetElement, outputUses, catalog, parentLayers: layers, rootArguments,
-          routeInjectorUnknown: !routeOccurrence });
+          routeInjectorUnknown: !routeOccurrence && !commonRouteContext });
       const outputTypes = new Map<string, string>();
       for (const member of owner.node.members) {
         if (!t.isPropertyDeclaration(member) || !member.initializer || !t.isCallExpression(member.initializer) ||
@@ -802,6 +914,68 @@ function addOperations(input: OperationInput): void {
         storeMemberFor, memberClassFor });
       materialize(reconcile(storeTraceEdges(storeTrace), ownerId), scope);
       materialize(reconcile(httpTraceEdges(httpTrace), ownerId), scope);
+      // MatDialogRef.close delivers its value only to the afterClosed stream of this
+      // particular open() result. Keep each call site's effects in its own route context.
+      const closesWithConfirmation = (): boolean => {
+        if (rootArguments[0]?.kind !== t.SyntaxKind.TrueKeyword || !declaration) return false;
+        const parameter = declaration.parameters[0]?.name.getText();
+        let confirmed = false;
+        const scan = (node: ts.Node): void => {
+          if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
+            node.expression.name.text === 'close' && node.arguments[0] &&
+            t.isObjectLiteralExpression(node.arguments[0])) {
+            const receiverType = context.checker.getTypeAtLocation(node.expression.expression).getSymbol();
+            if (receiverType?.getName() !== 'MatDialogRef' || !receiverType.declarations?.some(item =>
+              item.getSourceFile().fileName.replaceAll('\\', '/').includes('/node_modules/@angular/material/'))) return;
+            const field = node.arguments[0].properties.find(item =>
+              t.isPropertyAssignment(item) && item.name.getText() === 'confirmed' ||
+              t.isShorthandPropertyAssignment(item) && item.name.text === 'confirmed');
+            if (field && (t.isShorthandPropertyAssignment(field) && parameter === 'confirmed' ||
+              t.isPropertyAssignment(field) && (field.initializer.kind === t.SyntaxKind.TrueKeyword ||
+                field.initializer.getText() === parameter))) confirmed = true;
+          }
+          t.forEachChild(node, scan);
+        };
+        scan(declaration.body!);
+        return confirmed;
+      };
+      if (closesWithConfirmation()) for (const call of dynamicCallers) {
+        const result = dialogResultMethod(call);
+        if (!result) continue;
+        const branchRoutes = routesForCaller(call.ownerId);
+        const branchRoute = branchRoutes.length === 1 ? branchRoutes[0] : undefined;
+        const branchBootstrapId = branchRoute && routes.configs.get(branchRoute.configId)?.bootstrapId;
+        const branchBootstrap = routes.bootstraps.find(item => item.id === branchBootstrapId) ?? selectedBootstrap;
+        const branchInputs = branchBootstrap
+          ? storeInputsForSelection(context, catalog, routes, branchBootstrap, branchRoute)
+          : { rootProviders: [], routeProviders: [] };
+        const branchGraph = analyzeStore(context, catalog, branchInputs);
+        const branchLayers = componentInjectorLayers(result.owner, [], branchInputs.rootProviders,
+          branchInputs.routeProviders);
+        const uses = index.elements.filter(item => item.component === result.owner.id);
+        const branchScope = { nodes: scope.nodes, edges: scope.edges,
+          conditions: [...scope.conditions, `MatDialogRef.close({confirmed: true}) reaches ${result.location} afterClosed()`,
+            `dialog opened at ${call.file}:${call.line}`,
+            ...(branchRoute ? [`route ${branchRoute.pattern} is active`] : [])] };
+        const branchTrace = traceStoreDispatch(context, branchGraph, result.owner, result.method, branchLayers,
+          { outputElement: uses.length === 1 ? uses[0] : undefined,
+            outputUses: new Map(uses.length === 1 ? [[result.owner.id, uses[0]!]] : []),
+            catalog, parentLayers: branchLayers, routeInjectorUnknown: !branchRoute && branchRoutes.length > 1,
+            afterClosedLocation: result.location });
+        materialize(operationTraceEdges(traceOperation(context, result.owner, result.method), result.owner.id,
+          new Map()),
+          branchScope);
+        materialize(storeTraceEdges(branchTrace), branchScope);
+        for (const consumed of branchTrace.steps.filter(item => item.kind === 'action-consume')) {
+          const effect = branchGraph.effects.find(item => item.id === consumed.target);
+          if (!effect) continue;
+          const effectHttp = traceHttpFromEffect(context, httpCatalog, effect,
+            { catalog, store: branchGraph, methods, stores, layers: branchLayers }, consumed.conditions);
+          materialize(httpTraceEdges(effectHttp), branchScope);
+        }
+        builder.diagnostic({ code: 'dialog-result-delivery', severity: 'info',
+          message: `${call.file}:${call.line} の MatDialogRef.close({confirmed: true}) が ${result.location} の afterClosed() に届く` });
+      }
       // A write to a member bound to a sibling component input can trigger that component's
       // ngOnChanges on a later change-detection pass. It is a separate branch from calls in the
       // current handler; in particular, an immediate jump does not use the recalculated list yet.

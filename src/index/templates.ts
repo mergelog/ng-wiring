@@ -465,9 +465,15 @@ export async function indexTemplates(context: AnalysisContext, catalog: Catalog,
 
 export function matchingElements(index: TemplateIndex, target: { kind: 'attribute'; name: string; value: string } |
   { kind: 'source'; file: string; line: number }): IndexedElement[] {
-  if (target.kind === 'attribute') return index.elements.filter(element =>
+  const matches = target.kind === 'attribute' ? index.elements.filter(element =>
     [...element.staticAttributes].some(([name, value]) => name.toLowerCase() === target.name.toLowerCase() &&
-      value === target.value));
-  return index.elements.filter(element => path.resolve(element.span.file) === path.resolve(target.file) &&
+      value === target.value)) : index.elements.filter(element =>
+    path.resolve(element.span.file) === path.resolve(target.file) &&
     element.span.line <= target.line && target.line <= element.span.endLine);
+  // Custom structural microsyntax duplicates the host attributes on a synthetic Template node.
+  // Keep the real element while retaining the established built-in directive candidates.
+  return matches.filter(element => !matches.some(child => child !== element && child.parent === element &&
+    element.node.constructor.name === 'Template' && child.span.start === element.span.start &&
+    (element.node as TmplAstTemplate).templateAttrs.some(attribute =>
+      !['ngIf', 'ngFor', 'ngForOf', 'ngSwitchCase', 'ngSwitchDefault'].includes(attribute.name))));
 }
