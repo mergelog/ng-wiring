@@ -1,4 +1,4 @@
-import { unwrap } from '../../index/catalog.js';
+import { classAt, idForClass, unwrap } from '../../index/catalog.js';
 import { resolveElementBindings } from './bindings.js';
 import { importedApi, location } from './reactive.js';
 import { traceOperation } from './flow.js';
@@ -252,6 +252,10 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                     visit(node.elseStatement, [...localConditions, `else of ${node.expression.getText()}`], level);
                 return;
             }
+            if (t.isBinaryExpression(node) && node.operatorToken.kind === t.SyntaxKind.EqualsToken &&
+                t.isPropertyAccessExpression(node.left) && node.left.expression.kind === t.SyntaxKind.ThisKeyword) {
+                add('state-write', receiver, node.left.name.text, node, path, localConditions, node.right.getText());
+            }
             if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression)) {
                 const callee = node.expression;
                 const nextPath = [...path, location(context, node)];
@@ -280,8 +284,27 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                     return;
                 }
                 if (callee.name.text === 'emit' && receiverFiles.some(file => file.includes('/node_modules/@angular/core/'))) {
-                    add('output-emit', receiver, callee.expression.getText(), node, nextPath, localConditions, 'Angular output delivery depends on its registered listeners');
+                    add('output-emit', receiver, callee.expression.getText(), node, nextPath, localConditions, node.arguments[0]?.getText() ?? null);
                     return;
+                }
+                if (t.isCallExpression(callee.expression) && t.isPropertyAccessExpression(callee.expression.expression) &&
+                    callee.expression.expression.expression.kind === t.SyntaxKind.ThisKeyword) {
+                    const fieldName = callee.expression.expression.name.text;
+                    const declaration = method.parent;
+                    const field = t.isClassDeclaration(declaration) ? declaration.members.find(member => t.isPropertyDeclaration(member) && member.name.getText() === fieldName) : null;
+                    const initializer = field && t.isPropertyDeclaration(field) ? field.initializer : null;
+                    if (initializer && t.isCallExpression(initializer) && t.isIdentifier(initializer.expression) &&
+                        ['viewChild', 'viewChildren'].includes(initializer.expression.text) && initializer.arguments[0]) {
+                        const targetClass = classAt(context, initializer.arguments[0]);
+                        const target = targetClass?.members.find(member => t.isMethodDeclaration(member) &&
+                            member.name.getText() === callee.name.text);
+                        const targetId = targetClass && idForClass(context, targetClass);
+                        if (target && t.isMethodDeclaration(target) && targetId) {
+                            add('call', receiver, `${targetId}.${callee.name.text}`, node, nextPath, localConditions, `viewChild ${fieldName} must resolve to its declared component instance`);
+                            visitMethod(target, targetId, nextPath, [...localConditions, `viewChild ${fieldName} must resolve to its declared component instance`], level + 1, node, node.arguments, currentLayers);
+                            return;
+                        }
+                    }
                 }
                 if (callee.expression.kind === t.SyntaxKind.ThisKeyword) {
                     const declaration = method.parent;
@@ -410,7 +433,7 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                             continue;
                         }
                         const conditions = [...emitted.conditions, ...relation.conditions];
-                        add('output-emit', owner.id, `${element.owner.id}.${name}`, root, emitted.path, conditions, 'component output reaches the selected template subscription');
+                        add('output-subscription', `${owner.id}.${emitted.target}`, `${element.owner.id}.${name}`, parentMethod, emitted.path, conditions, 'component output reaches the selected template subscription');
                         visitMethod(parentMethod, element.owner.id, [...emitted.path, location(context, parentMethod)], conditions, 1, parentMethod, [], options.parentLayers ?? []);
                     }
                 }

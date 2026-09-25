@@ -193,6 +193,7 @@ export function traceOperation(context: AnalysisContext, owner: Declaration, met
               let stopped = false;
               let timing: OperationStep['timing'] = 'subscription';
               const pipelineConditions = [...baseConditions];
+              let previous = target;
               for (const [index, operator] of registration.operators.entries()) {
                 if (operator.boundary || !operator.semantics) {
                   add('boundary', target, operator.name, node, [...registrationPath, operator.location], 'unknown',
@@ -201,8 +202,14 @@ export function traceOperation(context: AnalysisContext, owner: Declaration, met
                 }
                 timing = operator.semantics.timing;
                 pipelineConditions.push(...operator.semantics.conditions);
-                add('reactive-link', target, operator.name, node, [...registrationPath, operator.location], timing,
-                  pipelineConditions, operator.semantics.mode);
+                const operatorCall = registration.operatorCalls[index];
+                if (operator.api?.name === 'filter' && operatorCall?.arguments[0])
+                  pipelineConditions.push(`filter requires ${operatorCall.arguments[0].getText()}`);
+                if (operator.api?.name === 'debounce' && operatorCall?.arguments[0])
+                  pipelineConditions.push(`debounce duration is ${operatorCall.arguments[0].getText()}`);
+                add('reactive-link', previous, operator.name, operatorCall ?? node,
+                  [...registrationPath, operator.location], timing, pipelineConditions, operator.semantics.mode);
+                previous = operator.name;
                 const callbackArgs = registration.operatorCalls[index]?.arguments ?? [];
                 for (const [callbackIndex, callback] of callbackArgs.entries()) {
                   const callbackConditions = [...pipelineConditions];

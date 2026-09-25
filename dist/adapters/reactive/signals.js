@@ -129,6 +129,7 @@ export function analyzeSignals(context, files) {
     const effects = [];
     const diagnostics = [];
     const byDeclaration = new Map();
+    const callsByLocation = new Map();
     const targets = files ?? context.sourceFiles.map(name => context.program.getSourceFile(name))
         .filter((file) => !!file);
     const frameworks = {
@@ -144,6 +145,7 @@ export function analyzeSignals(context, files) {
         walk(file, node => {
             if (!t.isCallExpression(node))
                 return;
+            callsByLocation.set(location(context, node), node);
             const callee = t.isPropertyAccessExpression(node.expression) ? node.expression.name : node.expression;
             const matched = matchIdentifier(context, callee, ['function', 'member']);
             const matcher = matched?.capability.matcherId ??
@@ -269,25 +271,27 @@ export function analyzeSignals(context, files) {
                     expression: node.expression.getText(), tracking, reason, location: location(context, node) });
             }
         });
-    const callAt = (place) => {
-        for (const file of targets) {
-            let found;
-            walk(file, child => { if (!found && t.isCallExpression(child) && location(context, child) === place)
-                found = child; });
-            if (found)
-                return found;
-        }
-        return undefined;
-    };
+    const destroyed = new Map();
+    for (const node of callsByLocation.values()) {
+        if (!t.isPropertyAccessExpression(node.expression) || node.expression.name.text !== 'destroy')
+            continue;
+        const target = node.expression.expression;
+        const receiverType = context.checker.getTypeAtLocation(target).getSymbol();
+        if (receiverType?.getName() !== 'EffectRef')
+            continue;
+        const declaration = symbolOf(context, t.isPropertyAccessExpression(target) ? target.name : target)?.valueDeclaration;
+        if (declaration)
+            destroyed.set(declaration, [...(destroyed.get(declaration) ?? []), location(context, node)]);
+    }
     // Only the tracked reads inside the callback become the effect's re-execution dependencies.
     for (const effect of effects) {
-        const node = callAt(effect.location);
+        const node = callsByLocation.get(effect.location);
         if (!node)
             continue;
         effect.reads = reads.filter(read => {
             if (read.tracking !== 'tracked')
                 return false;
-            const target = callAt(read.location);
+            const target = callsByLocation.get(read.location);
             return !!target && target.getStart() >= node.getStart() && target.getEnd() <= node.getEnd();
         }).map(read => read.id);
         const callback = node.arguments[0];
@@ -303,20 +307,7 @@ export function analyzeSignals(context, files) {
             ? node.parent : null;
         if (!holder)
             continue;
-        for (const file of targets)
-            walk(file, child => {
-                if (!t.isCallExpression(child) || !t.isPropertyAccessExpression(child.expression))
-                    return;
-                if (child.expression.name.text !== 'destroy')
-                    return;
-                const target = child.expression.expression;
-                const receiverType = context.checker.getTypeAtLocation(target).getSymbol();
-                if (receiverType?.getName() !== 'EffectRef')
-                    return;
-                const declaration = symbolOf(context, t.isPropertyAccessExpression(target) ? target.name : target)?.valueDeclaration;
-                if (declaration === holder)
-                    effect.destroys.push(location(context, child));
-            });
+        effect.destroys.push(...(destroyed.get(holder) ?? []));
     }
     return { sources, reads, writes, links, effects, diagnostics };
 }

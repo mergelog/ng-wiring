@@ -1,5 +1,6 @@
 import type { StoreTrace } from '../resolve/operation/store-flow.js';
 import type { HttpTrace } from '../resolve/operation/http-flow.js';
+import type { OperationTrace } from '../resolve/operation/flow.js';
 import type { ReactiveStep } from '../adapters/reactive/model.js';
 import { detail, edgeContracts, unresolvedDetail, type DetailField, type EdgeKind, type NodeKind } from '../model/types.js';
 
@@ -41,6 +42,40 @@ function traced(input: Omit<TracedEdge, 'details'> & { details: Record<string, D
   return { ...input, details: completeDetails(input.kind, input.details) };
 }
 
+/** The live RxJS pipeline reached by Subject.next, including its operator sites and emitted values. */
+export function operationTraceEdges(trace: OperationTrace, ownerId: string,
+  outputTypes: ReadonlyMap<string, string>): TracedEdge[] {
+  const edges: TracedEdge[] = [];
+  let previous: TracedEnd | null = null;
+  for (const step of trace.steps) {
+    const conditions = [...step.conditions];
+    if (step.kind === 'subscription') {
+      const source = end('state', `${ownerId}.${step.source}`, step.source);
+      previous = end('symbol', `${ownerId}.${step.target}@${step.path.at(-1)}`, step.target);
+      edges.push(traced({ kind: 'reactive-link', from: source, to: previous,
+        location: step.path.at(-1) ?? step.location, conditions,
+        capability: 'rxjs/subscribe', details: { source: detail(step.source),
+          consumer: detail(step.target), operator: detail('subscribe'), scheduling: detail('subscription') } }));
+    } else if (step.kind === 'reactive-link') {
+      const target = end('symbol', `${ownerId}.${step.target}@${step.location}`, step.target);
+      const from = step.target !== 'timer' && previous
+        ? previous : end('symbol', `${ownerId}.${step.source}`, step.source);
+      edges.push(traced({ kind: 'reactive-link', from, to: target, location: step.location, conditions,
+        capability: `rxjs/${step.target}`, details: { source: detail(step.source), consumer: detail(step.target),
+          operator: detail(step.target), scheduling: detail(step.timing) } }));
+      if (step.target !== 'timer') previous = target;
+    } else if (step.kind === 'output-emit') {
+      edges.push(traced({ kind: 'output-emit',
+        from: end('symbol', `${ownerId}.${step.source}`, step.source),
+        to: end('event', `${ownerId}.${step.target}`, step.target), location: step.location, conditions,
+        capability: 'angular/output', details: { output: detail(step.target),
+          valueExpression: known(step.detail, '送出値の式を確定できていない'),
+          declaredType: known(outputTypes.get(step.target), '宣言型を確定できていない') } }));
+    }
+  }
+  return edges;
+}
+
 /** §7.4 the NgRx trace. Every step keeps the direction cause to receiver that §5 stores. */
 export function storeTraceEdges(trace: StoreTrace): TracedEdge[] {
   const edges: TracedEdge[] = [];
@@ -57,6 +92,11 @@ export function storeTraceEdges(trace: StoreTrace): TracedEdge[] {
           details: { output: detail(step.target),
             valueExpression: known(step.detail, '送出値の式は trace に記録されていない'),
             declaredType: unresolvedDetail('宣言型は NgRx trace が記録していない') } }));
+        break;
+      case 'output-subscription':
+        edges.push(traced({ ...common, kind: 'output-subscription', from: end('event', step.source),
+          to: end('symbol', step.target), details: { output: detail(step.source),
+            subscriber: detail(step.target) } }));
         break;
       case 'action-dispatch':
         edges.push(traced({ ...common, kind: 'action-dispatch', from: end('symbol', step.source), to: end('action', step.target),

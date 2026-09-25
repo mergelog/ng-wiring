@@ -4,7 +4,7 @@ import type { Catalog } from '../../index/catalog.js';
 import type { IndexedElement } from '../../index/templates.js';
 import { type InjectorLayer } from './di.js';
 import type { StoreGraph } from './store.js';
-export type StoreStepKind = 'call' | 'output-emit' | 'action-dispatch' | 'action-consume' | 'state-write' | 'state-read' | 'reactive-link' | 'boundary';
+export type StoreStepKind = 'call' | 'output-emit' | 'output-subscription' | 'action-dispatch' | 'action-consume' | 'state-write' | 'state-read' | 'reactive-link' | 'boundary';
 export interface StoreStep {
     kind: StoreStepKind;
     source: string;

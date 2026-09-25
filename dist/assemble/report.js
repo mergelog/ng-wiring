@@ -3,6 +3,7 @@ import { resolveEventListeners } from '../resolve/operation/events.js';
 import { componentInjectorLayers } from '../resolve/operation/di.js';
 import { analyzeStore, storeInputsForSelection } from '../resolve/operation/store.js';
 import { traceStoreDispatch } from '../resolve/operation/store-flow.js';
+import { traceOperation } from '../resolve/operation/flow.js';
 import { analyzeHttp } from '../resolve/operation/http.js';
 import { traceHttpFromMethod } from '../resolve/operation/http-flow.js';
 import { resolveElementBindings } from '../resolve/operation/bindings.js';
@@ -21,8 +22,19 @@ import { detail, edgeContracts, unresolvedDetail } from '../model/types.js';
 import { SourceEvidence } from './evidence.js';
 import { downwardEdgeKind, placeSteps } from './view-path.js';
 import { findPatchStateCalls, templateReads } from './reactive-calls.js';
-import { completeDetails, httpTraceEdges, reactiveStepEdges, storeTraceEdges } from './steps.js';
-const handlerMethod = (handler) => /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\(/.exec(handler)?.[1] ?? null;
+import { completeDetails, httpTraceEdges, operationTraceEdges, reactiveStepEdges, storeTraceEdges } from './steps.js';
+const handlerMethod = (handler, inputs) => {
+    const direct = /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*$/.exec(handler);
+    if (direct)
+        return direct[1];
+    // An input signal used as a simple template ternary can be decided only at this component use.
+    // Other expressions remain unresolved; guessing one arm would claim an operation that may not run.
+    const branch = /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\(\)\s*\?\s*(?:this\.)?([A-Za-z_$][\w$]*)\([^)]*\)\s*:\s*(?:this\.)?([A-Za-z_$][\w$]*)\([^)]*\)\s*$/.exec(handler);
+    if (!branch)
+        return null;
+    const value = inputs.get(branch[1]);
+    return value === 'true' ? branch[2] : value === 'false' ? branch[3] : null;
+};
 const allowed = (kind, from, to) => edgeContracts[kind].from.includes(from) && edgeContracts[kind].to.includes(to);
 /**
  * §5 the assembly: the analysis layers are normalized into the one model both renderers read. Nothing
@@ -394,6 +406,19 @@ function addOperations(input) {
     const owners = placed.map(item => catalog.declarations.get(item.step.ownerId))
         .filter((item) => !!item);
     const selfOwner = catalog.declarations.get(targetElement.owner.id) ?? owners[0];
+    const selectedUse = placed.find(item => item.element?.component === selfOwner?.id &&
+        item.element.owner.id !== selfOwner.id)?.element;
+    const contextualInputs = new Map();
+    for (const item of placed) {
+        if (item.element?.component !== selfOwner?.id)
+            continue;
+        for (const binding of resolveElementBindings(item.element, context, catalog).relations) {
+            if (binding.kind === 'input-binding' && binding.targetId === selfOwner.id &&
+                (binding.expression === 'true' || binding.expression === 'false')) {
+                contextualInputs.set(binding.member ?? binding.alias, binding.expression);
+            }
+        }
+    }
     const bootstrap = routes.bootstraps.find(item => placed.some(step => step.step.relation === 'bootstrap' && step.step.ownerId === item.id))
         ?? routes.bootstraps[0];
     const routeOccurrence = placed
@@ -599,7 +624,7 @@ function addOperations(input) {
             if (propagated)
                 scopeEdges.push(propagated);
         }
-        const method = handlerMethod(listener.handler);
+        const method = handlerMethod(listener.handler, contextualInputs);
         const owner = catalog.declarations.get(ownerId);
         if (method && owner) {
             const declaration = owner.node.members.find(member => t.isMethodDeclaration(member) &&
@@ -613,7 +638,19 @@ function addOperations(input) {
                 return !!at && at.file === range.file && at.offset >= range.start && at.offset < range.end;
             };
             const scope = { nodes: scopeNodes, edges: scopeEdges };
-            const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers, { outputElement: targetElement, catalog });
+            const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers, { outputElement: selectedUse ?? targetElement, catalog, parentLayers: layers });
+            const outputTypes = new Map();
+            for (const member of owner.node.members) {
+                if (!t.isPropertyDeclaration(member) || !member.initializer || !t.isCallExpression(member.initializer) ||
+                    !t.isIdentifier(member.name))
+                    continue;
+                if (!owner.outputs.has(member.name.text))
+                    continue;
+                const declared = member.initializer.typeArguments?.[0]?.getText();
+                if (declared)
+                    outputTypes.set(member.name.text, declared);
+            }
+            materialize(operationTraceEdges(traceOperation(context, owner, method), ownerId, outputTypes), scope);
             const httpTrace = traceHttpFromMethod(context, httpCatalog, owner, method, { catalog, store: storeGraph, methods, stores, layers });
             // Store methods this operation actually entered. Only a call on a resolved receiver counts: the
             // handler's own name must not stand in for a Store member that happens to share it.

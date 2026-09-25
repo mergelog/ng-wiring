@@ -59,7 +59,7 @@ export const edgeContracts: Readonly<Record<EdgeKind, EdgeContract>> = {
   'dom-listener': { from: ['element', 'component', 'directive'], to: ['listener'], details: ['event', 'selected', 'listener', 'handler'] },
   'event-propagation': { from: ['element', 'component'], to: ['element', 'component'], details: ['event', 'fromElement', 'toElement', 'phase'] },
   'input-binding': { from: ['component', 'element', 'template'], to: ['component', 'directive', 'symbol'], details: ['expression', 'owner', 'input'] },
-  'output-subscription': { from: ['component', 'directive', 'element', 'symbol'], to: ['component', 'listener', 'symbol', 'operation'], details: ['output', 'subscriber'] },
+  'output-subscription': { from: ['component', 'directive', 'element', 'symbol', 'event'], to: ['component', 'listener', 'symbol', 'operation'], details: ['output', 'subscriber'] },
   'output-emit': { from: producer, to: ['event', 'symbol'], details: ['output', 'valueExpression', 'declaredType'] },
   call: { from: producer, to: ['symbol', 'operation', 'service', 'effect'], details: ['caller', 'callee', 'arguments'] },
   'value-flow': { from: ['symbol', 'operation', 'state', 'http', 'event', 'action'], to: ['symbol', 'operation', 'state', 'http', 'element', 'component'], details: ['valueExpression', 'destination'] },

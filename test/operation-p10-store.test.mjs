@@ -410,7 +410,8 @@ export class Root {store=inject(Store); onDone(){this.store.dispatch(action());}
   const index=await indexTemplates(context,catalog);
   const element=matchingElements(index,{kind:'attribute',name:'data-id',value:'child'})[0];
   const trace=traceStoreDispatch(context,graph,child,'run',[],{outputElement:element,catalog});
-  assert(trace.steps.some(s=>s.kind==='output-emit'&&s.detail?.includes('template subscription')));
+  assert(trace.steps.some(s=>s.kind==='output-emit'&&s.target==='this.done'));
+  assert(trace.steps.some(s=>s.kind==='output-subscription'&&s.detail?.includes('template subscription')));
   assert(trace.steps.some(s=>s.kind==='action-dispatch'&&s.target.endsWith(':action')));
 }));
 
