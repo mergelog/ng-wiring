@@ -18,6 +18,43 @@
 
 着手順の目安は、生成 Store の member 解決（R05/R06）→ method 本体と相互運用（R08/R04/R07/R15）→ NgRx の action/selector（R09/R10）→ scope 演算子（R14）。独立した項目は並行して進められる。
 
+## シンプル出力を普段使いする場合の優先度
+
+優先度は**シンプル出力への利用価値**で並べたもので、実装の依存順ではない。現行の [`src/render/simple.ts`](src/render/simple.ts) は表示経路と、選択操作の listener・output・dispatch・Effect・HTTP を主に行として出す。state の read/write、購読条件、feature 構成、`dispatchMode` などは、そのままでは行に出ない。P1 でも、解析後に該当する辺が選択操作へつながることが条件であり、表示改善を保証する順位ではない。
+
+| 優先 | 契約 | シンプル出力への効果 | 補足情報としての価値 |
+| --- | --- | --- | --- |
+| P1 | R09/Store.dispatch.action-object | action object の dispatch 行を出せる | どの action が送られたかを特定できる |
+| P1 | R09/createActionGroup | group の action の dispatch 行を出せる | 同じ group の別 action と受信先を区別できる |
+| P1 | R10/Store.next | Store の送信行を出せる | 通常の `Subject.next` と区別できる |
+| P1 | R08/rxMethod.value | method 内の HTTP まで届けば通信行を出せる | 値を渡した呼出しが起点と分かる |
+| P1 | R08/rxMethod.signal | method 内の HTTP まで届けば通信行を出せる | Signal 変化で再実行する条件が分かる |
+| P1 | R08/rxMethod.observable | method 内の HTTP まで届けば通信行を出せる | 購読による再実行の条件が分かる |
+| P2 | R15/settings-store | API に届けば通信行の候補になるが、現行表示は主経路の要求を一つ選ぶ | `forkJoin` の複数要求と state 更新の関係を説明できる |
+| P2 | R09/Store.select | 現行表示に read 行はない | 生きた購読から後続の write/dispatch への関係を説明できる |
+| P2 | R09/createFeature | dispatch は表示されても、reducer の state 更新は行に出ない | 選択中の表示がどの更新で変わるか説明できる |
+| P2 | R05/signalStore.class-extends | Store method が state につながっても行には出ない | 継承先の method で追跡が止まる理由を減らせる |
+| P2 | R05/withFeature | feature の派生 state は行に出ない | `shouted` がどの state に依存するか説明できる |
+| P2 | R08/signalMethod.value | state 更新だけでは新しい行は出ない | 値引数で実行した method と更新を結べる |
+| P2 | R08/signalMethod.signal | state 更新だけでは新しい行は出ない | Signal 変化と再実行の関係を説明できる |
+| P2 | R06/withComputed | 派生 state は行に出ない | 表示値の計算元を説明できる |
+| P2 | R06/withLinkedState | 再計算・write は行に出ない | 表示値の由来と明示更新を区別できる |
+| P2 | R04/toSignal | 購読・表示値の変化は行に出ない | Observable から表示値への橋渡しを説明できる |
+| P2 | R04/toObservable | 変換・通知は行に出ない | state write 後の通知条件を説明できる |
+| P2 | R07/watchState | state の監視は行に出ない | 初回通知と更新通知を区別できる |
+| P2 | R07/deepComputed | 深い派生 state は行に出ない | 表示値の依存と深い mutation の非通知を説明できる |
+| P2 | R15/rxjs.of | Observable の生成は行に出ない | 定数値から state への経路を説明できる |
+| P2 | R15/rxjs.from | Observable への変換は行に出ない | Promise/配列から state への経路を説明できる |
+| P2 | R15/rxjs.distinctUntilChanged | 演算子の通過条件は行に出ない | 同値通知が抑制される条件を説明できる |
+| P2 | R14/mapToScope | Events の scope 変更は行に出ない | どの handler が受信し得るかを区別できる |
+| P2 | R05/signalStore.provider-instance | インスタンス識別は行に出ない | 別 provider の state を誤接続しない根拠になる |
+| P3 | R10/Store.dispatch.thunk | dispatch 行は現状でも出るが、登録形態は表示されない | 再 dispatch の条件は詳細出力向け |
+| P3 | R10/Store.dispatch.thunk-injector | 明示 injector は行に出ない | 登録先と生存期間は詳細出力向け |
+| P3 | R06/withHooks | 起動・破棄条件は行に出ない | Store の生存期間は詳細出力向け |
+| P3 | R08/signalMethod.no-observable | 新しい経路を追加しない反例 | 誤った Observable 対応を防ぐ検証向け |
+
+P2 の情報をシンプル出力に追加する場合は、**選択操作から表示または通信への因果関係を説明する行だけ**を対象にする。action 定義や feature 名を一律に付け足すことは完了条件にしない。P1 は各再現先でシンプル出力の行も確認し、P2/P3 はまず詳細・JSON の意味モデルと反例を検証する。
+
 ## 実装チェックリスト（28 件）
 
 `再現:` は `test/fixtures/<名前>` の `target`。各行の期待は台帳から要約したもので、厳密な契約は台帳と設計表を参照する。
