@@ -58,6 +58,28 @@ test('candidate identity is stable, numeric positions sort numerically and filte
   assert.match(formatCandidateList([a]), /\[declaration\]/);
 });
 
+test('candidate list exposes route and parent path when the target location is shared', () => {
+  const base = candidate(726, 'src/inline-edit.ts#InlineEditComponent');
+  const bootstrapId = 'app:src/main.ts#10';
+  const makeChoice = (parent, use) => makeCandidate({ ...base.tuple,
+    usages: [{ path: `src/${use}.html`, line: 5, column: 1, offset: 0 }], bootstrapId,
+  }, { snapshotId: 'snapshot', class: 'bootstrap',
+    parentIds: [base.tuple.ownerId, `src/${parent}.ts#${parent}`, 'src/app.ts#AppComponent', bootstrapId],
+    routePattern: '/settings/profile', events: [], partialReasons: [] });
+  const profile = makeChoice('ProfileNameComponent', 'profile');
+  const account = makeChoice('AccountNameComponent', 'account');
+  const list = formatCandidateList([profile, account]);
+  assert.match(list, /1\. \[bootstrap\] route: \/settings\/profile/);
+  assert.match(list, /path: AppComponent -> ProfileNameComponent -> InlineEditComponent/);
+  assert.match(list, /path: AppComponent -> AccountNameComponent -> InlineEditComponent/);
+  assert.match(list, /use: src\/profile\.html:5/);
+  assert.match(list, /use: src\/account\.html:5/);
+  assert.match(list, /target: src\/owner\.html \(offset 726\); ID: cand:[0-9a-f]{64}/);
+  assert(!list.includes('-> 10'), 'bootstrap position is not a component name');
+  assert.match(formatCandidateList([{ ...base, routePattern: null, tuple: { ...base.tuple, usages: [] } }]),
+    /route: \(none\)[\s\S]*use: \(none\)/);
+});
+
 function capturedIo() {
   let stdout = '', stderr = '';
   const sink = (set) => new Writable({ write(chunk, _encoding, done) { set(chunk.toString()); done(); } });

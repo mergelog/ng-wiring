@@ -112,7 +112,20 @@ export function selectCandidate(candidates, selector) {
     return item;
 }
 export function formatCandidateList(candidates, truncated = false) {
-    const lines = candidates.map((c, i) => `${i + 1}. ${c.id} [${c.class}] ${c.tuple.ownerId} ${c.tuple.element.path}:${c.tuple.element.start}`);
+    const lines = candidates.flatMap((candidate, index) => {
+        const componentIds = candidate.parentIds.filter(id => id !== candidate.tuple.bootstrapId);
+        const chain = (componentIds.length ? componentIds : [candidate.tuple.ownerId])
+            .map(id => id.slice(id.lastIndexOf('#') + 1)).reverse().join(' -> ');
+        const usages = candidate.tuple.usages.length
+            ? candidate.tuple.usages.map(site => `${site.path}:${site.line}`).join(', ')
+            : '(none)';
+        return [
+            `${index + 1}. [${candidate.class}] route: ${candidate.routePattern ?? '(none)'}`,
+            `   path: ${chain}`,
+            `   use: ${usages}`,
+            `   target: ${candidate.tuple.element.path} (offset ${candidate.tuple.element.start}); ID: ${candidate.id}`,
+        ];
+    });
     if (truncated)
         lines.push('Candidate enumeration was truncated. Narrow with --through, --route, or --project.');
     return lines.join('\n');
