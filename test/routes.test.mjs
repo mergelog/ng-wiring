@@ -290,3 +290,34 @@ test('NgModule bootstrap resolves RouterModule.forRoot and the declared bootstra
     assert.equal(resolve('mod-root').paths[0].end, 'bootstrap');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('a local application config factory connects its lazy route to the selected bootstrap', async () => {
+  const { root, context, catalog, index } = await workspace({
+    'src/main.ts': "import {bootstrapApplication} from '@angular/platform-browser'; import {AppRoot} from './root'; import {getAppConfig} from './config';\n" +
+      'bootstrapApplication(AppRoot, getAppConfig({baseHref: "/"}));\n',
+    'src/config.ts': "import {provideRouter} from '@angular/router'; import {routes} from './top.routes';\n" +
+      'export function getAppConfig(environment: {baseHref: string}) { return {providers: [provideRouter(routes), {provide: "base", useValue: environment.baseHref}]}; }\n',
+    'src/root.ts': component('app-root', 'AppRoot', '<router-outlet></router-outlet>',
+      " import {RouterOutlet} from '@angular/router';"),
+    'src/shell.ts': component('app-shell', 'Shell', '<router-outlet></router-outlet>',
+      " import {RouterOutlet} from '@angular/router';"),
+    'src/form.ts': component('app-form', 'Form', '<input data-id=searchInputField>'),
+    'src/top.routes.ts': "import {Routes} from '@angular/router'; import {Shell} from './shell';\n" +
+      "export const routes: Routes = [{path: '', component: Shell, children: [{path: 'tasks', loadChildren: () => import('./task.routes').then(m => m.routes)}]}];\n",
+    'src/task.routes.ts': "import {Routes} from '@angular/router'; import {Form} from './form';\n" +
+      "export const routes: Routes = [{path: ':id', children: [{path: 'hyper-params', component: Form}]}];\n",
+  });
+  try {
+    const graph = buildRouteGraph(context, catalog);
+    const route = graph.byComponent.get('src/form.ts#Form')?.[0];
+    assert(route?.rooted);
+    assert.equal(route.pattern, '/tasks/:id/hyper-params');
+    assert(route.loaders.some(span => span.file.endsWith('/src/top.routes.ts')));
+    const target = matchingElements(index,
+      { kind: 'attribute', name: 'data-id', value: 'searchInputField' })[0];
+    const paths = resolveViewPaths(target, context, catalog, index, 1_000, undefined, graph).paths;
+    assert(paths.some(item => item.end === 'bootstrap' &&
+      item.steps.some(step => step.ownerId === 'src/shell.ts#Shell') &&
+      item.steps.some(step => step.ownerId === 'src/root.ts#AppRoot')));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

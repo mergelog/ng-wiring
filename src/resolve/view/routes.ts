@@ -253,6 +253,19 @@ function configProviders(context: AnalysisContext, expression: ts.Expression, ga
   if (t.isCallExpression(node) && calleeName(context, node) === 'mergeApplicationConfig') {
     return node.arguments.flatMap(argument => configProviders(context, argument, gaps, active));
   }
+  if (t.isCallExpression(node) && t.isIdentifier(node.expression)) {
+    const declaration = declarationOf(context, node.expression);
+    const body = declaration && (t.isFunctionDeclaration(declaration) || t.isFunctionExpression(declaration) ||
+      t.isArrowFunction(declaration)) ? declaration.body :
+      declaration && t.isVariableDeclaration(declaration) && declaration.initializer &&
+      (t.isFunctionExpression(declaration.initializer) || t.isArrowFunction(declaration.initializer))
+        ? declaration.initializer.body : undefined;
+    if (body && context.sourceFiles.includes(body.getSourceFile().fileName)) {
+      const returned = t.isBlock(body) ? body.statements.filter(t.isReturnStatement) : [];
+      const result = t.isBlock(body) ? returned.length === 1 ? returned[0]?.expression : undefined : body;
+      if (result) return configProviders(context, result, gaps, active);
+    }
+  }
   if (t.isIdentifier(node) || t.isPropertyAccessExpression(node)) {
     const declaration = declarationOf(context, t.isPropertyAccessExpression(node) ? node.name : node);
     if (declaration && isConstVariable(context, declaration) && declaration.initializer) {
