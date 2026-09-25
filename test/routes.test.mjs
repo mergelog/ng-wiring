@@ -106,7 +106,7 @@ const APP_FILES = {
     "import {sharedRoutes} from './shared.routes'; import {authGuard} from './guards';\n" +
     'export const routes: Routes = [\n' +
     "  {path:'', pathMatch:'full', redirectTo:'home'},\n" +
-    "  {path:'home', component:Shell, canActivate:[authGuard], children:[\n" +
+    "  {\n    path:'home', component:Shell, canActivate:[authGuard], children:[\n" +
     "    {path:'detail', loadComponent:() => import('./detail').then(m => m.Detail)},\n" +
     "    {path:'group', children:[{path:'inner', component:Inner}]},\n" +
     '  ]},\n' +
@@ -136,6 +136,9 @@ test('routes and bootstrap are reconstructed from source and placed in the neare
 
     // P6-01: provideRouter, children, loadComponent, loadChildren array and loadChildren + forChild.
     assert.equal(pattern('src/shell.ts#Shell')[0].pattern, '/home');
+    const home = pattern('src/shell.ts#Shell')[0];
+    assert.equal(home.anchor.line, home.definition.line + 1);
+    assert.equal(home.anchor.column, 5);
     assert.equal(pattern('src/detail.ts#Detail')[0].pattern, '/home/detail');
     assert.equal(pattern('src/inner.ts#Inner')[0].pattern, '/home/group/inner');
     assert.equal(pattern('src/users.ts#Users')[0].pattern, '/admin/users');
@@ -193,6 +196,9 @@ test('routes and bootstrap are reconstructed from source and placed in the neare
     assert.equal(shellView.steps.filter(item => item.relation === 'route-outlet').length, 1);
     assert.equal(shellView.steps.filter(item => item.relation === 'bootstrap').length, 1);
     assert.equal(shellView.steps.find(item => item.relation === 'route-outlet').ownerId, 'src/app-root.ts#AppRoot');
+    const homeStep = shellView.steps.find(item => item.relation === 'route-outlet');
+    assert.equal(homeStep.span.start, home.definition.start);
+    assert.equal(homeStep.routeRef.anchor.start, home.anchor.start);
     // the outlet anchor is a sibling of the routed component, so it is not a display ancestor
     assert(!shellView.steps.some(item => item.label === '<router-outlet>'));
     assert(shellView.steps.some(item => item.label === '<div>'));

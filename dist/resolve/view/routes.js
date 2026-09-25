@@ -383,6 +383,10 @@ export function buildRouteGraph(context, catalog, maze) {
             const conditions = [...(input.parent?.conditions ?? [])];
             const pathProperty = stringOf(route, 'path');
             const matcher = getProperty(t, route, 'matcher');
+            const pathNode = getProperty(t, route, 'path')?.parent;
+            const anchorNode = pathNode && t.isPropertyAssignment(pathNode) ? pathNode.name
+                : matcher?.parent && t.isPropertyAssignment(matcher.parent) ? matcher.parent.name : route;
+            const anchor = spanOf(anchorNode);
             const pathUnresolved = (pathProperty.present && pathProperty.value === null) || (!pathProperty.present && !!matcher);
             if (matcher)
                 conditions.push({ kind: 'matcher', text: `custom matcher ${matcher.getText().slice(0, 80)}`, span: spanOf(matcher) });
@@ -434,7 +438,7 @@ export function buildRouteGraph(context, catalog, maze) {
             }
             const occurrence = {
                 id: occurrenceIdFor(context, definition, input.loaders),
-                configId: input.configId, rooted: input.rooted, definition, loaders: [...input.loaders],
+                configId: input.configId, rooted: input.rooted, definition, anchor, loaders: [...input.loaders],
                 path: pathProperty.value, pathUnresolved, pattern,
                 outlet: outletProperty.value, outletUnresolved: outletProperty.present && outletProperty.value === null,
                 componentId, componentUnresolved, componentless: !componentProperty && !loadComponent,

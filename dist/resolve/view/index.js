@@ -215,7 +215,7 @@ function routeStepFor(occurrence, ownerId) {
     placement.creationCondition = 'route activation';
     placement.displayCondition = occurrence.conditions.map(condition => condition.text).join('; ') || 'route matches the URL';
     placement.routeRef = { occurrenceId: occurrence.id, pattern: occurrence.pattern, outlet: occurrence.outlet,
-        definition: occurrence.definition, loaders: occurrence.loaders, rooted: occurrence.rooted };
+        definition: occurrence.definition, anchor: occurrence.anchor, loaders: occurrence.loaders, rooted: occurrence.rooted };
     return placement;
 }
 /** Frames introduced between an element and its display parent, outermost first. */

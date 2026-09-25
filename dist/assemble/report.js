@@ -100,7 +100,7 @@ export function assembleReport(input) {
     const routeNodeIds = [];
     let bootstrapNodeId = null;
     const stepEvidence = (step) => {
-        const own = evidence.span(step.span, 'exact');
+        const own = evidence.span(step.routeRef?.anchor ?? step.span, 'exact');
         if (own)
             return [own];
         const fromMaze = mazeEvidenceFor(step);

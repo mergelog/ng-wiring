@@ -127,7 +127,7 @@ export function assembleReport(input: AssembleInput): WiringReport {
   const routeNodeIds: string[] = [];
   let bootstrapNodeId: string | null = null;
   const stepEvidence = (step: ViewStep): string[] => {
-    const own = evidence.span(step.span, 'exact');
+    const own = evidence.span(step.routeRef?.anchor ?? step.span, 'exact');
     if (own) return [own];
     const fromMaze = mazeEvidenceFor(step);
     return fromMaze ? [fromMaze] : [];

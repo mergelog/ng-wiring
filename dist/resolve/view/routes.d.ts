@@ -14,6 +14,8 @@ export interface RouteOccurrence {
     configId: string;
     rooted: boolean;
     definition: Span;
+    /** Source anchor for the route shown in reports; identity still uses definition. */
+    anchor: Span;
     /** Import/loader call sites that pull this route in, outermost first (P6-02). */
     loaders: Span[];
     path: string | null;

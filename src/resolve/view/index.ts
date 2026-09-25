@@ -9,7 +9,7 @@ export type ViewRelation = 'element' | 'component-use' | 'projection-slot' | 'fr
   'template-insertion' | 'structural-view' | 'control-flow' | 'dynamic-creation' | 'route-outlet' | 'bootstrap';
 export interface ViewRouteRef {
   occurrenceId: string; pattern: string; outlet: string | null;
-  definition: Span; loaders: Span[]; rooted: boolean;
+  definition: Span; anchor: Span; loaders: Span[]; rooted: boolean;
 }
 export interface ViewStep {
   number: string;
@@ -229,7 +229,7 @@ function routeStepFor(occurrence: RouteOccurrence, ownerId: string): ViewStep {
   placement.creationCondition = 'route activation';
   placement.displayCondition = occurrence.conditions.map(condition => condition.text).join('; ') || 'route matches the URL';
   placement.routeRef = { occurrenceId: occurrence.id, pattern: occurrence.pattern, outlet: occurrence.outlet,
-    definition: occurrence.definition, loaders: occurrence.loaders, rooted: occurrence.rooted };
+    definition: occurrence.definition, anchor: occurrence.anchor, loaders: occurrence.loaders, rooted: occurrence.rooted };
   return placement;
 }
 

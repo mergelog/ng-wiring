@@ -61,11 +61,13 @@ Angular の要素から表示経路、イベント、状態更新、Effect、通
 | 再現条件 | `../000-learn-ClearML-pro`、資料 `ngwi-InlineEditComponent.data-id=nameField-260925.133738.md`（節 12 と節 16）。対象は `src/app/webapp-common/experiments/experiment-routes.ts`。 |
 | 期待と実際 | 期待は `path: ':experimentId'` の 76 行目、実際は資料が 75 行目を指す。親ルートも同様に `path: ''` の 46 行目ではなく 45 行目を指す。いずれもルート定義オブジェクトの `{` の行。 |
 | 分類 | 根拠リンク不良。ルートと pattern の対応付けと 1-based の行計算自体は正しい。 |
-| 修正判定 | 未着手。 |
+| 修正判定 | 完了。route の同一性用 `definition` は維持し、表示・根拠用の `anchor` を `path`（無ければ `matcher`、どちらも無ければオブジェクト）へ分離した。 |
 
-原因は `src/resolve/view/routes.ts:440` の `const definition = spanOf(route)` で、配列要素のオブジェクトリテラル全体を位置に採用している点にある。`spanOf`（同 70 行目）は `node.getStart()` を 1-based 行へ変換するだけなので off-by-one はない。`{` と `path` を別行に書くコードスタイルでは、資料のリンクが常に 1 行手前へ着地する。この `definition` は `src/resolve/view/index.ts:228` の `routeStepFor` から `route-outlet` ステップと `routeRef.definition` に渡り、資料の「位置」と「根拠」になる。
+原因は `src/resolve/view/routes.ts` の `const definition = spanOf(route)` で、配列要素のオブジェクトリテラル全体を位置に採用していた点にある。`spanOf` は `node.getStart()` を 1-based 行へ変換するだけなので off-by-one はない。`{` と `path` を別行に書くコードスタイルでは、修正前の資料のリンクが常に 1 行手前へ着地していた。この `definition` は `src/resolve/view/index.ts` の `routeStepFor` から `route-outlet` ステップと `routeRef.definition` に渡る。
 
-修正時の制約として、`definition` は表示だけでなく occurrence id のハッシュ入力でもある（`src/resolve/view/routes.ts:387`-`388` の `occurrenceIdFor`）。ここを `path` のスパンへ差し替えると、資料に出る `route:07cdeef8…` 形式の ID とキャッシュキーが変わる。`definition` は同一性用に据え置き、`path`（無ければ `matcher`、それも無ければオブジェクト）のスパンを表示用アンカーとして別に持ち、レンダリング側のリンクだけ切り替える。`path` のノードは `stringOf(route, 'path')` の時点で取得済みのため、解析コストは増えない。
+修正時の制約として、`definition` は occurrence id のハッシュ入力でもある（`src/resolve/view/routes.ts` の `occurrenceIdFor`）。ここを `path` のスパンへ差し替えると、資料に出る `route:07cdeef8…` 形式の ID とキャッシュキーが変わる。`definition` は同一性用に据え置き、`path`（無ければ `matcher`、それも無ければオブジェクト）のスパンを表示用アンカーとして別に持ち、根拠リンクだけ切り替えた。
+
+修正後、`test/routes.test.mjs` でオブジェクト開始行と `path` 行を分けて確認した。実アプリの `data-id=nameField` を再解析し、短い資料と詳細資料の route リンクが親 46 行目・子 76 行目を指すこと、候補 ID と route ID が変わらないことを確認した。
 
 ## 完了条件
 

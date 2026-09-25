@@ -9,6 +9,7 @@ export interface ViewRouteRef {
     pattern: string;
     outlet: string | null;
     definition: Span;
+    anchor: Span;
     loaders: Span[];
     rooted: boolean;
 }

@@ -15,6 +15,8 @@ export interface RouteOccurrence {
   configId: string;
   rooted: boolean;
   definition: Span;
+  /** Source anchor for the route shown in reports; identity still uses definition. */
+  anchor: Span;
   /** Import/loader call sites that pull this route in, outermost first (P6-02). */
   loaders: Span[];
   path: string | null;
@@ -442,6 +444,10 @@ export function buildRouteGraph(context: AnalysisContext, catalog: Catalog, maze
       const conditions: RouteCondition[] = [...(input.parent?.conditions ?? [])];
       const pathProperty = stringOf(route, 'path');
       const matcher = getProperty(t, route, 'matcher');
+      const pathNode = getProperty(t, route, 'path')?.parent;
+      const anchorNode = pathNode && t.isPropertyAssignment(pathNode) ? pathNode.name
+        : matcher?.parent && t.isPropertyAssignment(matcher.parent) ? matcher.parent.name : route;
+      const anchor = spanOf(anchorNode);
       const pathUnresolved = (pathProperty.present && pathProperty.value === null) || (!pathProperty.present && !!matcher);
       if (matcher) conditions.push({ kind: 'matcher', text: `custom matcher ${matcher.getText().slice(0, 80)}`, span: spanOf(matcher) });
       if (pathProperty.present && pathProperty.value === null) localGaps.push('Route path is not statically resolvable');
@@ -481,7 +487,7 @@ export function buildRouteGraph(context: AnalysisContext, catalog: Catalog, maze
       }
       const occurrence: RouteOccurrence = {
         id: occurrenceIdFor(context, definition, input.loaders),
-        configId: input.configId, rooted: input.rooted, definition, loaders: [...input.loaders],
+        configId: input.configId, rooted: input.rooted, definition, anchor, loaders: [...input.loaders],
         path: pathProperty.value, pathUnresolved, pattern,
         outlet: outletProperty.value, outletUnresolved: outletProperty.present && outletProperty.value === null,
         componentId, componentUnresolved, componentless: !componentProperty && !loadComponent,
