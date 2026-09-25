@@ -44,7 +44,7 @@ try {
   }
 
   const cli = path.join(repo, 'dist/cli/index.js');
-  for (const [label, extra, extension] of [['markdown', [], '.md'], ['json', ['--json'], '.json']]) {
+  for (const [label, extra, extension] of [['markdown', ['--detail'], '.md'], ['json', ['--json'], '.json']]) {
     const outDir = path.join(root, `out-${label}`);
     console.log(`\n> ng-wiring (${label})`);
     const result = node([cli, 'data-id="targetInput"', '--project', 'app', '--candidate', '2',
