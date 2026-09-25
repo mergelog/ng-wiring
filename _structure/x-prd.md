@@ -14,8 +14,8 @@
 - ng-maze は便利だがロジックの詳細までは追えていない。これはこのままにし、サブモジュール的な扱いとし、今の挙動を維持したい
 
 ## 作成場所
-/home/mtrysd/work_2026/ng-wiring
-/home/mtrysd/work_2026/ng-wiring/x-structure.md
+ng-wiring
+ng-wiring/x-structure.md
 
 ## 概要
 コンポーネント遷移で、どのようにデータを渡しているかも記載する。
