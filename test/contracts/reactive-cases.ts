@@ -1,7 +1,7 @@
 /**
  * §10 the expectation ledger for the required detection contracts R01–R16.
  *
- * It is transcribed from the §7.6 table of [x-structure.md](../../x-structure.md) **by hand**. It is
+ * It is transcribed from the §7.6 table of x-local/_old/x-structure.md **by hand**. It is
  * never generated from `src/adapters/reactive/capabilities.ts`, because an API that fell out of the
  * implementation would then disappear from the tests as well (§10, P16-05). Every row of that table
  * contributes one entry per API and per form; one example passing never covers the whole row.

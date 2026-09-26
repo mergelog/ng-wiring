@@ -105,4 +105,4 @@ node dist/cli/index.js --help
 相対パスはこのリポジトリを基準に解決します。`npm test` に workspace の smoke check が追加され、
 `NGWI_TEST_CANDIDATE` も設定するとレポート生成まで確認します。
 
-解析対象のAngularプロジェクトにあるTypeScript、`@angular/compiler`、`@angular/core` を使って解析します。詳細な仕様と出力形式は [_structure/x-structure.md](_structure/x-structure.md) を参照してください。
+解析対象のAngularプロジェクトにあるTypeScript、`@angular/compiler`、`@angular/core` を使って解析します。詳細な仕様と出力形式はローカルに保存した `x-local/_old/x-structure.md` を参照してください。

@@ -12,4 +12,4 @@ AGENTS.local.mdを確認する
 
 - hoと言われたら、引き継ぎファイル x-handoff.md を作成する
 - 末尾に ot のついたチャットは、会話のみでファイル編集作業はしないこと
-- ブラウザ確認の指示がある場合 x-browser-based-verification-procedure.md を参照。
+- ブラウザ確認の指示がある場合 x-browser-verification-procedure.md を参照。

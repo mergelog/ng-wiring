@@ -8,8 +8,8 @@ import { contractIds, fixturedCases, reactiveCases, unfixturedCases } from './co
 import { fixtureRoot, repoRoot } from './fixtures/harness.mjs';
 
 const ledgerFile = path.join(repoRoot, 'test/contracts/reactive-cases.ts');
-const structureFile = path.join(repoRoot, 'x-local/x-structure.md');
-const tasksFile = path.join(repoRoot, 'x-local/x-tasks.md');
+const structureFile = path.join(repoRoot, 'x-local/_old/x-structure.md');
+const tasksFile = path.join(repoRoot, 'x-local/_old/x-tasks.md');
 
 // P16-03
 test('the ledger transcribes every contract with its package, export, version and expectation', () => {

@@ -1,7 +1,7 @@
 # ng-wiring
 
 Angular 22 source wiring analyzer. The implementation covers the library layers
-through P15 in [_structure/x-tasks.md](_structure/x-tasks.md): project contexts, the pinned ngmaze JSON
+through P15: project contexts, the pinned ngmaze JSON
 adapter, Angular scope and element indexing, projection, TemplateRef display
 paths, route/bootstrap reconstruction with outlet placement, control-flow
 blocks with the finitization limits around them, listener/template expression
@@ -22,9 +22,10 @@ selection, an owner-less gap that nothing ties to it is listed as a gap of the
 whole analysis, the rest is counted per code, and a gap ng-wiring filled in
 itself keeps its record with the grounds for the fill-in.
 `src/assemble` connects those layers to the CLI, so the command runs from a
-target element to a written report. What is still open is listed in
-[_structure/x-tasks.md](_structure/x-tasks.md): 28 of the 110 reactive contract subcases have no
-passing fixture yet. The P18 usage scenario is accepted.
+target element to a written report. All 110 reactive contract subcases have
+passing fixtures. Current follow-up work is recorded in
+[x-reactive-followups.md](x-reactive-followups.md). Local acceptance tracking is
+in `x-local/x-open-work.md`. The P18 usage scenario is accepted.
 
 ## Running it
 
@@ -76,4 +77,5 @@ The analysed workspace supplies its own toolchain. ng-wiring resolves
 TypeScript, `@angular/compiler` and `@angular/core` from the target's
 `node_modules` (§4.2) and never falls back to a copy of its own; the pinned
 ngmaze is ng-wiring's own dependency and runs as a separate process. The command
-syntax and the output contract are documented in [_structure/x-structure.md](_structure/x-structure.md).
+syntax and the output contract are documented in the local archived design,
+`x-local/_old/x-structure.md`.

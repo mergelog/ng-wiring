@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { repoRoot } from './fixtures/harness.mjs';
 
-const tasksFile = path.join(repoRoot, 'x-local/x-tasks.md');
+const tasksFile = path.join(repoRoot, 'x-local/_old/x-tasks.md');
 const localTasks = { skip: !existsSync(tasksFile) };
 
 /** §10 P16-15: the A01–A24 table is the place the acceptance conditions are managed, so it is checked. */
