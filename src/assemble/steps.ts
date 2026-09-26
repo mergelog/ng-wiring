@@ -145,14 +145,16 @@ export function httpTraceEdges(trace: HttpTrace): TracedEdge[] {
       case 'call':
         edges.push(traced({ ...common, kind: 'call', from: end('symbol', step.source), to: end('symbol', step.target),
           details: { caller: detail(step.source), callee: detail(step.target),
-            arguments: known(step.detail, '引数は trace に記録されていない') } }));
+            arguments: known(step.detail, '引数は trace に記録されていない'),
+            tracePath: detail(step.path.join('\n')) } }));
         break;
       case 'http-create':
         edges.push(traced({ ...common, kind: 'http-create', from: end('symbol', step.source), to: end('http', step.target),
           details: { method: known(request?.method, 'HTTP メソッドを確定できていない'),
             urlExpression: known(request?.url.text, 'URL 式を静的に確定できていない'),
             requestType: known(request?.types.find(type => type.role === 'request-body')?.name, '要求型は未指定'),
-            responseType: known(request?.types.find(type => type.role === 'response')?.name, '応答型を確定できていない') } }));
+            responseType: known(request?.types.find(type => type.role === 'response')?.name, '応答型を確定できていない'),
+            tracePath: detail(step.path.join('\n')) } }));
         break;
       case 'http-consume':
         edges.push(traced({ ...common, kind: 'http-consume', from: end('http', step.source), to: end('symbol', step.target),

@@ -6,7 +6,8 @@ import { escapeInline, relativeLinkTarget } from './text.js';
 
 interface Row { kind: string; relation: 'V' | 'C' | 'D' | 'A'; label: string; file: string; line: number; extraLines?: number[]; edgeId?: string }
 interface Chain { operations: ModelOperation[]; request?: ModelEdge }
-interface Branch { dispatch: ModelEdge; consume?: ModelEdge; request?: ModelEdge; reason?: string }
+interface Branch { dispatch: ModelEdge; consume?: ModelEdge; request?: ModelEdge; serviceCall?: ModelEdge;
+  followups?: ModelEdge[]; reason?: string }
 
 const value = (edge: ModelEdge, key: string): string => edge.details[key]?.value ?? '';
 const outputName = (name: string): string => name.replace(/^this\./, '');
@@ -139,6 +140,9 @@ function operationBranches(chain: Chain, edges: Map<string, ModelEdge>,
       const matchingConsumers = consumers.filter(item => {
         const file = value(item, 'consumer').split('#')[0];
         const member = value(item, 'consumer').split('#').at(-1);
+        const root = value(request, 'tracePath').split('\n')[0] ?? '';
+        const rootMatch = /^(.*):(\d+):(\d+)$/.exec(root);
+        if (rootMatch?.[1] === file && effectMemberAt(file, Number(rootMatch[2])) === member) return true;
         const inEffect = evidence.get(request.evidenceIds[0] ?? '');
         if (inEffect?.file === file && effectMemberAt(file, inEffect.startLine) === member) return true;
         return !!method && calls.some(call => {
@@ -148,7 +152,28 @@ function operationBranches(chain: Chain, edges: Map<string, ModelEdge>,
           return !effect || effect === member;
         });
       });
-      if (matchingConsumers.length === 1) linked.push({ dispatch, consume: matchingConsumers[0], request });
+      if (matchingConsumers.length === 1) {
+        const consume = matchingConsumers[0]!;
+        const effectFile = value(consume, 'consumer').split('#')[0];
+        const requestPath = value(request, 'tracePath');
+        const serviceCalls = calls.filter(call => {
+          const at = evidence.get(call.evidenceIds[0] ?? '');
+          const callPath = value(call, 'tracePath');
+          return at?.file === effectFile && !!callPath &&
+            (requestPath === callPath || requestPath.startsWith(`${callPath}\n`));
+        }).sort((a, b) => value(b, 'tracePath').length - value(a, 'tracePath').length);
+        const servicePath = value(serviceCalls[0] ?? request, 'tracePath');
+        const followups = calls.filter(call => {
+          const at = evidence.get(call.evidenceIds[0] ?? '');
+          if (at?.file !== effectFile || !predicates(call.conditionId).includes('successful source notification')) return false;
+          const callPath = value(call, 'tracePath');
+          if (servicePath && !(callPath === servicePath || callPath.startsWith(`${servicePath}\n`))) return false;
+          const line = sources.line(at.file, at.startLine);
+          return /\bdownloadObjectAsJson\s*\(/.test(line) || /\baddMessage\s*\(\s*['"]success['"]/.test(line);
+        }).sort((a, b) => (evidence.get(a.evidenceIds[0] ?? '')?.startLine ?? 0) -
+          (evidence.get(b.evidenceIds[0] ?? '')?.startLine ?? 0));
+        linked.push({ dispatch, consume, request, serviceCall: serviceCalls[0], followups });
+      }
     }
     if (linked.length) return linked;
     const boundary = all.find(edge => edge.kind === 'boundary' && compatible(edge) &&
@@ -304,17 +329,26 @@ function dataRows(chain: Chain, edges: Map<string, ModelEdge>, nodes: Map<string
   const endpoint = /\/([\w.]+)$/.exec(url)?.[1] ?? '';
   const methodName = endpoint.replace(/\.([a-z])/g, (_, char: string) => char.toUpperCase());
   const effectFile = consume ? value(consume, 'consumer').split('#')[0] : '';
-  const serviceCall = edgeOf(last, edge => edge.kind === 'call' && !!methodName &&
+  const serviceCall = branch?.serviceCall ?? edgeOf(last, edge => edge.kind === 'call' && !!methodName &&
     value(edge, 'callee').toLowerCase().endsWith(methodName.toLowerCase()) &&
     !!effectFile && evidenceOf(edge)?.file === effectFile);
   if (serviceCall) {
     const ev = evidenceOf(serviceCall);
     const code = ev ? sources.line(ev.file, ev.startLine).replace(/;$/, '') : '';
-    push(serviceCall, 'E', 'D', code || value(serviceCall, 'callee'));
+    const callee = value(serviceCall, 'callee');
+    const [receiver, member] = callee.split('.');
+    const owner = receiver && sources.text(ev?.file ?? '')?.match(
+      new RegExp(`\\b${receiver.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\s*:\\s*([A-Za-z_$][\\w$]*)`))?.[1];
+    push(serviceCall, 'E', 'D', owner && member ? `${owner}.${member}()` : code || callee);
   }
   const service = edgeOf(last, edge => edge.kind === 'call' && evidenceOf(edge)?.file.endsWith('.service.ts') === true &&
     !!endpoint && sources.line(evidenceOf(edge)!.file, evidenceOf(edge)!.startLine).includes(endpoint));
   push(service ?? request, 'S', 'A', `${method} ${url || '（URL 未解決）'}`);
+  for (const followup of branch?.followups ?? []) {
+    const ev = evidenceOf(followup);
+    const code = ev ? sources.line(ev.file, ev.startLine).replace(/;$/, '') : '';
+    push(followup, 'E', 'D', code || `${value(followup, 'callee')}()`);
+  }
   return result;
 }
 

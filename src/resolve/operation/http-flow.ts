@@ -496,19 +496,43 @@ function traceHttpFromRoot(context: AnalysisContext, catalog: HttpCatalog,
         [...conditions, ...flow.consumption.conditions], flow.reason, flowIndex);
       diagnostics.push(...effective.gaps, ...flow.consumption.gaps);
     }
-    const visit = (node: ts.Node, localConditions: string[]): void => {
+    const visit = (node: ts.Node, localConditions: string[], currentPath: string[] = path): void => {
       if (expanded > LIMIT) return;
       if (t.isIfStatement(node)) {
-        visit(node.thenStatement, [...localConditions, `if ${node.expression.getText()}`]);
-        if (node.elseStatement) visit(node.elseStatement, [...localConditions, `else of ${node.expression.getText()}`]);
+        visit(node.thenStatement, [...localConditions, `if ${node.expression.getText()}`], currentPath);
+        if (node.elseStatement)
+          visit(node.elseStatement, [...localConditions, `else of ${node.expression.getText()}`], currentPath);
         return;
+      }
+      if (t.isTryStatement(node)) {
+        visit(node.tryBlock, [...localConditions, 'try block completes without throwing'], currentPath);
+        if (node.catchClause) visit(node.catchClause.block,
+          [...localConditions, 'exception thrown in try block'], currentPath);
+        if (node.finallyBlock) visit(node.finallyBlock, localConditions, currentPath);
+        return;
+      }
+      if (t.isCallExpression(node)) {
+        const callee = t.isPropertyAccessExpression(node.expression) ? node.expression.name : node.expression;
+        const operator = rxjsExport(context, callee);
+        if (operator && ['map', 'mergeMap', 'switchMap', 'concatMap', 'exhaustMap', 'tap', 'catchError']
+          .includes(operator)) {
+          const notification = operator === 'catchError' ? 'error notification' : 'successful source notification';
+          for (const argument of node.arguments) {
+            if (t.isArrowFunction(argument) || t.isFunctionExpression(argument))
+              visit(argument.body, [...localConditions, notification], currentPath);
+          }
+          return;
+        }
       }
       if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression)) {
         const callee = node.expression;
-        const nextPath = [...path, location(context, node)];
+        const nextPath = [...currentPath, location(context, node)];
         // pipe is the carrier of operator callbacks, not a service call to resolve through DI.
         if (callee.name.text === 'pipe') {
-          t.forEachChild(node, child => visit(child, localConditions));
+          visit(callee.expression, localConditions, currentPath);
+          const pipelinePath = t.isCallExpression(callee.expression)
+            ? [...currentPath, location(context, callee.expression)] : currentPath;
+          for (const argument of node.arguments) visit(argument, localConditions, pipelinePath);
           return;
         }
         if (callee.expression.kind === t.SyntaxKind.ThisKeyword && t.isClassDeclaration(declaration.parent)) {
@@ -552,7 +576,17 @@ function traceHttpFromRoot(context: AnalysisContext, catalog: HttpCatalog,
           }
         }
       }
-      t.forEachChild(node, child => visit(child, localConditions));
+      if (t.isCallExpression(node) && t.isIdentifier(node.expression)) {
+        let symbol = context.checker.getSymbolAtLocation(node.expression);
+        if (symbol && symbol.flags & t.SymbolFlags.Alias) symbol = context.checker.getAliasedSymbol(symbol);
+        const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+        if (declaration && context.sourceFiles.includes(declaration.getSourceFile().fileName)) {
+          const nextPath = [...currentPath, location(context, node)];
+          add('call', receiver, node.expression.text, node, nextPath, localConditions,
+            node.arguments.map(argument => argument.getText()).join(', '));
+        }
+      }
+      t.forEachChild(node, child => visit(child, localConditions, currentPath));
     };
     visit(body, conditions);
     active.delete(declaration);

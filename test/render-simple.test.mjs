@@ -18,7 +18,9 @@ test('the short map follows output subscriptions before a propagated HTTP reques
       'host.ts': 'this.saved.emit(value)\n',
       'parent.html': '(saved)="onSaved($event)"\n',
       'parent.ts': 'this.store.dispatch(updated())\n',
-      'effect.ts': 'updateDetails$ = createEffect(() => {})\nthis.apiRecords.recordsUpdate({})\n',
+      'effect.ts': 'constructor(private apiRecords: ApiRecordsService) {}\n' +
+        'updateDetails$ = createEffect(() => {})\nthis.apiRecords.recordsUpdate({})\n' +
+        'downloadObjectAsJson(data, filename, true)\nreturn [addMessage(\'success\', \'Exported successfully\')]\n',
       'records.service.ts': 'return this.apiRequest.post(`${basePath}/api/items/update`)\n',
     };
     await Promise.all(Object.entries(files).map(([file, source]) => writeFile(path.join(root, file), source)));
@@ -43,9 +45,17 @@ test('the short map follows output subscriptions before a propagated HTTP reques
       { caller: 'parent.ts#Parent', action: 'actions.ts#updated' });
     const consume = add('action-consume', 'action', 'effect', 'parent.ts', 1,
       { consumer: 'effect.ts#updateDetails$' });
-    const call = add('call', 'effect', 'service', 'effect.ts', 2, { callee: 'apiRecords.recordsUpdate' });
+    const call = add('call', 'effect', 'service', 'effect.ts', 3,
+      { callee: 'apiRecords.recordsUpdate', tracePath: 'effect.ts:2:1\neffect.ts:3:1' });
     const request = add('http-create', 'service', 'http', 'records.service.ts', 1,
-      { method: 'POST', urlExpression: '${basePath}/api/items/update' });
+      { method: 'POST', urlExpression: '${basePath}/api/items/update',
+        tracePath: 'effect.ts:2:1\neffect.ts:3:1\nrecords.service.ts:1:1' });
+    const download = add('call', 'effect', 'download', 'effect.ts', 4,
+      { callee: 'downloadObjectAsJson', tracePath: 'effect.ts:2:1\neffect.ts:3:1\neffect.ts:4:1' });
+    const success = add('call', 'effect', 'message', 'effect.ts', 5,
+      { callee: 'addMessage', tracePath: 'effect.ts:2:1\neffect.ts:3:1\neffect.ts:5:1' });
+    edges.find(edge => edge.id === download).conditionId = 'cond:success';
+    edges.find(edge => edge.id === success).conditionId = 'cond:success';
     evidence.push({ id: 'ev:view', file: 'view.html', startLine: 1, startOffset: 0, endOffset: 13 });
     const op = (id, event, file, edgeIds) => ({ id, event, listenerId: `def:${file}#${id}.${event}:handler`, edgeIds });
     const report = {
@@ -54,25 +64,37 @@ test('the short map follows output subscriptions before a propagated HTTP reques
       selection: { candidateId: 'candidate' }, paths: [{ occurrenceIds: ['node:view'] }],
       nodes: [{ id: 'node:view', kind: 'element', evidenceIds: ['ev:view'],
         details: { label: field('<form>'), relation: field('element') } }], edges, evidence,
+      conditions: [{ id: 'cond:success', kind: 'predicate', expression: 'successful source notification' }],
       operations: [op('Input', 'keydown.enter', 'input.ts', [listener, emitChanged, request]),
         op('Host', 'changed', 'host.ts', [subscribeChanged, emitSaved, request]),
-        op('Parent', 'saved', 'parent.ts', [subscribeSaved, dispatch, consume, call, request])],
+        op('Parent', 'saved', 'parent.ts', [subscribeSaved, dispatch, consume, call, request, download, success])],
     };
     const result = renderSimple({ report, outputDir: root, fileNameSource: '', heading: '' });
     const rows = result.text.split('\n').filter(line => /^- \d\d\./.test(line));
-    assert.equal(rows.length, 10);
+    assert.equal(rows.length, 12);
     assert(rows[0].includes('&lt;form&gt;'));
     assert(rows[2].includes('this.changed.emit'));
     assert(rows[3].includes('Host.onChanged'));
     assert(rows[4].includes('this.saved.emit'));
     assert(rows[5].includes('Parent.onSaved'));
     assert(rows.some(row => row.includes('updateDetails$')), rows.join('\n'));
-    assert(rows.some(row => row.includes('this.apiRecords.recordsUpdate')), 'the effect calls the API service');
-    assert(rows.at(-1).includes('api/items/update'));
+    assert(rows.some(row => row.includes('ApiRecordsService.recordsUpdate()')), 'the effect calls the API service');
+    assert(rows.some(row => row.includes('api/items/update')));
+    assert(rows.at(-2).includes('downloadObjectAsJson'));
+    assert(rows.at(-1).includes("addMessage('success'"));
     const below = renderSimple({ report, outputDir: root, fileNameSource: '', heading: '', belowData: true });
-    assert.equal(below.text.split('\n').filter(line => /^- \d\d\./.test(line)).length, 9);
+    assert.equal(below.text.split('\n').filter(line => /^- \d\d\./.test(line)).length, 11);
     report.query.filters.event = 'keydown.enter';
     assert.equal(renderSimple({ report, outputDir: root, fileNameSource: '', heading: '' }).text
-      .split('\n').filter(line => /^- \d\d\./.test(line)).length, 10);
+      .split('\n').filter(line => /^- \d\d\./.test(line)).length, 12);
+
+    const withoutHttp = structuredClone(report);
+    withoutHttp.edges = withoutHttp.edges.filter(edge => edge.kind !== 'http-create');
+    for (const operation of withoutHttp.operations)
+      operation.edgeIds = operation.edgeIds.filter(id => id !== request);
+    const localOnly = renderSimple({ report: withoutHttp, outputDir: root, fileNameSource: '', heading: '' }).text;
+    assert(!localOnly.includes('api/items/update'));
+    assert(!localOnly.includes('downloadObjectAsJson'));
+    assert(localOnly.includes('通信: この探索範囲では未検出'));
   } finally { await rm(root, { recursive: true, force: true }); }
 });

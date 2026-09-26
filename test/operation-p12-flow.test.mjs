@@ -215,6 +215,7 @@ export const save = createAction('[Record] Save');
 export const saved = createAction('[Record] Saved');
 export const extra = createAction('[Record] Extra');
 export const failed = createAction('[Record] Failed');
+export function downloadObjectAsJson(value: unknown) { void value; }
 @Injectable() export class Transport {
   constructor(private http: HttpClient) {}
   post(url: string) { return this.http.post(url, {}); }
@@ -228,7 +229,7 @@ export const failed = createAction('[Record] Failed');
   constructor(private actions$: Actions, private api: RecordApi) {}
   save$ = createEffect(() => this.actions$.pipe(ofType(save), filter((action: any) => action.valid),
     mergeMap((action: any) => this.api.update().pipe(
-      mergeMap(() => [saved(), ...(action.more ? [extra()] : [])]),
+      mergeMap(() => { downloadObjectAsJson(action); return [saved(), ...(action.more ? [extra()] : [])]; }),
       catchError(() => [failed()])))));
 }
 @Injectable() export class UnusedEffects {
@@ -248,8 +249,13 @@ export const rootProviders = [provideStore(), provideHttpClient(), Transport, Re
   const trace = traceHttpFromEffect(context, http, selected, { catalog, store, layers });
   assert.deepEqual(trace.steps.filter(step => step.kind === 'http-consume').map(step => step.source),
     ['POST /api/items/update']);
-  assert.deepEqual(httpTraceEdges(trace).filter(edge => edge.kind === 'http-create')
+  const modelEdges = httpTraceEdges(trace);
+  assert.deepEqual(modelEdges.filter(edge => edge.kind === 'http-create')
     .map(edge => edge.details.urlExpression.value), ['/api/items/update']);
+  assert(modelEdges.find(edge => edge.kind === 'http-create').details.tracePath.value.includes('main.ts:'));
+  const download = trace.steps.find(step => step.kind === 'call' && step.target === 'downloadObjectAsJson');
+  assert(download, 'the success callback side effect is retained in the HTTP trace');
+  assert(download.conditions.includes('successful source notification'));
   assert(!trace.steps.some(step => JSON.stringify(step).includes('/unrelated')));
   assert(trace.steps.find(step => step.kind === 'http-consume').conditions.some(item =>
     item.includes('filter requires')));
