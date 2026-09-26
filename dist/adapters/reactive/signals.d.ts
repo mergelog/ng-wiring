@@ -45,6 +45,8 @@ export interface SignalEffectNode {
     framework: ReactiveFramework;
     phase: EffectPhase;
     capability: string;
+    /** SignalState observed directly by watchState (which receives snapshots, not Signal reads). */
+    sourceId: string | null;
     location: string;
     lifetime: string[];
     reads: string[];

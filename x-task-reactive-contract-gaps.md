@@ -80,8 +80,8 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 
 ### R07: SignalState の監視と深い派生（2 件）
 
-- [ ] **R07/watchState** — 再現: `signal-store-apis`, `data-id=pageButton`。`filters` の write と監視を結び、初回通知と更新通知を区別する。
-- [ ] **R07/deepComputed** — 再現: `signal-store-apis`, `data-id=pageButton`。深いプロパティの派生を `reactive-link` として残し、単なる深い mutation を通知扱いしない。
+- [x] **R07/watchState** — 再現: `signal-store-apis`, `data-id=pageButton`。`filters` の write と監視を結び、初回通知と更新通知を区別する。
+- [x] **R07/deepComputed** — 再現: `signal-store-apis`, `data-id=pageButton`。深いプロパティの派生を `reactive-link` として残し、単なる深い mutation を通知扱いしない。
 
 ### R08: rxMethod / signalMethod の呼出し形態（6 件）
 

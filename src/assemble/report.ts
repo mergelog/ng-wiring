@@ -1172,11 +1172,15 @@ function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
     for (const effect of signals.effects) {
       const tracked = effect.reads.some(id =>
         signals.reads.some(read => read.id === id && read.sourceId === write.sourceId));
-      if (!tracked) continue;
+      const watched = effect.capability === 'signals/watchState' && effect.sourceId === write.sourceId;
+      if (!tracked && !watched) continue;
       traced.push({ kind: 'reactive-link', from: stateNode,
         to: { kind: 'effect', id: effect.id, label: effect.capability },
         location: effect.location,
-        conditions: [...effect.lifetime, ...effect.cleanups.map(at => `cleanup registered at ${at}`),
+        conditions: [...effect.lifetime, ...(watched
+          ? ['watchState emits an initial snapshot after registration',
+            'subsequent notifications follow SignalState changes'] : []),
+          ...effect.cleanups.map(at => `cleanup registered at ${at}`),
           ...effect.destroys.map(at => `explicitly destroyed at ${at}`)],
         capability: effect.capability,
         details: completeDetails('reactive-link', { source: detail(label), consumer: detail(effect.capability),

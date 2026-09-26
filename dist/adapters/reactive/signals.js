@@ -186,8 +186,13 @@ export function analyzeSignals(context, files) {
             if (matcher === 'angular/effect' || matcher === 'angular/afterRenderEffect' || matcher === 'signals/watchState') {
                 const phase = matcher === 'angular/afterRenderEffect' ? 'after-render' :
                     matcher === 'signals/watchState' ? 'state-watcher' : 'change-detection';
+                const watchedSource = matcher === 'signals/watchState' ? node.arguments[0] : undefined;
+                const watchedTarget = watchedSource && t.isPropertyAccessExpression(watchedSource)
+                    ? watchedSource.name : watchedSource;
+                const watchedDeclaration = watchedTarget && symbolOf(context, watchedTarget)?.valueDeclaration;
                 effects.push({ id: location(context, node), framework: matcher === 'signals/watchState' ? 'signal-store' : 'angular-signal',
                     phase, capability: matcher, location: location(context, node),
+                    sourceId: watchedDeclaration ? byDeclaration.get(watchedDeclaration) ?? null : null,
                     lifetime: ['runs once after creation', ...(matcher === 'signals/watchState'
                             ? ['stops when the owning injector or the supplied config ends']
                             : ['stops when the owning injector is destroyed or the EffectRef is destroyed'])],
@@ -229,7 +234,19 @@ export function analyzeSignals(context, files) {
             }
         });
     const sourceIdFor = (expression) => {
-        const target = t.isPropertyAccessExpression(expression) ? expression.name : expression;
+        const directTarget = t.isPropertyAccessExpression(expression) ? expression.name : expression;
+        const directDeclaration = symbolOf(context, directTarget)?.valueDeclaration;
+        const direct = directDeclaration ? byDeclaration.get(directDeclaration) : null;
+        if (direct)
+            return direct;
+        // SignalState exposes each key as a DeepSignal accessor. Resolve the root state property
+        // (`this.filters.page()`) instead of the generated accessor declaration (`page`).
+        let root = expression;
+        while (t.isCallExpression(root))
+            root = root.expression;
+        while (t.isPropertyAccessExpression(root) && root.expression.kind !== t.SyntaxKind.ThisKeyword)
+            root = root.expression;
+        const target = t.isPropertyAccessExpression(root) ? root.name : root;
         const declaration = symbolOf(context, target)?.valueDeclaration;
         return declaration ? byDeclaration.get(declaration) ?? null : null;
     };
@@ -300,6 +317,19 @@ export function analyzeSignals(context, files) {
                     expression: node.expression.getText(), tracking, reason, location: location(context, node) });
             }
         });
+    // deepComputed reads a nested SignalState key, whose source is the root state object.
+    for (const link of links.filter(item => item.capability === 'signals/deepComputed')) {
+        const range = callsByLocation.get(link.location);
+        if (!range)
+            continue;
+        const dependency = reads.find(read => read.tracking === 'tracked' && read.sourceId &&
+            (callsByLocation.get(read.location)?.getStart() ?? -1) >= range.getStart() &&
+            (callsByLocation.get(read.location)?.getEnd() ?? -1) <= range.getEnd());
+        if (dependency) {
+            link.from = dependency.sourceId;
+            link.sourceExpression = dependency.expression;
+        }
+    }
     const destroyed = new Map();
     for (const node of callsByLocation.values()) {
         if (!t.isPropertyAccessExpression(node.expression) || node.expression.name.text !== 'destroy')
