@@ -1,6 +1,7 @@
 # MatDialog の close 結果から HTTP までの処理経路
 
 作成日: 2026-09-26
+状態: **対応済み**（2026-09-26）
 
 ## 目的
 
@@ -59,3 +60,13 @@
 - 一意に結び付けられない場合は誤った HTTP 経路を作らず、理由付き boundary を表示する。
 - 入力欄から保存ボタンへの未確認の因果関係を追加しない。
 - 最小 fixture と実アプリの照合を行い、関連する build / test / contract / dist checks を実行して結果を記録する。
+
+## 対応結果
+
+- `MatDialog.open(Component)` の型付き呼び出しを探索し、選択された dialog 型と caller を照合する。view 配置が未解決でも、caller と結果購読が確認できる場合は操作経路を独立して追跡する。
+- `MatDialogRef.close(result)` から一意な `afterClosed()` 購読へ結果を接続し、RxJS `filter` 条件を callback / dispatch / Effect / HTTP の条件として保持する。購読を一意に特定できない場合は接続を止め、boundary を記録する。
+- 簡易レポートと詳細レポートは同一の経路モデルを使用する。SAVE AS DRAFT の `click` から `createExperiment` dispatch、Effect、`POST .../tasks.create` を確認した。`filter(res => !!res)` も条件に記録される。
+- 表示経路は引き続き `fragment-uninstantiated`（`saveButton` の `NgTemplateOutlet` 配置未確定）で partial として表示する。click の coverage は `complete-within-scope`。入力欄の編集からボタンクリックへの因果関係は追加していない。
+- 実アプリで `--source src/app/webapp-common/experiments/containers/create-experiment-dialog/create-experiment-dialog.component.html:352 --project stackup --event click` を指定して簡易 JSON と詳細 Markdown を再生成し、ソースと照合した。
+- 検証: `npm run build` 成功、`npm test` 251 件成功、`npm run typecheck` 成功、`npm run check:contracts` 110 件成功、`npm run check:dist` 成功。
+- 実装 commit: `b714d39`（`Trace MatDialog results through afterClosed`）。
