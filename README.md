@@ -23,9 +23,9 @@ whole analysis, the rest is counted per code, and a gap ng-wiring filled in
 itself keeps its record with the grounds for the fill-in.
 `src/assemble` connects those layers to the CLI, so the command runs from a
 target element to a written report. All 110 reactive contract subcases have
-passing fixtures. Current follow-up work is recorded in
-[x-reactive-followups.md](x-reactive-followups.md). Local acceptance tracking is
-in `x-local/x-open-work.md`. The P18 usage scenario is accepted.
+passing fixtures. Current follow-up work is recorded locally in
+`x-local/x-reactive-followups.md` and `x-local/x-open-work.md`. The P18 usage
+scenario is accepted.
 
 ## Running it
 
