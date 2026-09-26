@@ -145,7 +145,9 @@
   node ../ng-wiring/dist/cli/index.js --source src/app/features/data-catalog/components/catalog-assets-table/catalog-assets-table.component.html:23 --event click --project stackup --route '/data-catalog/run/:id' --out-dir ../ng-wiring/x-local/tmp
   ```
 - **D04 functional effect:** `src/app`の`createEffect` / `provideEffects` を調べた。effectはinjectable classのmemberとして定義され、providersも`provideEffects([Class])`形式。class外に定義されたfunctional effectは見つからず、実画面対象はなし。実行時確認とCLI実行はなし。
-- **D05 reducer-only / 通信なし候補:** Compare Tasksの`Hide Identical Fields`をON/OFF。selectorは1件。`setHideIdenticalFields` → reducer state → 表示切替のソースを確認し、対応するHTTP effectはない。切替後に`tasks.get_all_ex`が1件記録されたが、定期更新との時間的重複を排除できず、このtoggleの因果とは判定しない。simpleは`compareHeader`の登録未検出後に停止（終了コード5）。レポート: [`ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md`](tmp/ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md)。比較表示は元のOFFへ戻した。
+- **D05 reducer-only / 通信なし:** Compare Tasksの`Hide Identical Fields`をON/OFF。`mat-slide-toggle`は1件。`setHideIdenticalFields` → reducer state → selector購読による表示切替で、対応するHTTP effectはない。別タブで再確認し、ON/OFFの両操作後に表示が切り替わり、状態はOFFへ復帰した。前後の`tasks.get_all_ex`は約10秒間隔の定期更新で、`only_fields: ["last_change"]`を指定する同一要求。toggle起点の追加要求は観測せず、通信なしと判定した。simpleは`compareHeader`の登録未検出後に停止（終了コード5）。レポート: [`ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md`](tmp/ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md)。比較表示は元のOFFへ戻した。
+  - 再確認URL: `http://192.168.0.4:4200/projects/37d14cf85a97476489b532343bb9d0e6/compare-tasks;ids=0d9a969515ac4449b611b8034b4fc152,ec229ee4082442a88679b83980876384/details`
+  - 再確認DOM: `mat-slide-toggle` 1件（a11y名 `Hide Identical Fields`）。コンソールは開発mode log、既知の`NG02956` warning、form field issueのみ。
   ```bash
   node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/experiments-compare/dumbs/experiment-compare-header/experiment-compare-header.component.html:87 --event change --project stackup --route '/projects/:projectId/compare-tasks' --out-dir ../ng-wiring/x-local/tmp
   ```
