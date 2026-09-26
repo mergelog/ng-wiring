@@ -80,30 +80,30 @@ HTTP要求は通信上の重要地点として表示する。正常応答後のJ
 
 ## 実施手順
 
-- [ ] 現在のsimpleレポートを`x-local/tmp`へ再生成し、再現を確認する。
-- [ ] report model内の`action-dispatch`、`action-consume`、`call`、`http-create`とconditionを確認する。
-- [ ] simple版がどの対応判定で経路を失っているかを特定する。
-- [ ] 正常系を一本だけ結合する最小限の修正を行う。
-- [ ] 正常系と通信なしケースを区別できるテストを追加または更新する。
-- [ ] 関連テストを実行する。
-- [ ] ngwiをsimple版で再実行する。`--detail`、`--details`、`--json`は使用しない。
-- [ ] Chrome DevTools MCPでボタン操作時のNetwork requestを確認し、methodとendpointを照合する。
-- [ ] 終了コードに従い、コマンドを`x-his-success.md`または`x-his-fail.md`へ記録する。
-- [ ] 変更をcommit・pushし、結果を報告して終了する。
+- [x] 現在のsimpleレポートを`x-local/tmp`へ再生成し、再現を確認する。
+- [x] report model内の`action-dispatch`、`action-consume`、`call`、`http-create`とconditionを確認する。
+- [x] simple版がどの対応判定で経路を失っているかを特定する。
+- [x] 正常系を一本だけ結合する最小限の修正を行う。
+- [x] 正常系と通信なしケースを区別できるテストを追加または更新する。
+- [x] 関連テストを実行する。
+- [x] ngwiをsimple版で再実行する。`--detail`、`--details`、`--json`は使用しない。
+- [x] Chrome DevTools MCPでボタン操作時のNetwork requestを確認し、methodとendpointを照合する。
+- [x] 終了コードに従い、コマンドを`x-his-success.md`または`x-his-fail.md`へ記録する。
+- [x] 変更をcommit・pushし、結果を報告して終了する。
 
 ## 完了条件
 
-- [ ] simpleレポートに`exportTaskInfo$`が表示される。
-- [ ] simpleレポートに`ApiTasksService.tasksGetByIdEx()`が表示される。
-- [ ] simpleレポートに`POST ${basePath}/tasks.get_by_id_ex`が表示される。
-- [ ] simpleレポートに正常応答後の`downloadObjectAsJson()`が表示される。
-- [ ] simpleレポートに`addMessage('success', ...)`が正常系の終点として表示される。
-- [ ] dispatch直後の「通信への接続を確認できない」が表示されない。
-- [ ] task不在、例外、HTTP失敗などの分岐が主経路へ展開されない。
-- [ ] 既存の通信なしケースが誤ってHTTP経路へ接続されない。
-- [ ] 関連する自動テストが成功する。
-- [ ] ブラウザで観測したNetwork requestとsimpleレポートのmethod・endpointが一致する。
-- [ ] 実行コマンドと結果が成功・失敗履歴へ記録される。
+- [x] simpleレポートに`exportTaskInfo$`が表示される。
+- [x] simpleレポートに`ApiTasksService.tasksGetByIdEx()`が表示される。
+- [x] simpleレポートに`POST ${basePath}/tasks.get_by_id_ex`が表示される。
+- [x] simpleレポートに正常応答後の`downloadObjectAsJson()`が表示される。
+- [x] simpleレポートに`addMessage('success', ...)`が正常系の終点として表示される。
+- [x] dispatch直後の「通信への接続を確認できない」が表示されない。
+- [x] task不在、例外、HTTP失敗などの分岐が主経路へ展開されない。
+- [x] 既存の通信なしケースが誤ってHTTP経路へ接続されない。
+- [x] 関連する自動テストが成功する。
+- [x] ブラウザで観測したNetwork requestとsimpleレポートのmethod・endpointが一致する。
+- [x] 実行コマンドと結果が成功・失敗履歴へ記録される。
 
 ## 停止条件
 
