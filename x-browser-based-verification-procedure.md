@@ -100,7 +100,7 @@ simpleレポートでは、少なくとも次を確認する。
 
 simple版では、検出したすべての成功・失敗分岐を主経路へ並べない。通常の操作が成功したときの正常系を一本だけ表示し、読みやすさを優先する。
 
-通信を伴う操作では、正常系の期待着地点を最初のHTTP要求とする。
+通信を伴う操作では、HTTP要求を重要な中間地点として必ず表示する。HTTP応答後に、ダウンロード、画面遷移、状態更新、成功通知など、その操作の目的を表す主要な副作用がある場合は、正常系をそこまで続ける。
 
 ```text
 UIイベント
@@ -109,9 +109,18 @@ UIイベント
 → effect
 → API service
 → HTTP method / endpoint
+→ 正常応答後の主要処理
+→ ユーザーに見える成功結果
 ```
 
-HTTP応答後のダウンロード、成功通知、エラー通知、`requestFailed`などは、正常系の通信経路を理解するために必要な場合を除き、simple版の主経路には含めない。すべての分岐を確認する用途はsimple版とは分ける。
+正常系上のダウンロードや成功通知は、それ自体に意味がある場合は主経路へ含める。一方、エラー通知、`requestFailed`、例外処理などの失敗分岐は展開しない。成功通知から通知UI内部の処理をさらに追うなど、操作の目的を越えた共通処理も展開しない。すべての分岐を確認する用途はsimple版とは分ける。
+
+正常系の終点はHTTPに固定せず、次のような主要な副作用またはユーザーに見える結果とする。
+
+- ファイルの生成・ダウンロード
+- 画面遷移
+- 対象データの状態更新
+- 操作完了を表す成功通知
 
 通信が表示されない場合は、次の状態を区別する。
 
@@ -177,9 +186,11 @@ click
 → CommonExperimentsInfoEffects.exportTaskInfo$
 → ApiTasksService.tasksGetByIdEx()
 → POST ${basePath}/tasks.get_by_id_ex
+→ downloadObjectAsJson()
+→ addMessage('success', 'Task exported successfully')
 ```
 
-HTTP応答後には`downloadObjectAsJson()`と成功通知があるが、この改善では正常系の期待着地点をHTTP要求とし、それ以降の成功・失敗分岐はsimple版の主経路へ追加しない。
+この操作の目的はタスク情報の取得だけではなく、JSONファイルのダウンロードと成功の通知まで含む。そのため、HTTP要求を通信上の重要地点として表示したうえで、正常応答後の`downloadObjectAsJson()`と`addMessage('success', ...)`までを一本の正常系として表示する。task不在、例外、HTTP失敗などの分岐は主経路へ追加しない。
 
 ### 調査対象
 
@@ -193,9 +204,12 @@ HTTP応答後には`downloadObjectAsJson()`と成功通知があるが、この�
 
 - `exportTaskButton`のsimpleレポートに`exportTaskInfo$`が表示される。
 - `ApiTasksService.tasksGetByIdEx()`が表示される。
-- `POST ${basePath}/tasks.get_by_id_ex`が正常系の終点として表示される。
+- `POST ${basePath}/tasks.get_by_id_ex`が通信上の重要地点として表示される。
+- 正常応答後の`downloadObjectAsJson()`が表示される。
+- `addMessage('success', ...)`がユーザーに見える正常系の終点として表示される。
 - dispatch直後の「通信への接続を確認できない」が表示されない。
-- success/error通知の全分岐を主経路へ展開しない。
+- task不在、例外、HTTP失敗などの分岐を主経路へ展開しない。
+- 成功通知から通知UI内部の共通処理へ追跡を広げない。
 - 既存の通信なしケースを、誤ってHTTP経路へ接続しない。
 - ブラウザでボタンを操作した際のNetwork requestと、simpleレポートのmethod・endpointが一致する。
 
