@@ -60,8 +60,25 @@ node ../ng-wiring/dist/cli/index.js \
 
 ## A. Angular Material と CDK overlay（5件）
 
-- [ ] **A01 / P1: `mat-form-field` 内の Reactive Forms 入力から検索通信**  
+- [x] **A01 / P1: `mat-form-field` 内の Reactive Forms 入力から検索通信**
   `formcontrolname` を起点に、Material が生成する `div.mat-mdc-form-field-infix` から authored `input` / `textarea` を復元し、`input` / `change` → FormControl → debounce → dispatch / service → HTTP を追う。生成 DOM をテンプレート要素と誤対応して停止しないかを確認する。
+
+  - 状態: 通信経路の結合失敗
+  - 画面・UI: 完了タスク詳細の Clone task dialog — Project 検索
+  - URL / route: `http://192.168.0.4:4200/projects/6c5385bf7f9644a8bb766c6800889811/tasks/57407833e0904c5c8af31f18d3a79152/output/execution`
+  - target: `formcontrolname=project`（`sm-paginated-entity-selector` host。内側の authored `input[matInput][formControl]` を操作）
+  - selector: `body > div.cdk-overlay-container:nth-of-type(2) > div.cdk-global-overlay-wrapper:nth-of-type(2) > div.cdk-overlay-pane.dialog-md > mat-dialog-container.mat-mdc-dialog-container.mdc-dialog > div.mat-mdc-dialog-inner-container.mdc-dialog__container > div.mat-mdc-dialog-surface.mdc-dialog__surface > sm-clone-dialog.mat-mdc-dialog-component-host > sm-dialog-template > div.dialog-template-container > div.generic-container:nth-of-type(2) > form > div.form-container > sm-paginated-entity-selector`
+  - selector一致件数: host `1`件、内側の `sm-paginated-entity-selector[formcontrolname="project"] input` も `1`件
+  - UIイベント: authored input の `input` → `getEntities.emit(value)` → parent `(getEntities)` → `searchChanged({value: $event})`
+  - 期待経路: `searchChanged()` → `getTablesFilterProjectsOptions` dispatch → `getTablesFilterProjectsOptions$` → `debounceTime(300)` → `switchMap` / `forkJoin` → `ApiProjectsService.projectsGetAllEx()` → `POST ${basePath}/projects.get_all_ex` → project候補更新
+  - ngwiの到達点: dialog表示経路と `(getEntities)/(loadMore)/(createNewSelected) searchChanged(...)` まで。`searchChanged()` 本体、dispatch、effect、service、HTTPは表示されず「通信: この探索範囲では未検出」
+  - 実行時Network: `Semi` 入力で `POST /service/1/api/v999.0/projects.get_all_ex` が2件発生し、ともに `200`。部分検索 `pattern: "Semi"` と完全一致確認 `pattern: "^Semi$"`
+  - 主要副作用: autocomplete候補に `Semiconductor Quality Prediction` 以下のprojectが表示。Cloneは実行せずCancelで閉じた
+  - console error: なし
+  - exit code: `5`
+  - report: `x-local/tmp/ngwi-08-CloneDialogComponent.formcontrolname=project-260926.141717.md`
+  - 履歴: `x-his-fail.md`
+  - 改善候補: custom form controlの内側のauthored inputイベントからoutput bindingを越えて親handlerを起点化し、dispatch → effect → helper内`forkJoin` → generated API serviceの2本の正常系HTTPを結合する
 
 - [ ] **A02 / P1: `mat-select` の overlay option 選択から再取得通信**  
   trigger はコンポーネント配下、`mat-option` は `body > .cdk-overlay-container` 配下になる経路を対象にする。`selectionChange` / form value change → handler → store → HTTP が、DOM の親子関係が切れることで失われないかを確認する。
@@ -199,4 +216,3 @@ node ../ng-wiring/dist/cli/index.js \
 - [ ] 正常系の HTTP 後に意味のある download、route、state update、success notification がある場合は終点まで確認している。
 - [ ] success / fail 履歴に完全なコマンド、URL、exit code、結果、生成ファイルを記録している。
 - [ ] 同一原因の重複を整理し、改善タスク候補と回帰 fixture 候補を対応付けている。
-
