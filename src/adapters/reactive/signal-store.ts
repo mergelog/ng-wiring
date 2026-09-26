@@ -12,6 +12,8 @@ export interface StoreMember {
   featureIndex: number;
   capability: string;
   source: string;
+  /** Tracked state keys read while a computed or linked-state member is evaluated. */
+  dependencies: string[];
   /** Set when a later feature declares the same name; the earlier member is no longer reachable. */
   shadows: string | null;
 }
@@ -136,12 +138,42 @@ function featureCall(context: AnalysisContext, expression: ts.Expression, depth:
 interface Collector { features: StoreFeature[]; members: StoreMember[]; stateKeys: string[];
   hooks: StoreHook[]; gaps: string[] }
 function addMembers(collector: Collector, names: string[], kind: StoreMemberKind, index: number,
-  capability: string, source: string): void {
+  capability: string, source: string, dependencies: ReadonlyMap<string, string[]> = new Map()): void {
   for (const name of names) {
     const previous = collector.members.filter(item => item.name === name).at(-1);
     collector.members.push({ name, kind, featureIndex: index, capability, source,
+      dependencies: [...(dependencies.get(name) ?? [])],
       shadows: previous ? `${previous.capability}#${previous.name}@${previous.source}` : null });
   }
+}
+/** Finds Store keys read by a feature's derived member, preserving only reads through that factory's Store. */
+function derivedDependencies(context: AnalysisContext, expression: ts.Expression | undefined,
+  object: ts.ObjectLiteralExpression | null): Map<string, string[]> {
+  const t = context.toolchain.typescript;
+  const callback = expression && definition(context, expression);
+  if (!callback || (!t.isArrowFunction(callback) && !t.isFunctionExpression(callback))) return new Map();
+  const parameter = callback.parameters[0]?.name;
+  const receiverNames = new Set<string>();
+  if (parameter && t.isIdentifier(parameter)) receiverNames.add(parameter.text);
+  if (parameter && t.isObjectBindingPattern(parameter)) for (const element of parameter.elements) {
+    const source = element.propertyName ?? element.name;
+    if (t.isIdentifier(source)) receiverNames.add(source.text);
+  }
+  const result = new Map<string, string[]>();
+  for (const property of object?.properties ?? []) {
+    if (!t.isPropertyAssignment(property) || !property.name ||
+      (!t.isIdentifier(property.name) && !t.isStringLiteralLike(property.name))) continue;
+    const name = property.name.text;
+    const keys = new Set<string>();
+    const visit = (node: ts.Node): void => {
+      if (t.isPropertyAccessExpression(node) && t.isIdentifier(node.expression) &&
+        receiverNames.has(node.expression.text)) keys.add(node.name.text);
+      t.forEachChild(node, visit);
+    };
+    visit(property.initializer);
+    result.set(name, [...keys]);
+  }
+  return result;
 }
 /** Expands the argument list in declaration order; a later feature shadows an earlier member of the same name. */
 function collectFeatures(context: AnalysisContext, args: readonly ts.Expression[], collector: Collector,
@@ -204,16 +236,20 @@ function collectFeatures(context: AnalysisContext, args: readonly ts.Expression[
       }
       case 'signals/withLinkedState': {
         push();
-        const keys = memberNames(context, producedObject(context, call.arguments[0]), collector.gaps, 'withLinkedState');
+        const object = producedObject(context, call.arguments[0]);
+        const keys = memberNames(context, object, collector.gaps, 'withLinkedState');
         collector.stateKeys.push(...keys);
-        addMembers(collector, keys, 'linked-state', index, capability.matcherId, source);
+        addMembers(collector, keys, 'linked-state', index, capability.matcherId, source,
+          derivedDependencies(context, call.arguments[0], object));
         break;
       }
-      case 'signals/withComputed':
+      case 'signals/withComputed': {
         push();
-        addMembers(collector, memberNames(context, producedObject(context, call.arguments[0]), collector.gaps,
-          'withComputed'), 'computed', index, capability.matcherId, source);
+        const object = producedObject(context, call.arguments[0]);
+        addMembers(collector, memberNames(context, object, collector.gaps, 'withComputed'), 'computed', index,
+          capability.matcherId, source, derivedDependencies(context, call.arguments[0], object));
         break;
+      }
       case 'signals/withProps':
         push();
         addMembers(collector, memberNames(context, producedObject(context, call.arguments[0]), collector.gaps,

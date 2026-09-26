@@ -9,6 +9,9 @@ export const CatalogStore = signalStore(
     setTerm(term: string): void {
       patchState(store, { term });
     },
+    setDraft(draft: string): void {
+      patchState(store, { draft });
+    },
     clear(): void {
       patchState(store, () => ({ term: '' }), () => ({ hits: 0 }));
     },

@@ -4,9 +4,9 @@
 
 ## 目的と基準
 
-[`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 25 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
+[`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 20 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
 
-作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R05 の 3 件を対応し、現在は **85 件が fixture 合格、25 件が未達**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
+作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R05 の 3 件と R06 の 3 件を対応し、現在は **90 件が fixture 設定済み、20 件が未達**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
 
 ## 進め方と完了判定
 
@@ -74,9 +74,9 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 
 ### R06: SignalStore の派生状態と hooks（3 件）
 
-- [ ] **R06/withComputed** — 再現: `signal-store-apis`, `data-id=setTermButton`。生成 Store の `label` を派生元から表示まで `reactive-link` で結ぶ。
-- [ ] **R06/withLinkedState** — 再現: `signal-store-apis`, `data-id=setTermButton`。`draft` の再計算と明示 write を区別し、表示への経路を検証する。
-- [ ] **R06/withHooks** — 再現: `signal-store-apis`, `data-id=setTermButton`。`onInit` の起動条件と `onDestroy` の終了条件を保持し、Store 未生成の反例も壊さない。
+- [x] **R06/withComputed** — 再現: `signal-store-apis`, `data-id=setTermButton`。生成 Store の `label` を派生元から表示まで `reactive-link` で結ぶ。
+- [x] **R06/withLinkedState** — 再現: `signal-store-apis`, `data-id=setTermButton`。`draft` の再計算と明示 write を区別し、表示への経路を検証する。
+- [x] **R06/withHooks** — 再現: `signal-store-apis`, `data-id=setTermButton`。`onInit` の起動条件と `onDestroy` の終了条件を保持し、Store 未生成の反例も壊さない。
 
 ### R07: SignalState の監視と深い派生（2 件）
 

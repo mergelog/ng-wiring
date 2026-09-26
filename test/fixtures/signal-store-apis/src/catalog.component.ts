@@ -19,6 +19,7 @@ export class CatalogComponent {
 
   setTerm(): void {
     this.store.setTerm('shoes');
+    this.store.setDraft('manual');
   }
 
   clear(): void {

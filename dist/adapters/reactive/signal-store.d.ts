@@ -8,6 +8,8 @@ export interface StoreMember {
     featureIndex: number;
     capability: string;
     source: string;
+    /** Tracked state keys read while a computed or linked-state member is evaluated. */
+    dependencies: string[];
     /** Set when a later feature declares the same name; the earlier member is no longer reachable. */
     shadows: string | null;
 }

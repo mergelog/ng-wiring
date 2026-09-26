@@ -10,7 +10,7 @@ import { traceHttpFromEffect, traceHttpFromEventConsumer, traceHttpFromMethod } 
 import { resolveElementBindings } from '../resolve/operation/bindings.js';
 import { resolveTemplateExpressions } from '../resolve/operation/expressions.js';
 import { analyzeSignals } from '../adapters/reactive/signals.js';
-import { catalogSignalStores } from '../adapters/reactive/signal-store.js';
+import { catalogSignalStores, storeLifetime } from '../adapters/reactive/signal-store.js';
 import { analyzeEvents, resolveEventDelivery } from '../adapters/reactive/events.js';
 import { analyzeReactiveMethods } from '../adapters/reactive/methods.js';
 import { eventDeliverySteps } from '../adapters/reactive/delivery.js';
@@ -1190,11 +1190,36 @@ function addReactiveWrites(input) {
                 // keep distinct state nodes, even when their member keys are identical.
                 const node = { kind: 'state', id: `${instance.id}.${key}`, label: key };
                 traced.push({ kind: 'state-write', from: listenerEnd, to: node, location: patch.location,
-                    conditions: [...instance.conditions, ...(patch.keys.length ? [] : ['書き換え対象のキーを静的に確定できていない'])],
+                    conditions: [...instance.conditions,
+                        ...storeLifetime(stores, declaration.id, instance.id).start.map(item => `Store starts at ${item}`),
+                        ...storeLifetime(stores, declaration.id, instance.id).end.map(item => `Store ends at ${item}`),
+                        ...declaration.members.filter(member => member.name === key && member.kind === 'linked-state')
+                            .map(() => 'an explicit write replaces the linked-state value until its source changes'),
+                        ...(patch.keys.length ? [] : ['書き換え対象のキーを静的に確定できていない'])],
                     capability: 'signals/patchState',
                     details: { writer: detail(patch.member), state: detail(key),
                         valueExpression: unresolvedDetail('patchState の更新式は静的に確定していない') } });
                 keys.push({ ownerId: null, member: key, storeId: instance.id, node });
+            }
+            // A state write re-evaluates only derived Store members that read that exact key. The Store
+            // instance stays on both ends, so another provider of the same declaration cannot be joined.
+            for (const member of declaration.members.filter(item => (item.kind === 'computed' || item.kind === 'linked-state') && item.dependencies.some(key => written.includes(key)))) {
+                const conditions = [...instance.conditions,
+                    ...(member.kind === 'computed'
+                        ? ['the value is recomputed lazily when read', 'a tracked dependency must change its compared value']
+                        : ['the value is recomputed when its source changes',
+                            'an explicit write also replaces the value'])];
+                const sourceKeys = member.dependencies.filter(key => written.includes(key));
+                for (const key of sourceKeys) {
+                    traced.push({ kind: 'reactive-link', from: { kind: 'state', id: `${instance.id}.${key}`, label: key },
+                        to: { kind: 'symbol', id: `${instance.id}.${member.name}`, label: member.name },
+                        location: member.source, conditions, capability: member.capability,
+                        details: completeDetails('reactive-link', { source: detail(key), consumer: detail(member.name),
+                            operator: detail(member.capability), scheduling: detail(member.kind === 'computed'
+                                ? 'read-time recomputation' : 'source change or explicit write') }) });
+                }
+                keys.push({ ownerId: null, member: member.name, storeId: instance.id,
+                    node: { kind: 'state', id: `${instance.id}.${member.name}`, label: member.name } });
             }
         }
     }
