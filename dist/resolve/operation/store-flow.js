@@ -254,34 +254,101 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                 symbol = context.checker.getAliasedSymbol(symbol);
             return symbol?.getName() === api && !!symbol.declarations?.some(d => slash(d.getSourceFile().fileName).includes('/node_modules/@ngrx/signals/'));
         };
+        const methodInStoreCall = (call) => {
+            if (!signalApi(call, 'signalStore'))
+                return null;
+            const findInFeature = (expression, depth = 0) => {
+                if (depth >= 16)
+                    return null;
+                const resolved = (node) => {
+                    let current = unwrap(t, node);
+                    const seen = new Set();
+                    while (t.isIdentifier(current) && !seen.has(current)) {
+                        seen.add(current);
+                        let symbol = context.checker.getSymbolAtLocation(current);
+                        if (symbol && symbol.flags & t.SymbolFlags.Alias)
+                            symbol = context.checker.getAliasedSymbol(symbol);
+                        const declaration = symbol?.valueDeclaration;
+                        if (!declaration || !t.isVariableDeclaration(declaration) || !declaration.initializer)
+                            break;
+                        current = unwrap(t, declaration.initializer);
+                    }
+                    return current;
+                };
+                const feature = resolved(expression);
+                if (!t.isCallExpression(feature))
+                    return null;
+                const callee = t.isPropertyAccessExpression(feature.expression) ? feature.expression.name : feature.expression;
+                let symbol = context.checker.getSymbolAtLocation(callee);
+                if (symbol && symbol.flags & t.SymbolFlags.Alias)
+                    symbol = context.checker.getAliasedSymbol(symbol);
+                const api = symbol?.getName();
+                if (api === 'withMethods') {
+                    const factory = feature.arguments[0];
+                    if (!factory || (!t.isArrowFunction(factory) && !t.isFunctionExpression(factory)))
+                        return null;
+                    const returned = t.isBlock(factory.body)
+                        ? factory.body.statements.find(t.isReturnStatement)?.expression : factory.body;
+                    const object = returned && unwrap(t, returned);
+                    if (!object || !t.isObjectLiteralExpression(object))
+                        return null;
+                    const method = object.properties.find(property => t.isMethodDeclaration(property) &&
+                        property.name.getText() === name);
+                    return method && t.isMethodDeclaration(method) ? method : null;
+                }
+                if (api === 'withFeature') {
+                    const factory = feature.arguments[0];
+                    if (factory && (t.isArrowFunction(factory) || t.isFunctionExpression(factory))) {
+                        const returned = t.isBlock(factory.body)
+                            ? factory.body.statements.find(t.isReturnStatement)?.expression : factory.body;
+                        if (returned)
+                            return findInFeature(returned, depth + 1);
+                    }
+                    return null;
+                }
+                if (api === 'signalStoreFeature') {
+                    for (const nested of feature.arguments) {
+                        const found = findInFeature(nested, depth + 1);
+                        if (found)
+                            return found;
+                    }
+                }
+                return null;
+            };
+            for (const feature of call.arguments) {
+                const method = findInFeature(feature);
+                if (method)
+                    return method;
+            }
+            return null;
+        };
         for (const file of context.sourceFiles) {
             const source = context.program.getSourceFile(file);
             if (!source)
                 continue;
             for (const statement of source.statements) {
-                if (!t.isVariableStatement(statement))
-                    continue;
-                for (const declaration of statement.declarationList.declarations) {
-                    if (tokenId(context, declaration.name) !== implementation || !declaration.initializer ||
-                        !t.isCallExpression(declaration.initializer) || !signalApi(declaration.initializer, 'signalStore'))
-                        continue;
-                    for (const feature of declaration.initializer.arguments) {
-                        if (!t.isCallExpression(feature) || !signalApi(feature, 'withMethods'))
+                if (t.isVariableStatement(statement))
+                    for (const declaration of statement.declarationList.declarations) {
+                        if (tokenId(context, declaration.name) !== implementation || !declaration.initializer)
                             continue;
-                        const factory = feature.arguments[0];
-                        if (!factory || (!t.isArrowFunction(factory) && !t.isFunctionExpression(factory)))
-                            continue;
-                        const returned = t.isBlock(factory.body) ?
-                            factory.body.statements.find(t.isReturnStatement)?.expression : factory.body;
-                        const object = returned && unwrap(t, returned);
-                        if (!object || !t.isObjectLiteralExpression(object))
-                            continue;
-                        const method = object.properties.find(property => t.isMethodDeclaration(property) &&
-                            property.name.getText() === name);
-                        if (method && t.isMethodDeclaration(method))
-                            return method;
+                        const expression = unwrap(t, declaration.initializer);
+                        if (t.isCallExpression(expression)) {
+                            const method = methodInStoreCall(expression);
+                            if (method)
+                                return method;
+                        }
                     }
-                }
+                if (t.isClassDeclaration(statement) && statement.name && tokenId(context, statement.name) === implementation)
+                    for (const clause of statement.heritageClauses ?? [])
+                        if (clause.token === t.SyntaxKind.ExtendsKeyword)
+                            for (const type of clause.types) {
+                                const expression = unwrap(t, type.expression);
+                                if (t.isCallExpression(expression)) {
+                                    const method = methodInStoreCall(expression);
+                                    if (method)
+                                        return method;
+                                }
+                            }
             }
         }
         return null;

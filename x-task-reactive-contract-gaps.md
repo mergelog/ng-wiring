@@ -4,9 +4,9 @@
 
 ## 目的と基準
 
-[`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 28 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
+[`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 25 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
 
-作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。`npm test` は 236 件合格、`npm run check:contracts` は下記 28 件の `fixture` 欠落で失敗する。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。各項目の現在の停止理由と再現先は台帳の `missingFixture` / `demonstratedBy` を正本とする。
+作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R05 の 3 件を対応し、現在は **85 件が fixture 合格、25 件が未達**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
 
 ## 進め方と完了判定
 
@@ -68,9 +68,9 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 
 ### R05: 生成 Store と feature 合成（3 件）
 
-- [ ] **R05/signalStore.class-extends** — 再現: `signal-store-apis`, `data-id=shoutButton`。`ExtendedCatalogStore` の継承先から生成 Store の method 本体に到達する。
-- [ ] **R05/withFeature** — 再現: `signal-store-apis`, `data-id=shoutButton`。`withFeature` が追加する `shouted` を合成順どおり解決し、未解決 feature を無条件に通過させない。
-- [ ] **R05/signalStore.provider-instance** — 再現: `signal-store-apis`, `data-id=setTermButton`。同じ宣言と state key でも provider ごとのインスタンスを分け、別インスタンスへの誤接続を禁止する。
+- [x] **R05/signalStore.class-extends** — 再現: `signal-store-apis`, `data-id=shoutButton`。`ExtendedCatalogStore` の継承先から生成 Store の method 本体に到達する。
+- [x] **R05/withFeature** — 再現: `signal-store-apis`, `data-id=shoutButton`。`withFeature` が追加する `shouted` を合成順どおり解決し、未解決 feature は境界として残す。
+- [x] **R05/signalStore.provider-instance** — 再現: `signal-store-apis`, `data-id=setTermButton`。同じ宣言と state key でも provider ごとのインスタンスを分け、別インスタンスへの誤接続を禁止する。
 
 ### R06: SignalStore の派生状態と hooks（3 件）
 

@@ -228,18 +228,49 @@ export const Mystery=makeStore(withState({a:1}),(s:never)=>s);
 }));
 
 test('withFeature is expanded when resolvable and left as a boundary when not', async () => fixture(`
-import {signalStore, signalStoreFeature, withState, withFeature} from '@ngrx/signals';
+import {signalStore, signalStoreFeature, withState, withFeature, withMethods, withComputed} from '@ngrx/signals';
+import {computed} from '@angular/core';
 export const inner=signalStoreFeature(withState({inner:1}));
 export const Resolved=signalStore(withState({a:1}),withFeature(()=>inner));
+export const DeferredMethod=signalStore(withState({a:1}),withFeature(store=>withMethods(()=>({deferred(){return store.a();}}))));
+export const DeferredComputed=signalStore(withState({a:1}),withFeature(store=>withComputed(()=>({shouted:computed(()=>String(store.a()))}))));
 export const Blocked=signalStore(withState({a:1}),withFeature(({a})=>a as never));
 `, ({ context }) => {
   const catalog = catalogSignalStores(context);
   const resolved = [...catalog.declarations.values()].find(item => item.name === 'Resolved');
   assert(resolved.stateKeys.includes('inner'));
   assert.equal(resolved.status, 'resolved');
+  assert.deepEqual(resolved.features.map(item => [item.index, item.capability, item.status]), [
+    [0, 'signals/withState', 'resolved'], [1, 'signals/withFeature', 'resolved'],
+    [2, 'signals/signalStoreFeature', 'resolved'], [3, 'signals/withState', 'resolved'],
+  ]);
+  const deferred = [...catalog.declarations.values()].find(item => item.name === 'DeferredMethod');
+  assert(deferred.members.some(item => item.name === 'deferred' && item.kind === 'method'));
+  assert.equal(deferred.status, 'resolved');
+  const computed = [...catalog.declarations.values()].find(item => item.name === 'DeferredComputed');
+  assert(computed.members.some(item => item.name === 'shouted' && item.kind === 'computed'));
+  assert.equal(computed.members.find(item => item.name === 'shouted').featureIndex, 2,
+    'the deferred member follows the already-composed state and withFeature');
+  assert.equal(computed.status, 'resolved');
   const blocked = [...catalog.declarations.values()].find(item => item.name === 'Blocked');
   assert.equal(blocked.status, 'partial');
   assert(blocked.features.some(item => item.capability === 'signals/withFeature' && item.status === 'boundary'));
+}));
+
+test('the same generated Store declaration has distinct provider instances', async () => fixture(`
+import {signalStore, withState} from '@ngrx/signals';
+import {Component, inject} from '@angular/core';
+export const SharedStore=signalStore(withState({value:0}));
+@Component({selector:'app-one',template:'',providers:[SharedStore]}) export class One { store=inject(SharedStore); }
+@Component({selector:'app-two',template:'',providers:[SharedStore]}) export class Two { store=inject(SharedStore); }
+`, ({ context }) => {
+  const catalog = catalogSignalStores(context);
+  const declaration = [...catalog.declarations.values()].find(item => item.name === 'SharedStore');
+  const instances = catalog.instances.filter(item => item.declarationId === declaration.id && item.created);
+  assert.equal(instances.length, 2);
+  assert.equal(new Set(instances.map(item => item.id)).size, 2);
+  assert.equal(new Set(instances.map(item => item.owner)).size, 2);
+  assert(instances.every(item => item.kind === 'inject'));
 }));
 
 // P11-08 / P11-09

@@ -459,7 +459,26 @@ test('signal-store-apis: a Store that was only provided is not running', async (
   const keys = edgeKeys(report);
   assert.deepEqual(keys.filter(key => key.includes('idle') || key.includes('touch')), [],
     'a Store that is only provided was treated as created');
-  // The class-extends form is catalogued, but its method call is where this version stops.
-  assert(report.edges.some(edge => edge.kind === 'boundary' && edge.confidence === 'unresolved'));
-  assert.equal(report.status, 'partial');
+  // The inherited generated class and the deferred feature both resolve on the live Store instance.
+  assert(keys.includes('call|src/extended.component.ts#ExtendedComponent|store.shout'));
+  assert(keys.includes('state-write|click → shout()|term'));
+  assert(keys.includes('state-read|term|<span>'));
+  assert(!report.edges.some(edge => edge.kind === 'boundary' &&
+    edge.details.reason?.value?.includes('store.shout')));
+});
+
+test('signal-store-apis: providers of one Store declaration keep state reads and writes separate', async () => {
+  const primary = await analyzeFixture('signal-store-apis', { target: 'data-id=setTermButton' });
+  const peer = await analyzeFixture('signal-store-apis', { target: 'data-id=peerSetTermButton' });
+  const stateWrite = (report) => report.edges.find(edge => edge.kind === 'state-write' &&
+    edge.details.state?.value === 'term');
+  const stateRead = (report) => report.edges.find(edge => edge.kind === 'state-read' &&
+    edge.details.state?.value === 'term');
+  const primaryWrite = stateWrite(primary.report);
+  const peerWrite = stateWrite(peer.report);
+  assert(primaryWrite && peerWrite);
+  assert.notEqual(primaryWrite.to, peerWrite.to,
+    'the same declaration and key must have different provider state nodes');
+  assert.equal(stateRead(primary.report).from, primaryWrite.to);
+  assert.equal(stateRead(peer.report).from, peerWrite.to);
 });

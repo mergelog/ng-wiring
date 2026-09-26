@@ -694,9 +694,9 @@ function addOperations(input: OperationInput): void {
       ? `${relative(node.getSourceFile().fileName)}#${node.name.text}` : null;
   };
   /** The member a component holds an injected SignalStore in, so `store.key()` can be resolved. */
-  const storeMemberFor = (ownerId: string, declarationId: string): string | null => {
+  const storeMemberFor = (ownerId: string, instanceId: string): string | null => {
     const instance = stores.instances.find(item => sameOwnerId(ownerId, item.owner) &&
-      item.declarationId === declarationId && item.created);
+      item.id === instanceId && item.created);
     return instance ? memberNameAt(instance.source) : null;
   };
 
@@ -1193,13 +1193,15 @@ function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
       if (!patch.member || !entered.has(patch.member)) continue;
       const written = patch.keys.length ? patch.keys : declaration.stateKeys;
       for (const key of written) {
-        const node = { kind: 'state' as NodeKind, id: `${declaration.id}.${key}`, label: key };
+        // State belongs to the injected Store instance. Two providers of the same declaration therefore
+        // keep distinct state nodes, even when their member keys are identical.
+        const node = { kind: 'state' as NodeKind, id: `${instance.id}.${key}`, label: key };
         traced.push({ kind: 'state-write', from: listenerEnd, to: node, location: patch.location,
           conditions: [...instance.conditions, ...(patch.keys.length ? [] : ['書き換え対象のキーを静的に確定できていない'])],
           capability: 'signals/patchState',
           details: { writer: detail(patch.member), state: detail(key),
             valueExpression: unresolvedDetail('patchState の更新式は静的に確定していない') } });
-        keys.push({ ownerId: null, member: key, storeId: declaration.id, node });
+        keys.push({ ownerId: null, member: key, storeId: instance.id, node });
       }
     }
   }
