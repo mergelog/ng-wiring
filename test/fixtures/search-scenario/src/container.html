@@ -1,5 +1,5 @@
 <app-section>
-  <app-search search-button [value]="searchedText" [minimumChars]="1" [debounceTime]="0" (valueChanged)="searchTable($event)"></app-search>
+  <app-search data-id="searchHost" search-button [value]="searchedText" [minimumChars]="1" [debounceTime]="0" (valueChanged)="searchTable($event);"></app-search>
   <app-results-table [searchedText]="searchedText" (searchCounterChanged)="searchCounterChanged($event)" (scrollToResultCounterReset)="scrollIndexCounterReset()"></app-results-table>
   <button data-id="saveButton" (click)="save()"></button>
 </app-section>

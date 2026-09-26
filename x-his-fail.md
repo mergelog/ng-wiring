@@ -96,3 +96,20 @@ node ../ng-wiring/dist/cli/index.js \
 - Browser: `Semi` 入力で `POST /service/1/api/v999.0/projects.get_all_ex` が2件発生し、ともに `200`。候補一覧更新を確認し、Cloneは実行せずCancel
 - Console: error / warningなし
 - Output: `x-local/tmp/ngwi-08-CloneDialogComponent.formcontrolname=project-260926.141717.md`
+
+### 修正後確認
+
+```bash
+node ../ng-wiring/dist/cli/index.js \
+  'formcontrolname=project' \
+  --project stackup \
+  --selector 'body > div.cdk-overlay-container:nth-of-type(2) > div.cdk-global-overlay-wrapper:nth-of-type(2) > div.cdk-overlay-pane.dialog-md > mat-dialog-container.mat-mdc-dialog-container.mdc-dialog > div.mat-mdc-dialog-inner-container.mdc-dialog__container > div.mat-mdc-dialog-surface.mdc-dialog__surface > sm-clone-dialog.mat-mdc-dialog-component-host > sm-dialog-template > div.dialog-template-container > div.generic-container:nth-of-type(2) > form > div.form-container > sm-paginated-entity-selector' \
+  --out-dir ../ng-wiring/x-local/tmp
+```
+
+- URL: http://192.168.0.4:4200/projects/6c5385bf7f9644a8bb766c6800889811/tasks/57407833e0904c5c8af31f18d3a79152/output/execution
+- Exit code: `5`
+- Result: `getEntities → searchChanged() → getTablesFilterProjectsOptions dispatch → getTablesFilterProjectsOptions$ → getPaginatedAndSearchedAndSelectedProjects() → ApiProjectsService.projectsGetAllEx() → POST ${basePath}/projects.get_all_ex` を結合。simpleレポートはhelper内の3つの条件付きrequest siteを表示し、通信経路の結合失敗は解消した。レポート全体は検証対象外の関連gapを含むため `partial`
+- Browser: `Semi` 入力で `POST /service/1/api/v999.0/projects.get_all_ex` が2件発生し、ともに `200`。request patternは `"Semi"` と `"^Semi$"`。Cloneは実行せずCancel
+- Console: errorなし。今回の操作と無関係な `NG02956` preconnect warningが1件
+- Output: `x-local/tmp/ngwi-17-CloneDialogComponent.formcontrolname=project-260926.143552.md`

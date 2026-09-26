@@ -63,7 +63,7 @@ node ../ng-wiring/dist/cli/index.js \
 - [x] **A01 / P1: `mat-form-field` 内の Reactive Forms 入力から検索通信**
   `formcontrolname` を起点に、Material が生成する `div.mat-mdc-form-field-infix` から authored `input` / `textarea` を復元し、`input` / `change` → FormControl → debounce → dispatch / service → HTTP を追う。生成 DOM をテンプレート要素と誤対応して停止しないかを確認する。
 
-  - 状態: 通信経路の結合失敗
+  - 状態: 通信経路の結合成功（レポート全体は関連gapによりpartial）
   - 画面・UI: 完了タスク詳細の Clone task dialog — Project 検索
   - URL / route: `http://192.168.0.4:4200/projects/6c5385bf7f9644a8bb766c6800889811/tasks/57407833e0904c5c8af31f18d3a79152/output/execution`
   - target: `formcontrolname=project`（`sm-paginated-entity-selector` host。内側の authored `input[matInput][formControl]` を操作）
@@ -71,14 +71,14 @@ node ../ng-wiring/dist/cli/index.js \
   - selector一致件数: host `1`件、内側の `sm-paginated-entity-selector[formcontrolname="project"] input` も `1`件
   - UIイベント: authored input の `input` → `getEntities.emit(value)` → parent `(getEntities)` → `searchChanged({value: $event})`
   - 期待経路: `searchChanged()` → `getTablesFilterProjectsOptions` dispatch → `getTablesFilterProjectsOptions$` → `debounceTime(300)` → `switchMap` / `forkJoin` → `ApiProjectsService.projectsGetAllEx()` → `POST ${basePath}/projects.get_all_ex` → project候補更新
-  - ngwiの到達点: dialog表示経路と `(getEntities)/(loadMore)/(createNewSelected) searchChanged(...)` まで。`searchChanged()` 本体、dispatch、effect、service、HTTPは表示されず「通信: この探索範囲では未検出」
-  - 実行時Network: `Semi` 入力で `POST /service/1/api/v999.0/projects.get_all_ex` が2件発生し、ともに `200`。部分検索 `pattern: "Semi"` と完全一致確認 `pattern: "^Semi$"`
+  - ngwiの到達点: `getEntities → searchChanged() → getTablesFilterProjectsOptions dispatch → getTablesFilterProjectsOptions$ → getPaginatedAndSearchedAndSelectedProjects() → ApiProjectsService.projectsGetAllEx() → POST ${basePath}/projects.get_all_ex`。helper内`forkJoin`の3つの条件付きrequest siteを表示
+  - 実行時Network: 修正後にも `Semi` 入力で `POST /service/1/api/v999.0/projects.get_all_ex` が2件発生し、ともに `200`。部分検索 `pattern: "Semi"` と完全一致確認 `pattern: "^Semi$"`
   - 主要副作用: autocomplete候補に `Semiconductor Quality Prediction` 以下のprojectが表示。Cloneは実行せずCancelで閉じた
-  - console error: なし
+  - console error: なし。今回の操作と無関係な `NG02956` preconnect warningが1件
   - exit code: `5`
-  - report: `x-local/tmp/ngwi-08-CloneDialogComponent.formcontrolname=project-260926.141717.md`
+  - report: `x-local/tmp/ngwi-17-CloneDialogComponent.formcontrolname=project-260926.143552.md`
   - 履歴: `x-his-fail.md`
-  - 改善候補: custom form controlの内側のauthored inputイベントからoutput bindingを越えて親handlerを起点化し、dispatch → effect → helper内`forkJoin` → generated API serviceの2本の正常系HTTPを結合する
+  - 修正内容: 末尾セミコロン付きoutput handlerを親handlerとして解決し、同名DOMイベントとの二重解釈を除去。ファイル直下のarrow helperと、引数で渡されたDI serviceを越えてhelper内`forkJoin`のHTTPを結合
 
 - [ ] **A02 / P1: `mat-select` の overlay option 選択から再取得通信**  
   trigger はコンポーネント配下、`mat-option` は `body > .cdk-overlay-container` 配下になる経路を対象にする。`selectionChange` / form value change → handler → store → HTTP が、DOM の親子関係が切れることで失われないかを確認する。

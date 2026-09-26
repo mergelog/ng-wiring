@@ -285,9 +285,10 @@ function consumptionOf(context, start, state, inputs) {
             }
             if (t.isMethodDeclaration(current) || t.isFunctionDeclaration(current) || t.isGetAccessorDeclaration(current))
                 return throughCallers(current);
-            if ((t.isVariableDeclaration(parent) || t.isPropertyDeclaration(parent)) && parent.initializer === current &&
-                isFunctionLike(t, current))
-                return stop(parent, `the value is returned by ${parent.name.getText()}, whose call sites are not followed in this version`);
+            if (t.isVariableDeclaration(parent) && parent.initializer === current)
+                return throughCallers(parent);
+            if (t.isPropertyDeclaration(parent) && parent.initializer === current && isFunctionLike(t, current))
+                return stop(parent, `the value is returned by ${parent.name.getText()}, whose instance call sites are unresolved`);
             return stop(current, 'the function that returns the value is not a followed declaration');
         }
         if (t.isVariableDeclaration(parent) && parent.initializer === current) {
@@ -425,7 +426,7 @@ function traceHttpFromRoot(context, catalog, root, rootName, rootOwner, options,
         return !!node && node.getSourceFile() === body.getSourceFile() &&
             node.getStart() >= body.getStart() && node.getEnd() <= body.getEnd();
     });
-    const visitMethod = (declaration, receiver, path, conditions, depth, argumentsAtCall = []) => {
+    const visitMethod = (declaration, receiver, path, conditions, depth, argumentsAtCall = [], inheritedContainer = null) => {
         if (++expanded > LIMIT) {
             if (expanded === LIMIT + 1)
                 diagnostics.push(`HTTP flow reached ${LIMIT} expansion states`);
@@ -441,19 +442,23 @@ function traceHttpFromRoot(context, catalog, root, rootName, rootOwner, options,
             return;
         }
         active.add(declaration);
-        const body = t.isPropertyDeclaration(declaration) || t.isPropertyAssignment(declaration)
-            ? declaration.initializer : declaration.body;
+        const initializer = t.isPropertyDeclaration(declaration) || t.isPropertyAssignment(declaration) ||
+            t.isVariableDeclaration(declaration) ? declaration.initializer : null;
+        const callable = initializer && isFunctionLike(t, initializer) ? initializer : declaration;
+        const body = t.isPropertyDeclaration(callable) || t.isPropertyAssignment(callable) ||
+            t.isVariableDeclaration(callable) ? callable.initializer : callable.body;
         if (!body) {
             add('boundary', receiver, name, declaration, path, conditions, 'the callee body is unavailable');
             active.delete(declaration);
             return;
         }
         const parameterValues = new Map();
-        if (!t.isPropertyDeclaration(declaration) && !t.isPropertyAssignment(declaration))
-            declaration.parameters.forEach((parameter, position) => {
+        if (isFunctionLike(t, callable))
+            callable.parameters.forEach((parameter, position) => {
                 if (t.isIdentifier(parameter.name) && argumentsAtCall[position])
                     parameterValues.set(parameter.name.text, argumentsAtCall[position]);
             });
+        const container = t.findAncestor(declaration, t.isClassDeclaration) ?? inheritedContainer;
         for (const site of requestsIn(body)) {
             const node = index.get(site.id) ?? declaration;
             const urlArgument = t.isCallExpression(node) && node.arguments[0];
@@ -514,21 +519,26 @@ function traceHttpFromRoot(context, catalog, root, rootName, rootOwner, options,
                         visit(argument, localConditions, pipelinePath);
                     return;
                 }
-                if (callee.expression.kind === t.SyntaxKind.ThisKeyword && t.isClassDeclaration(declaration.parent)) {
-                    const target = classMethod(context, declaration.parent, callee.name.text);
+                if (callee.expression.kind === t.SyntaxKind.ThisKeyword && container) {
+                    const target = classMethod(context, container, callee.name.text);
                     if (target) {
                         add('call', receiver, callee.name.text, node, nextPath, localConditions);
-                        visitMethod(target, receiver, nextPath, localConditions, depth + 1, node.arguments);
+                        visitMethod(target, receiver, nextPath, localConditions, depth + 1, node.arguments, container);
                         return;
                     }
                 }
-                if (t.isPropertyAccessExpression(callee.expression) &&
-                    callee.expression.expression.kind === t.SyntaxKind.ThisKeyword && t.isClassDeclaration(declaration.parent)) {
-                    const fieldName = callee.expression.name.text;
-                    const field = declaration.parent.members.find(item => t.isPropertyDeclaration(item) &&
+                const boundReceiver = t.isIdentifier(callee.expression)
+                    ? parameterValues.get(callee.expression.text) : undefined;
+                const serviceReceiver = t.isPropertyAccessExpression(callee.expression) &&
+                    callee.expression.expression.kind === t.SyntaxKind.ThisKeyword
+                    ? callee.expression : boundReceiver && t.isPropertyAccessExpression(boundReceiver) &&
+                    boundReceiver.expression.kind === t.SyntaxKind.ThisKeyword ? boundReceiver : null;
+                if (serviceReceiver && container) {
+                    const fieldName = serviceReceiver.name.text;
+                    const field = container.members.find(item => t.isPropertyDeclaration(item) &&
                         item.name.getText() === fieldName);
                     const initializer = field && t.isPropertyDeclaration(field) ? field.initializer : undefined;
-                    const constructor = declaration.parent.members.find(t.isConstructorDeclaration);
+                    const constructor = container.members.find(t.isConstructorDeclaration);
                     const parameter = constructor?.parameters.find(item => item.name.getText() === fieldName);
                     const request = initializer && t.isCallExpression(initializer)
                         ? injectionRequestFor(context, initializer) : parameter ? injectionRequestFor(context, parameter) : null;
@@ -545,7 +555,7 @@ function traceHttpFromRoot(context, catalog, root, rootName, rootOwner, options,
                             item.name.getText() === callee.name.text);
                         if (target && t.isMethodDeclaration(target)) {
                             add('call', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, localConditions);
-                            visitMethod(target, implementation, nextPath, localConditions, depth + 1, node.arguments);
+                            visitMethod(target, implementation, nextPath, localConditions, depth + 1, node.arguments, classFor(implementation));
                             return;
                         }
                         add('boundary', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, localConditions, 'the resolved service method body is unavailable');
@@ -561,6 +571,13 @@ function traceHttpFromRoot(context, catalog, root, rootName, rootOwner, options,
                 if (declaration && context.sourceFiles.includes(declaration.getSourceFile().fileName)) {
                     const nextPath = [...currentPath, location(context, node)];
                     add('call', receiver, node.expression.text, node, nextPath, localConditions, node.arguments.map(argument => argument.getText()).join(', '));
+                    const callable = t.isFunctionDeclaration(declaration) ? declaration :
+                        t.isVariableDeclaration(declaration) && declaration.initializer &&
+                            isFunctionLike(t, declaration.initializer) ? declaration : null;
+                    if (callable) {
+                        visitMethod(callable, receiver, nextPath, localConditions, depth + 1, node.arguments, container);
+                        return;
+                    }
                 }
             }
             t.forEachChild(node, child => visit(child, localConditions, currentPath));

@@ -25,22 +25,22 @@ import { downwardEdgeKind, placeSteps } from './view-path.js';
 import { findPatchStateCalls, templateReads } from './reactive-calls.js';
 import { completeDetails, httpTraceEdges, operationTraceEdges, reactiveStepEdges, storeTraceEdges } from './steps.js';
 const handlerMethod = (handler, inputs) => {
-    const direct = /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*$/.exec(handler);
+    const direct = /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*;?\s*$/.exec(handler);
     if (direct)
         return direct[1];
-    const guarded = /^\s*.+\s+&&\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*$/.exec(handler);
+    const guarded = /^\s*.+\s+&&\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*;?\s*$/.exec(handler);
     if (guarded)
         return guarded[1];
     // An input signal used as a simple template ternary can be decided only at this component use.
     // Other expressions remain unresolved; guessing one arm would claim an operation that may not run.
-    const branch = /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\(\)\s*\?\s*(?:this\.)?([A-Za-z_$][\w$]*)\([^)]*\)\s*:\s*(?:this\.)?([A-Za-z_$][\w$]*)\([^)]*\)\s*$/.exec(handler);
+    const branch = /^\s*(?:this\.)?([A-Za-z_$][\w$]*)\(\)\s*\?\s*(?:this\.)?([A-Za-z_$][\w$]*)\([^)]*\)\s*:\s*(?:this\.)?([A-Za-z_$][\w$]*)\([^)]*\)\s*;?\s*$/.exec(handler);
     if (!branch)
         return null;
     const value = inputs.get(branch[1]);
     return value === 'true' ? branch[2] : value === 'false' ? branch[3] : null;
 };
 const handlerGuard = (handler) => {
-    const guarded = /^\s*(.+)\s+&&\s*(?:this\.)?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*$/.exec(handler);
+    const guarded = /^\s*(.+)\s+&&\s*(?:this\.)?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*;?\s*$/.exec(handler);
     return guarded?.[1]?.trim() ?? null;
 };
 const allowed = (kind, from, to) => edgeContracts[kind].from.includes(from) && edgeContracts[kind].to.includes(to);
@@ -808,7 +808,12 @@ function addOperations(input) {
         evidenceIds: [evidence.span(element.span, 'exact')].filter((item) => !!item),
         details: { label: detail(`<${element.tag}>`) },
     });
-    for (const listener of [...resolution.listeners, ...resolution.outputSubscriptions]) {
+    // The resolver keeps an unknown CustomEvent and a same-named Angular output as separate candidates.
+    // At an Angular template occurrence a matched output owns that binding, so assemble only the output
+    // operation; otherwise the parent handler and every downstream side effect would be reported twice.
+    const reportListeners = resolution.listeners.filter(listener => !resolution.outputSubscriptions.some(output => listener.eventSource === 'unknown-dom' && output.listenerElement === listener.listenerElement &&
+        output.eventName === listener.eventName && output.handler === listener.handler));
+    for (const listener of [...reportListeners, ...resolution.outputSubscriptions]) {
         const ownerId = listener.listenerElement?.owner.id ?? targetElement.owner.id;
         const listenerEvidence = evidence.span(listener.span ?? targetElement.span, 'exact');
         if (!listenerEvidence) {

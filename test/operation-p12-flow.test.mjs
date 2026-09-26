@@ -267,6 +267,40 @@ export const rootProviders = [provideStore(), provideHttpClient(), Transport, Re
   assert.deepEqual(idle.steps.filter(step => step.kind === 'http-consume'), []);
 }));
 
+test('an effect follows a source-level arrow helper and its injected service argument into forkJoin', async () => fixture({
+  'main.ts': `
+import {inject, Injectable} from '@angular/core';
+import {HttpClient, provideHttpClient} from '@angular/common/http';
+import {Actions, createEffect, ofType, provideEffects} from '@ngrx/effects';
+import {createAction, provideStore} from '@ngrx/store';
+import {forkJoin, switchMap} from 'rxjs';
+export const search = createAction('[Projects] Search');
+@Injectable({providedIn:'root'}) export class ProjectsApi {
+  private readonly http=inject(HttpClient);
+  find(pattern:string){return this.http.post('/projects.get_all_ex',{pattern});}
+}
+export const searchProjects=(api:ProjectsApi, pattern:string)=>forkJoin([
+  api.find(pattern), api.find('^'+pattern+'$')
+]);
+@Injectable() export class SearchEffects {
+  private readonly actions=inject(Actions); private readonly api=inject(ProjectsApi);
+  search$=createEffect(()=>this.actions.pipe(ofType(search),switchMap(()=>searchProjects(this.api,'Semi'))),
+    {dispatch:false});
+}
+export const rootProviders=[provideStore(),provideHttpClient(),provideEffects(SearchEffects)];`,
+}, ({ context, catalog, expr }) => {
+  const providers = [expr('rootProviders')];
+  const store = analyzeStore(context, catalog, { rootProviders: providers });
+  const effect = store.effects.find(item => item.id.includes('search$'));
+  const layers = [{ id: 'root', kind: 'root', providers }];
+  const trace = traceHttpFromEffect(context, analyzeHttp(context), effect, { catalog, store, layers });
+  assert.deepEqual(trace.steps.filter(step => step.kind === 'http-create').map(step => step.target),
+    ['POST /projects.get_all_ex', 'POST /projects.get_all_ex']);
+  assert.equal(trace.steps.filter(step => step.kind === 'http-consume').length, 2);
+  assert(trace.steps.filter(step => step.kind === 'http-consume').every(step =>
+    step.conditions.some(condition => condition.includes('forkJoin passes the subscription'))));
+}));
+
 // P12-04 / P12-07
 test('an rxMethod pipeline starts a request only once the method is called', async () => fixture({
   'client.ts': client,

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {analyzeFixture, edgeKeys, edgesOfKind} from './fixtures/harness.mjs';
 import {renderMarkdown} from '../dist/render/markdown.js';
+import {renderSimple} from '../dist/render/simple.js';
 
 const inputReport = analyzeFixture('search-scenario', {target: 'data-id=targetInput', event: 'input'});
 const previousReport = analyzeFixture('search-scenario', {target: 'data-id=previousButton', event: 'click'});
+const hostReport = analyzeFixture('search-scenario', {target: 'data-id=searchHost', event: 'valueChanged'});
 
 test('P18-01 input follows Subject.next through debounce and both filters to the output', async () => {
   const {report} = await inputReport;
@@ -52,6 +54,7 @@ test('P18-03 the search is projected into the section while the form declares it
   assert(!keys.includes('template-use|src/section.ts#EditableSectionComponent|SearchComponent'));
   const output = edgesOfKind(report, 'output-subscription').find(edge => edge.fromLabel === 'valueChanged');
   assert.equal(output?.toLabel, 'src/container.ts#SearchFormComponent.searchTable');
+  assert(!edgesOfKind(report, 'dom-listener').some(edge => edge.details.event.value === 'valueChanged'));
   const binding = edgesOfKind(report, 'input-binding').find(edge => edge.toLabel === 'minimumChars');
   assert.equal(binding?.details.owner.value, 'src/container.ts#SearchFormComponent');
 });
@@ -104,6 +107,14 @@ test('P18-06 previous icon bubbles to its button, which emits null under non-str
   assert.equal(report.context.strictNullChecks, false);
   assert(!keys.includes('state-write|src/container.ts#SearchFormComponent|searchedText'),
     'backward null must not start a new search term');
+});
+
+test('P18-07 a directly selected component output remains the simple report event prefix', async () => {
+  const {report} = await hostReport;
+  const text = renderSimple({report, outputDir: '/tmp', fileNameSource: 'searchHost',
+    heading: 'SearchComponent.data-id="searchHost"'}).text;
+  assert(text.includes('(valueChanged) searchTable($event);'));
+  assert(!text.includes('DOM event bubbles/composed are unknown'));
 });
 
 test('P18-08 communication is scoped to the search operation and reports its coverage', async () => {

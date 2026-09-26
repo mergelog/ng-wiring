@@ -302,6 +302,12 @@ function dataRows(chain, edges, nodes, evidence, sources, branch, branchConditio
     const listener = edgeOf(first, edge => edge.kind === 'dom-listener');
     if (includePrefix && listener)
         push(listener, 'h', 'D', `(${first.event}) ${value(listener, 'handler')}`);
+    if (includePrefix && !listener) {
+        const subscription = edgeOf(first, edge => edge.kind === 'output-subscription' &&
+            value(edge, 'output').includes(first.event));
+        if (subscription)
+            push(subscription, 'h', 'D', `(${first.event}) ${value(subscription, 'subscriber')}`);
+    }
     for (let i = 0; includePrefix && i < chain.operations.length - 1; i++) {
         const current = chain.operations[i], next = chain.operations[i + 1];
         const emitted = edgeOf(current, edge => edge.kind === 'output-emit' && outputName(value(edge, 'output')) === next.event);
