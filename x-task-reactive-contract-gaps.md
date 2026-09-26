@@ -121,4 +121,4 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 - [x] 28 行すべての `fixture` が設定され、`missingFixture` が残らず、台帳の 110 subcase が維持されている。
 - [x] 期待 relation・条件・根拠と禁止 relation を fixture で照合し、R16 の boundary / partial / 診断も維持されている。
 - [x] `npm run build`、`npm test`、`npm run check:contracts`、`npm run check:dist`、`npm run check:smoke` が成功する。
-- [ ] GitHub Actions の全 job が成功する。CI の通知設定変更や検査無効化を完了の代わりにしない。
+- [x] GitHub Actions の全 job が成功する。CI の通知設定変更や検査無効化を完了の代わりにしない。
