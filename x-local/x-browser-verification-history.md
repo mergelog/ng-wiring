@@ -190,3 +190,32 @@
   node ../ng-wiring/dist/cli/index.js 'placeholder=Find scalars' --project stackup --route '/projects/:projectId/projects' --selector 'body > div.cdk-overlay-container > div.cdk-global-overlay-wrapper > div#cdk-overlay-2 > mat-dialog-container#mat-mdc-dialog-1 > div.mat-mdc-dialog-inner-container > div.mat-mdc-dialog-surface > sm-project-settings > sm-dialog-template > div.dialog-template-container > div.generic-container > mat-tab-group > div.mat-mdc-tab-body-wrapper > mat-tab-body#mat-tab-group-1-content-1 > div.mat-mdc-tab-body-content > div.list > sm-selectable-grouped-filter-list > sm-search > span.search-input-container > span.search-input > input[placeholder="Find scalars"]' --out-dir ../ng-wiring/x-local/tmp
   ```
 - ソース確認: `project-settings-dashboard-search-permissions.store.ts`, `project-settings-dialog.store.ts`, `project-settings-dialog.component.ts`, `selectable-grouped-filter-list.component.ts`, `core/state/view.store.ts`。E01/E02のservice/patchStateとE05のlocal filterに対応する実行時表示は確認できたが、ngwiのsimpleはE01/E02で別のHTTPに誤結合し、E05はtarget detectionで停止した。
+
+### 2026-09-26 — F01〜F05 / generated API・RxJS operator・dynamic dispatch
+
+- **F01 generated API wrapper → HTTP:** Projects画面 (`/projects/0f2765fc37a24c1e9f3752b1f96330e3/projects`) のTraining card menuからProject Settings → Scalar View Defaultsを表示。`ApiProjectsService.projectsGetUniqueMetricVariants()` は`apiRequest.post`で`${this.basePath}/projects.get_unique_metric_variants`を要求する。Networkの同endpoint POST 2件は200。simpleの`data-id=Edit`は設定menu itemではなく親カードclickを拾い、`projects.get_all_ex`へ誤結合して終了コード5。レポート [`ngwi-34-ProjectCardMenuExtendedComponent.data-id=Edit-260926.220908.md`](tmp/ngwi-34-ProjectCardMenuExtendedComponent.data-id=Edit-260926.220908.md) は別の生成API endpointまで出したが、実行時の2件とは一致しない。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=Edit' --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- **F02 `forkJoin`正常系:** `/quality-pipeline`を開く。`QualityPipelineEffects.loadOverview`のforkJoin対象は`tasks.get_all_ex` 2件、`models.get_all_ex` 1件、全てPOST 200。Networkでは別起点の`projects.get_all_ex`も2件あり、forkJoinの一部としては数えなかった。画面に最新runなしとproduction modelを表示。simpleは終了コード5 (`Target detection incomplete`)、レポートなし。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js --source src/app/features/quality-pipeline/state/quality-pipeline.effects.ts:75 --event openPage --project stackup --route '/quality-pipeline' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- **F03 `switchMap`内service call:** Project画面で全体検索を開き、`Type to search`へ`semiconductor`を入力してTASKS tabを選択。`DashboardSearchEffects.getResultsCount`のswitchMap内から`organization.get_entities_count`を要求し200、結果取得`tasks.get_all_ex`も200。読み取りだけを実施。simple source起点は終了コード5 (`Target detection incomplete`)、レポートなし。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js --source src/app/features/dashboard-search/dashboard-search.effects.ts:30 --event switchMap --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- **F04 `lastValueFrom` → state update:** 同じTraining Project SettingsのScalar View Defaultsでmetric一覧5件を表示。`loadScalars()`の2本の`projects.get_unique_metric_variants` POST (200)が`forkJoin`後に`lastValueFrom`で解決し、`patchState({scalars})`へ到達するsourceを確認。CANCELで閉じ、保存なし。simpleは終了コード5 (`Target detection incomplete`)、レポートなし。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/shared/project-dialog/project-settings/project-settings-dialog.store.ts:30 --event call --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- **F05 dynamic dispatch / fetch境界:** 全体検索へ`semiconductor`を入力してTASKS tabへ切替。sourceでは検索結果の`this[\`${key}List\`]()`がtab種別ごとに配列memberを選ぶ。`tasks.get_all_ex` POST 200を確認したが、これは結果ロードeffect側であり、動的member選択からserviceへの直結は確認できなかった。明示的`fetch()`は`configuration.service.ts`の`configuration.json` bootstrap読込のみで、当該UI操作では発生せず。外部SDK / 動的service method dispatchのUI実例なし。通信は確認したが動的呼び出し境界の因果は未確定。simple source起点・selector起点はいずれも終了コード5 (`Target detection incomplete`)、レポートなし。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/dashboard-search/search-results-table/search-results-table.component.ts:154 --event call --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+  node ../ng-wiring/dist/cli/index.js 'placeholder=Type to search' --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- F01〜F05のURLは`http://192.168.0.4:4200`を基点とする。F03/F05の検索欄・TASKS tab、F04のscalar一覧は画面上各1件。F02のNetwork応答と表示状態に異常なし。`/quality-pipeline`遷移後のConsole errorは0件。
+- 付随するCLI path誤指定を1回実行し終了コード1（module not found）。解析は起動していないため、F05の検出判定には含めない。
+  ```bash
+  node ../learn-clearml-pro/node_modules/.bin/ng-wiring 'placeholder=Type to search' --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+  ```

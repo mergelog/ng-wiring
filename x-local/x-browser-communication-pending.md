@@ -106,20 +106,25 @@
   - 2026-09-26 実施: 同じProject Settingsの Scalar View Defaults で `Find scalars` に `accuracy` を入力。結果一覧が5項目から1項目へ絞られ、`searchTerm` signal → `searchTermChanged()` → 子の `filteredList` computed の経路を確認。操作後にNetworkのXHR/fetch件数は31のままで、新規通信なし。キャンセルで入力を破棄。simpleはselector一致1件だが終了コード5 (`Target detection incomplete`、レポートなし)。通信なしを実行時確認。
 
 ## F. HTTP・RxJS・動的呼び出し境界（5件）
-- [ ] **F01 / P1: generated `Api*Service` wrapper → `HttpClient` method / endpoint**
+- [x] **F01 / P1: generated `Api*Service` wrapper → `HttpClient` method / endpoint**
   component / effect から `ApiTasksService` などの生成 client method を呼ぶ経路を選び、wrapper の method 名だけで止まらず、HTTP method、`${basePath}` を含む endpoint まで表示できるか確認する。
+  - 2026-09-26 実施: Training の Project Settings → Scalar View Defaults を表示。`ApiProjectsService.projectsGetUniqueMetricVariants()` の生成 wrapper は `apiRequest.post<...>(\`${this.basePath}/projects.get_unique_metric_variants\`, request, ...)` を呼び、Networkで `POST http://192.168.0.4:4200/service/1/api/v999.0/projects.get_unique_metric_variants` を2件、両方200で確認。sourceにもHTTP methodと`${basePath}`がある。一方、`data-id=Edit` のsimple解析はoverlayのEditではなく親ProjectCardのclickへ誤結合し、別endpoint `projects.get_all_ex` を表示（終了コード5）。実行時API wrapperは確認、ngwiによる当該画面経路の結合は失敗。
 
-- [ ] **F02 / P1: `forkJoin` / 複数 HTTP の正常系**
+- [x] **F02 / P1: `forkJoin` / 複数 HTTP の正常系**
   一つの操作から複数 request を開始し、合流後に state 更新する経路を対象にする。simple 版が代表通信だけを示す場合も、実行時 Network の全 request と、どれを省略したかを記録して誤結合と区別する。
+  - 2026-09-26 実施: Quality pipeline (`/quality-pipeline`) を開き、overviewの読み取りだけを確認。`loadOverview` の `forkJoin` に対応する `tasks.get_all_ex` 2件と `models.get_all_ex` 1件をNetworkで確認、すべてPOST 200。別途project id解決の `projects.get_all_ex` 2件も発生したが、forkJoinの3 requestには含めない。画面は最新runなし・production model表示。simple source起点は終了コード5 (`Target detection incomplete`、レポートなし)、Network上の3件をまとめる経路は出力できず。
 
-- [ ] **F03 / P1: `switchMap` / `concatMap` / `exhaustMap` 内の service call**
+- [x] **F03 / P1: `switchMap` / `concatMap` / `exhaustMap` 内の service call**
   高階 Observable の callback 内にある HTTP を対象にし、operator callback を越えて endpoint へ届くか確認する。検索、保存、連打防止など operator の意味が異なる例を一件ずつ候補化し、最初に安全なものを実施する。
+  - 2026-09-26 実施: 全体検索を開いて `semiconductor` を入力し、TASKS tabを選択。`DashboardSearchEffects.getResultsCount` の `switchMap(([action,...]) => organizationApi.organizationGetEntitiesCount(...))` をソースで確認。`organization.get_entities_count` と結果取得の `tasks.get_all_ex` がPOST 200。読み取り検索のみでデータ変更なし。simple source起点（`dashboard-search.effects.ts:30`, event `switchMap`）は終了コード5 (`Target detection incomplete`、レポートなし)、operator callbackからgenerated serviceまで未結合。
 
-- [ ] **F04 / P2: `firstValueFrom` / `lastValueFrom` / `async` method → HTTP**
+- [x] **F04 / P2: `firstValueFrom` / `lastValueFrom` / `async` method → HTTP**
   Observable を Promise に変換し、`await` 後に dialog close、download、通知などを行う経路を対象にする。Promise 境界で正常応答後の主要副作用が切れないか確認する。
+  - 2026-09-26 実施: Training の Project Settings → Scalar View Defaults を開き、metric一覧5件を表示。`async loadScalars()` が2系統の`projectsGetUniqueMetricVariants()`を`forkJoin`し、`await lastValueFrom(...)`後に`patchState({scalars})`するソース経路を確認。Networkで同endpointのPOST 2件、両方200。キャンセルで閉じ、保存なし。simple source起点（store.ts:30, event `call`）は終了コード5 (`Target detection incomplete`、レポートなし)、Promise以降を未結合。
 
-- [ ] **F05 / P3: `fetch` / dynamic service dispatch / SDK 呼び出し**
+- [x] **F05 / P3: `fetch` / dynamic service dispatch / SDK 呼び出し**
   `HttpClient` 以外の `fetch`、computed property での service method 選択、AWS SDK などの外部 client が実 UI から呼ばれる経路を探索する。ngwi の既知 HTTP として扱えない場合は、通信なしではなく「通信有無は未確定」とし、Network 観測を根拠に境界を記録する。
+  - 2026-09-26 確認: source検索では明示的な`fetch()`は`configuration.service.ts`の`configuration.json` bootstrap読込のみで、対象操作から呼ぶ画面は見つからず。SDKやcomputed propertyでのservice method選択もなし。近い実UI例として全体検索結果の`SearchResultsTableComponent.getAllResults`が``this[`${key}List`]()``で配列memberを動的選択する。`semiconductor`検索からTASKS tabへ切替え、Networkの`tasks.get_all_ex` POST 200と結果状態を確認したが、この動的選択自体は通信service callではなく、結果ロードeffectとは別境界。通信の存在はNetworkで確認した一方、dynamic dispatchからAPIへの因果経路は未確定。simple source起点（search-results-table.component.ts:154, event `call`）は終了コード5 (`Target detection incomplete`、レポートなし)。
 
 ## 実施順
 - [ ] **第1巡: P1 の非破壊操作** — 一覧、検索、filter、sort、詳細表示、export を中心に、各カテゴリから最低1件ずつ実施する。
