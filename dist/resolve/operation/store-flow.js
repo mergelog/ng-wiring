@@ -96,6 +96,14 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
             conditions: [...conditions], detail });
     };
     const actionFor = (expression) => {
+        if (t.isObjectLiteralExpression(expression)) {
+            const typeProperty = expression.properties.find((property) => t.isPropertyAssignment(property) && (t.isIdentifier(property.name) || t.isStringLiteralLike(property.name)) &&
+                property.name.text === 'type');
+            const actionType = typeProperty && (t.isStringLiteralLike(typeProperty.initializer) ? typeProperty.initializer.text : null);
+            if (actionType)
+                return graph.actions.find(action => action.type === actionType);
+            return undefined;
+        }
         const callee = t.isCallExpression(expression) ? expression.expression : expression;
         let id = tokenId(context, callee);
         if (t.isPropertyAccessExpression(callee) && t.isIdentifier(callee.expression)) {
@@ -103,9 +111,18 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
             if (symbol && symbol.flags & t.SymbolFlags.Alias)
                 symbol = context.checker.getAliasedSymbol(symbol);
             const group = symbol?.valueDeclaration;
-            if (group && t.isVariableDeclaration(group) && group.initializer && t.isCallExpression(group.initializer) &&
-                (t.isIdentifier(group.initializer.expression) && group.initializer.expression.text === 'createActionGroup'))
-                id = `${tokenId(context, group.name)}:${callee.name.text}`;
+            if (group && t.isVariableDeclaration(group) && group.initializer && t.isCallExpression(group.initializer)) {
+                const groupCallee = t.isPropertyAccessExpression(group.initializer.expression)
+                    ? group.initializer.expression.name : group.initializer.expression;
+                let groupSymbol = context.checker.getSymbolAtLocation(groupCallee);
+                if (groupSymbol && groupSymbol.flags & t.SymbolFlags.Alias)
+                    groupSymbol = context.checker.getAliasedSymbol(groupSymbol);
+                const isActionGroup = groupSymbol?.getName() === 'createActionGroup' &&
+                    !!groupSymbol.declarations?.some(declaration => slash(declaration.getSourceFile().fileName)
+                        .includes('/node_modules/@ngrx/store/'));
+                if (isActionGroup)
+                    id = `${tokenId(context, group.name)}:${callee.name.text}`;
+            }
         }
         return graph.actions.find(action => action.id === id);
     };

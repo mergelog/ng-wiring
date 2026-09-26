@@ -6,7 +6,7 @@
 
 [`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 12 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
 
-作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。現在の台帳は **98 件が fixture 設定済み、12 件が未達**。今回 R08 の6件に具体的な期待関係を追加した。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
+作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R08 の6件、R09 の4件に期待関係を追加し、現在の台帳は **102 件が fixture 設定済み、8 件が未達**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
 
 ## 進め方と完了判定
 
@@ -94,10 +94,10 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 
 ### R09: NgRx Store の action と読み出し（4 件）
 
-- [ ] **R09/Store.dispatch.action-object** — 再現: `ngrx-apis`, `data-id=objectButton`。creator を介さない action object を当該 Store の dispatch として解決する。
-- [ ] **R09/createActionGroup** — 再現: `ngrx-apis`, `data-id=groupButton`。group 内の各 action を個別に識別し、正しい dispatch と受信先を結ぶ。
-- [ ] **R09/createFeature** — 再現: `ngrx-apis`, `data-id=featureButton`。object literal 内の reducer と selector を検出し、dispatch → 受信 → state 更新を結ぶ。P10 の契約変更との整合をレビューする。
-- [ ] **R09/Store.select** — 再現: `ngrx-apis`, `data-id=effectButton`。`store.select(...).subscribe(...)` を稼働中の Observable consumer として扱い、`selectSignal` と区別する。
+- [x] **R09/Store.dispatch.action-object** — 再現: `ngrx-apis`, `data-id=objectButton`。creator を介さない action object を静的 `type` で対応する action と照合し、当該 Store の dispatch → reducer → state write を確認。
+- [x] **R09/createActionGroup** — 再現: `ngrx-apis`, `data-id=groupButton`。group 内 action を NgRx のシンボルと event member で個別に識別し、正しい reducer の受信と state write を確認。
+- [x] **R09/createFeature** — 再現: `ngrx-apis`, `data-id=featureButton`。object literal 内 reducer を登録済み feature に結び、dispatch → 受信 → state 更新 → 生成 selector の state read を確認。P10-04/05/08 の dispatch・action type・reducer/selector 契約に整合。
+- [x] **R09/Store.select** — 再現: `ngrx-apis`, `data-id=effectButton`。`.select(...).subscribe(...)` の呼び出し祖先に実 subscription があることを確認し、稼働中 Observable consumer として `selectSignal` から区別。
 
 ### R10: Store の送信形態（3 件）
 

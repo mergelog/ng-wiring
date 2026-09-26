@@ -388,6 +388,41 @@ export function analyzeStore(context, catalog, inputs) {
                         conditions: [...matches.flatMap(reg => reg.conditions),
                             ...(rootActive ? [] : ['root Store is not registered'])] });
                 }
+                if (callName(context, call, 'createFeature', 'store') && call.arguments[0] &&
+                    t.isObjectLiteralExpression(definition(context, call.arguments[0]))) {
+                    const config = definition(context, call.arguments[0]);
+                    const feature = stringValue(context, getProperty(t, config, 'name'));
+                    const reducerExpression = getProperty(t, config, 'reducer');
+                    const reducerCall = reducerExpression && definition(context, reducerExpression);
+                    if (reducerExpression && reducerCall && t.isCallExpression(reducerCall) &&
+                        callName(context, reducerCall, 'createReducer', 'store')) {
+                        const handled = reducerCall.arguments.slice(1).flatMap(arg => {
+                            const on = definition(context, arg);
+                            return t.isCallExpression(on) && callName(context, on, 'on', 'store') ?
+                                on.arguments.slice(0, -1).map(action => actionId(context, action)) : [];
+                        });
+                        const id = tokenId(context, node.name);
+                        const matches = registrations.filter(reg => reg.kind === 'feature' && reg.target === id);
+                        reducers.push({ id, feature: feature ?? matches.find(reg => reg.kind === 'feature')?.key ?? null,
+                            actions: handled, source: location(context, reducerCall), registered: rootActive && matches.length > 0,
+                            conditions: [...matches.flatMap(reg => reg.conditions),
+                                ...(rootActive ? [] : ['root Store is not registered'])] });
+                        if (feature) {
+                            selectors.push({ id: `${id}.select${feature[0]?.toUpperCase() ?? ''}${feature.slice(1)}`,
+                                dependencies: [feature], source: location(context, call) });
+                            const initial = reducerCall.arguments[0] && definition(context, reducerCall.arguments[0]);
+                            if (initial && t.isObjectLiteralExpression(initial))
+                                for (const property of initial.properties) {
+                                    const key = t.isPropertyAssignment(property) &&
+                                        (t.isIdentifier(property.name) || t.isStringLiteralLike(property.name)) ? property.name.text : null;
+                                    if (!key)
+                                        continue;
+                                    selectors.push({ id: `${id}.select${key[0]?.toUpperCase() ?? ''}${key.slice(1)}`,
+                                        dependencies: [key], source: location(context, property) });
+                                }
+                        }
+                    }
+                }
             }
             if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
                 ['select', 'selectSignal'].includes(node.expression.name.text)) {
@@ -398,8 +433,20 @@ export function analyzeStore(context, catalog, inputs) {
                     if (owner && node.arguments[0]) {
                         const field = t.isPropertyDeclaration(node.parent) ? node.parent.name.getText() : null;
                         const { reads, asyncReads } = templateReads(owner);
-                        const subscribed = field && expressions(context, owner.node, part => t.isPropertyAccessExpression(part.expression) && part.expression.name.text === 'subscribe' &&
-                            part.expression.expression.getText().includes(field)).length > 0;
+                        let subscribed = false;
+                        if (field) {
+                            let parent = node;
+                            while (parent && parent !== owner.node) {
+                                if (t.isCallExpression(parent) && t.isPropertyAccessExpression(parent.expression) &&
+                                    parent.expression.name.text === 'subscribe') {
+                                    subscribed = true;
+                                    break;
+                                }
+                                if (t.isPropertyDeclaration(parent) || t.isPropertyAssignment(parent))
+                                    break;
+                                parent = parent.parent;
+                            }
+                        }
                         const active = !!field && (node.expression.name.text === 'selectSignal' ? reads.has(field) :
                             asyncReads.has(field) || !!subscribed);
                         consumers.push({ id: location(context, node), selector: actionId(context, node.arguments[0]),
