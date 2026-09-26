@@ -1181,15 +1181,29 @@ function addReactiveWrites(input) {
     const ancestry = owners.map(item => eventGraph.dispatcherOwners.find(owner => sameOwnerId(item.id, owner)) ?? item.id);
     for (const dispatch of eventGraph.dispatches.filter(item => inside(item.source))) {
         const delivery = resolveEventDelivery(eventGraph, dispatch, ancestry, consumer => consumer.owner ? [consumer.owner, ...ancestry] : ancestry);
-        materialize(reactiveStepEdges(eventDeliverySteps(eventGraph, dispatch, delivery)), scope);
+        const eventInstanceFor = (storeId) => stores.instances.find(item => item.created &&
+            item.declarationId === storeId && sameOwnerId(ownerId, item.owner));
+        const eventSteps = eventDeliverySteps(eventGraph, dispatch, delivery).map(step => {
+            if (step.kind !== 'state-write' || !step.state)
+                return step;
+            const consumer = delivery.consumers.find(item => item.id === step.source);
+            const instance = eventInstanceFor(consumer?.storeId ?? null);
+            return instance ? { ...step, state: { ...step.state, declaration: instance.id, instance: null } } : step;
+        });
+        materialize(reactiveStepEdges(eventSteps), scope);
         for (const consumer of delivery.consumers.filter(item => item.kind === 'handler')) {
             const http = traceHttpFromEventConsumer(context, httpCatalog, consumer, { catalog, store: storeGraph, stores, layers }, [...delivery.conditions, ...consumer.conditions]);
             materialize(httpTraceEdges(http), scope);
         }
         for (const consumer of delivery.consumers)
             for (const key of consumer.writes) {
-                keys.push({ ownerId: consumer.owner, member: key, storeId: consumer.storeId,
-                    node: { kind: 'state', id: [consumer.storeId ?? consumer.id, consumer.owner, key].filter(Boolean).join('.'), label: key } });
+                // Event consumers name the Store declaration. A displayed read belongs to the Store instance
+                // injected by this operation's owner, just as a patchState write does.
+                const instance = eventInstanceFor(consumer.storeId);
+                if (instance)
+                    keys.push({ ownerId: consumer.owner, member: key,
+                        storeId: instance.id,
+                        node: { kind: 'state', id: `${instance.id}.${key}`, label: key } });
             }
     }
     // §7.6 an effect that tracks the written state re-runs; only a tracked read is such a dependency, so a

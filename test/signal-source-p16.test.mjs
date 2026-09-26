@@ -50,7 +50,7 @@ test('signal-log-store: an event with only a reducer needs no handler and no API
 });
 
 // R15: the settings Store — withMethods -> lastValueFrom(forkJoin) -> patchState behind a composed feature.
-test('signal-settings-store: the composed feature and the unidentified one are recorded as boundaries', async () => {
+test('signal-settings-store: the composed method reaches its request and state while the unidentified feature stays a boundary', async () => {
   const { report } = await analyzeFixture('signal-settings-store', { target: 'data-id=loadScalarsButton' });
   const keys = edgeKeys(report);
   const found = findings(report);
@@ -59,14 +59,13 @@ test('signal-settings-store: the composed feature and the unidentified one are r
   assert(report.diagnostics.some(item => item.code === 'unsupported-store-feature' &&
     item.message.includes('storeDevToolsFeature')), 'the unidentified feature is not named');
   assert.equal(report.status, 'partial');
-  // The method of a Store composed through signalStoreFeature is not resolved in this version, so the
-  // trace stops at the call instead of claiming the request and the patchState behind it.
+  // The composed method is resolved, while the unidentified feature remains an explicit boundary.
   assert(report.edges.some(edge => edge.kind === 'boundary' && edge.confidence === 'unresolved'));
-  assert.deepEqual(keys.filter(key => key.startsWith('http-')), [],
-    'the request behind the composed feature was claimed although the method is not resolved');
-  assert.deepEqual(keys.filter(key => key.startsWith('state-write|')), [],
-    'a patchState behind the composed feature was claimed');
-  // What is reached is still reported: the listener and the display path.
+  assert(keys.includes('http-create|src/metrics-api.ts#MetricsApiService|POST /api/settings/metrics'));
+  assert(keys.includes('http-consume|POST /api/settings/metrics|promise-consume'));
+  assert(keys.includes('state-write|click → load()|scalars'));
+  assert(keys.includes('state-read|scalars|<span>'));
+  assert(!keys.some(key => key.startsWith('state-write|') && key.endsWith('|workspaceId')));
   assert(keys.includes('dom-listener|<button>|click → load()'));
   assert(keys.includes('bootstrap|bootstrapApplication(src/main.ts)|src/app.ts#AppComponent'));
 });

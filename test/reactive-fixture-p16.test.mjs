@@ -352,6 +352,11 @@ test('events-apis: a single event creator reaches both reducers, ReducerEvents f
   assert(keys.includes('state-write|src/grid.store.ts:11:5|selected'));
   assert(keys.includes('state-write|src/grid.store.ts:17:5|noted'));
   assert(keys.includes('state-read|noted|<span>'));
+  const write = report.edges.find(edge => edge.kind === 'state-write' &&
+    report.nodes.find(node => node.id === edge.to)?.details.name?.value === 'noted');
+  const read = report.edges.find(edge => edge.kind === 'state-read' &&
+    report.nodes.find(node => node.id === edge.from)?.details.name?.value === 'noted');
+  assert.equal(write?.to, read?.from, 'the displayed state must be the event reducer\'s Store instance');
   // The direct entry point is not the named one; both forms stay distinguishable.
   assert.equal(report.edges.find(edge => edge.kind === 'event-dispatch').details.dispatchMode.value, 'explicit');
   // An event this dispatch does not carry is never delivered.
