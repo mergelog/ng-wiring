@@ -45,11 +45,12 @@ export async function runCli(argv, backend, io, cwd = process.cwd(), signal) {
         if (truncated && !options.candidate)
             selected = undefined;
         if (!selected) {
-            io.stderr.write(`${formatCandidateList(candidates, truncated)}\n`);
+            const includeCandidateIds = options.detail === true || options.json;
+            io.stderr.write(`${formatCandidateList(candidates, truncated, includeCandidateIds)}\n`);
             if (io.stdin.isTTY && io.stderr.isTTY && !truncated) {
                 const rl = createInterface({ input: io.stdin, output: io.stderr, terminal: true });
                 try {
-                    io.stderr.write('Select candidate number or ID: ');
+                    io.stderr.write(includeCandidateIds ? 'Select candidate number or ID: ' : 'Select candidate number: ');
                     const answer = await new Promise(resolve => {
                         rl.once('line', line => resolve(line));
                         rl.once('close', () => resolve(undefined));

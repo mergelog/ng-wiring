@@ -158,7 +158,7 @@ export function selectCandidate(candidates: readonly Candidate[], selector?: str
   return item;
 }
 
-export function formatCandidateList(candidates: readonly Candidate[], truncated = false): string {
+export function formatCandidateList(candidates: readonly Candidate[], truncated = false, includeIds = false): string {
   const lines = candidates.flatMap((candidate, index) => {
     const componentIds = candidate.parentIds.filter(id => id !== candidate.tuple.bootstrapId);
     const chain = (componentIds.length ? componentIds : [candidate.tuple.ownerId])
@@ -170,7 +170,8 @@ export function formatCandidateList(candidates: readonly Candidate[], truncated 
       `${index + 1}. [${candidate.class}] route: ${candidate.routePattern ?? '(none)'}`,
       `   path: ${chain}`,
       `   use: ${usages}`,
-      `   target: ${candidate.tuple.element.path} (offset ${candidate.tuple.element.start}); ID: ${candidate.id}`,
+      `   target: ${candidate.tuple.element.path} (offset ${candidate.tuple.element.start})` +
+        (includeIds ? `; ID: ${candidate.id}` : ''),
     ];
   });
   if (truncated) lines.push('Candidate enumeration was truncated. Narrow with --through, --route, or --project.');

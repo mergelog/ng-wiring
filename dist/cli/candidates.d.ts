@@ -48,4 +48,4 @@ export declare function filterCandidates(candidates: readonly Candidate[], optio
     event?: string;
 }): Candidate[];
 export declare function selectCandidate(candidates: readonly Candidate[], selector?: string): Candidate | undefined;
-export declare function formatCandidateList(candidates: readonly Candidate[], truncated?: boolean): string;
+export declare function formatCandidateList(candidates: readonly Candidate[], truncated?: boolean, includeIds?: boolean): string;

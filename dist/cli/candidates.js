@@ -133,7 +133,7 @@ export function selectCandidate(candidates, selector) {
         throw new UsageError(`Candidate ${selector} is outside the discovered candidates`);
     return item;
 }
-export function formatCandidateList(candidates, truncated = false) {
+export function formatCandidateList(candidates, truncated = false, includeIds = false) {
     const lines = candidates.flatMap((candidate, index) => {
         const componentIds = candidate.parentIds.filter(id => id !== candidate.tuple.bootstrapId);
         const chain = (componentIds.length ? componentIds : [candidate.tuple.ownerId])
@@ -145,7 +145,8 @@ export function formatCandidateList(candidates, truncated = false) {
             `${index + 1}. [${candidate.class}] route: ${candidate.routePattern ?? '(none)'}`,
             `   path: ${chain}`,
             `   use: ${usages}`,
-            `   target: ${candidate.tuple.element.path} (offset ${candidate.tuple.element.start}); ID: ${candidate.id}`,
+            `   target: ${candidate.tuple.element.path} (offset ${candidate.tuple.element.start})` +
+                (includeIds ? `; ID: ${candidate.id}` : ''),
         ];
     });
     if (truncated)

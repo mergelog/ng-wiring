@@ -121,7 +121,10 @@ test('candidate list exposes route and parent path when the target location is s
   assert.match(list, /path: AppComponent -> AccountNameComponent -> InlineEditComponent/);
   assert.match(list, /use: src\/profile\.html:5/);
   assert.match(list, /use: src\/account\.html:5/);
-  assert.match(list, /target: src\/owner\.html \(offset 726\); ID: cand:[0-9a-f]{64}/);
+  assert.match(list, /target: src\/owner\.html \(offset 726\)/);
+  assert.doesNotMatch(list, /cand:[0-9a-f]{64}/);
+  assert.match(formatCandidateList([profile], false, true),
+    /target: src\/owner\.html \(offset 726\); ID: cand:[0-9a-f]{64}/);
   assert(!list.includes('-> 10'), 'bootstrap position is not a component name');
   assert.match(formatCandidateList([{ ...base, routePattern: null, tuple: { ...base.tuple, usages: [] } }]),
     /route: \(none\)[\s\S]*use: \(none\)/);
@@ -133,7 +136,7 @@ function capturedIo() {
   return { io: { stdin: Readable.from([]), stdout: sink(s => stdout += s), stderr: sink(s => stderr += s) }, output: () => ({ stdout, stderr }) };
 }
 
-test('non-TTY ambiguity emits IDs on stderr without creating output', async () => {
+test('non-TTY ambiguity omits IDs from the default candidate list', async () => {
   const { io, output } = capturedIo();
   let writes = 0;
   const code = await runCli(['x=y'], {
@@ -143,6 +146,16 @@ test('non-TTY ambiguity emits IDs on stderr without creating output', async () =
   assert.equal(code, 2);
   assert.equal(writes, 0);
   assert.equal(output().stdout, '');
+  assert.doesNotMatch(output().stderr, /cand:[0-9a-f]{64}/);
+});
+
+test('detailed ambiguity includes IDs for stable candidate selection', async () => {
+  const { io, output } = capturedIo();
+  const code = await runCli(['x=y', '--detail'], {
+    async analyze() { return { candidates: [candidate(10), candidate(2)], truncated: false, targetDetectionIncomplete: false }; },
+    async write() { throw Error('must not write'); },
+  }, io);
+  assert.equal(code, 2);
   assert.match(output().stderr, /cand:[0-9a-f]{64}/);
 });
 
