@@ -178,6 +178,11 @@
     ```bash
     node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/shared/project-dialog/project-settings/project-settings-dialog.component.ts:160 --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
     ```
+  - `loadScalars()` の定義行およびAPI call行をsourceにして再試行したが、いずれも終了コード5 (`Target detection incomplete`)、レポートなし。
+    ```bash
+    node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/shared/project-dialog/project-settings/project-settings-dialog.store.ts:29 --project stackup --out-dir ../ng-wiring/x-local/tmp
+    node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/shared/project-dialog/project-settings/project-settings-dialog.store.ts:30 --event call --project stackup --out-dir ../ng-wiring/x-local/tmp
+    ```
 - **E03 `rxMethod`:** `stackup/src/app` 全体に定義・import・呼出しが見つからず、対象なし。実行時検証・CLI実行なし。
 - **E04 SignalStore method → NgRx dispatch:** `withMethods` を持つ対象Storeを検索し、method内の `Store.dispatch` はなし。`withViewBridge` には `withEventHandlers` → NgRx dispatchの別構造があるため対象外。対象なし、実行時検証・CLI実行なし。
 - **E05 local signal → computed / 通信なし:** Project Settings → Scalar View Defaultsで `Find scalars` (`input[placeholder="Find scalars"]`) に `accuracy` を入力。selector一致1件。表示が5指標からaccuracyのみへ変化し、`searchTerm` signal / `filteredList` computedを確認。操作前後のXHR/fetchはどちらも31件で、新規通信なし。入力を空に戻してCancelし、保存操作なし。simpleは終了コード5 (`Target detection incomplete`)、レポートなし。
