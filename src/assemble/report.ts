@@ -789,6 +789,28 @@ function addOperations(input: OperationInput): void {
     return false;
   });
 
+  // `toSignal` subscribes when its owning component is created, independently of the selected DOM
+  // event. Keep that background lifetime out of the operation while still connecting the Observable
+  // to the Signal value and the template that reads it.
+  const background = { nodes: new Set<string>(), edges: [] as string[] };
+  const backgroundKeys: DisplayKey[] = [];
+  for (const link of signals.links.filter(item => item.capability === 'angular/toSignal')) {
+    const at = enclosingMemberAt(link.location);
+    if (!at?.classId || !owners.some(owner => sameOwnerId(owner.id, at.classId))) continue;
+    const sourceLabel = link.sourceExpression ?? link.from ?? link.id;
+    const targetLabel = link.to ?? link.id;
+    const target = { kind: 'state' as NodeKind, id: `${link.capability}:${targetLabel}`, label: targetLabel };
+    materialize([{ kind: 'reactive-link',
+      from: { kind: 'symbol', id: link.from ?? `${link.id}:source`, label: sourceLabel },
+      to: target, location: link.location, conditions: link.conditions, capability: link.capability,
+      details: completeDetails('reactive-link', { source: detail(sourceLabel),
+        consumer: detail(targetLabel), operator: detail(link.capability), scheduling: detail('subscription') }) }],
+    background);
+    if (link.to) backgroundKeys.push({ ownerId: at.classId, member: link.to, node: target });
+  }
+  addDisplayReads({ analysis, builder, evidence, connect, declarationNode, spanOf, keys: backgroundKeys,
+    placed, scope: background, storeMemberFor, memberClassFor });
+
   const resolution = resolveEventListeners(targetElement, context, catalog, options.event, { index, path: viewPath });
   for (const message of resolution.diagnostics) {
     builder.diagnostic({ code: 'event-propagation', severity: 'info', message });

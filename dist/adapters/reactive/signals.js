@@ -48,6 +48,20 @@ function nameOf(context, node) {
         return parent.name.text;
     return null;
 }
+function sourceOf(context, expression) {
+    if (!expression)
+        return { id: null, expression: null };
+    const t = context.toolchain.typescript;
+    const target = t.isPropertyAccessExpression(expression) ? expression.name
+        : t.isCallExpression(expression)
+            ? (t.isPropertyAccessExpression(expression.expression) ? expression.expression.name : expression.expression)
+            : expression;
+    const declaration = symbolOf(context, target)?.valueDeclaration;
+    return {
+        id: declaration ? location(context, declaration) : null,
+        expression: expression.getText().replace(/^this\./, ''),
+    };
+}
 function objectKeys(context, expression, into) {
     if (!expression)
         return;
@@ -184,7 +198,17 @@ export function analyzeSignals(context, files) {
                 matcher === 'angular/toSignal' || matcher === 'angular/toObservable') {
                 const name = nameOf(context, node);
                 const equalOption = equalityArgument(context, matcher, node);
-                const record = { id: location(context, node), capability: matcher, from: null,
+                const adapterSource = matcher === 'angular/toSignal' || matcher === 'angular/toObservable'
+                    ? sourceOf(context, node.arguments[0]) : { id: null, expression: null };
+                const options = node.arguments[1] ? unwrap(t, node.arguments[1]) : null;
+                const option = (key) => options && t.isObjectLiteralExpression(options)
+                    ? options.properties.find(item => item.name?.getText() === key) : undefined;
+                const manualCleanup = option('manualCleanup');
+                const manuallyManaged = !!manualCleanup && t.isPropertyAssignment(manualCleanup) &&
+                    manualCleanup.initializer.kind === t.SyntaxKind.TrueKeyword;
+                const suppliedInjector = !!option('injector');
+                const record = { id: location(context, node), capability: matcher, from: adapterSource.id,
+                    sourceExpression: adapterSource.expression,
                     to: name, location: location(context, node), equal: equalOption,
                     conditions: [...(equalOption ? [`a custom equal function (${equalOption}) decides whether the value changed`] : []),
                         ...matcher === 'angular/computed' || matcher === 'signals/deepComputed'
@@ -192,7 +216,11 @@ export function analyzeSignals(context, files) {
                             : matcher === 'angular/linkedSignal'
                                 ? ['the value is recomputed when its source changes', 'an explicit write also replaces the value']
                                 : matcher === 'angular/toSignal'
-                                    ? ['the internal subscription starts on creation and ends when the injector is destroyed']
+                                    ? ['the internal subscription starts when the toSignal call runs', manuallyManaged
+                                            ? 'manualCleanup keeps the internal subscription alive until the Observable completes'
+                                            : suppliedInjector
+                                                ? 'the internal subscription ends when the supplied injector is destroyed'
+                                                : 'the internal subscription ends when the owning injection context is destroyed']
                                     : ['each notification follows a change-detection boundary, not every set']] };
                 links.push(record);
                 if (node.parent && (t.isVariableDeclaration(node.parent) || t.isPropertyDeclaration(node.parent)))
@@ -221,7 +249,8 @@ export function analyzeSignals(context, files) {
                 }
                 if (member === 'asReadonly' && isSignalValue(context, receiver)) {
                     links.push({ id: location(context, node), capability: 'angular/signal.asReadonly',
-                        from: sourceIdFor(receiver), to: nameOf(context, node), location: location(context, node),
+                        from: sourceIdFor(receiver), sourceExpression: receiver.getText().replace(/^this\./, ''),
+                        to: nameOf(context, node), location: location(context, node),
                         equal: null, conditions: ['the read-only reference exposes the same state'] });
                     return;
                 }

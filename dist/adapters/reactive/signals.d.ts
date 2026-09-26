@@ -31,7 +31,9 @@ export interface SignalWrite {
 export interface SignalLink {
     id: string;
     capability: string;
+    /** Declaration identity and readable expression of the value entering the reactive adapter. */
     from: string | null;
+    sourceExpression: string | null;
     to: string | null;
     location: string;
     /** The custom equality function, when one was supplied. */

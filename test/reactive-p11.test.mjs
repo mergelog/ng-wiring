@@ -164,6 +164,26 @@ import {Component, signal, effect} from '@angular/core';
   assert(after.reason.includes('await'));
 }));
 
+test('toSignal records its Observable source and automatic or manual subscription lifetime', async () => fixture(`
+import {Component, Injector, inject} from '@angular/core';
+import {toSignal} from '@angular/core/rxjs-interop';
+import {of} from 'rxjs';
+@Component({selector:'app-root',template:''}) export class Root {
+  injector=inject(Injector);
+  source=of(1);
+  automatic=toSignal(this.source);
+  supplied=toSignal(this.source,{injector:this.injector});
+  manual=toSignal(this.source,{manualCleanup:true});
+}
+`, ({ context }) => {
+  const links = analyzeSignals(context).links.filter(item => item.capability === 'angular/toSignal');
+  assert.equal(links.length, 3);
+  assert(links.every(item => item.sourceExpression === 'source' && item.from));
+  assert(links.find(item => item.to === 'automatic').conditions.some(item => item.includes('owning injection context')));
+  assert(links.find(item => item.to === 'supplied').conditions.some(item => item.includes('supplied injector')));
+  assert(links.find(item => item.to === 'manual').conditions.some(item => item.includes('until the Observable completes')));
+}));
+
 // P11-06 / P11-07
 test('generated Stores are catalogued through variables, extends, aliases and reused features', async () => fixture(`
 import {signalStore as makeStore, signalStoreFeature, withState, withComputed, withMethods, withProps,

@@ -387,6 +387,34 @@ test('interop-apis: each bound input is its own relation and a model writes back
   }
 });
 
+test('interop-apis: toSignal is a background subscription with its own lifetime and display read', async () => {
+  const { report } = await analyzeFixture('interop-apis', { target: 'data-id=commitButton' });
+  const keys = edgeKeys(report);
+  assert(keys.includes('reactive-link|clock.stream|tick'));
+  assert(keys.includes('state-read|tick|<span>'));
+  assert(!keys.includes('reactive-link|value|tick'),
+    'the selected model write was treated as an emission from an unrelated Observable');
+
+  const subscription = report.edges.find(edge => edge.kind === 'reactive-link' &&
+    edge.details.operator?.value === 'angular/toSignal');
+  assert(subscription, keys.join('\n'));
+  assert.equal(subscription.details.scheduling.value, 'subscription');
+  const operationEdges = new Set(report.operations.flatMap(item => item.edgeIds));
+  assert(!operationEdges.has(subscription.id),
+    'a creation-time subscription was attributed to the selected click operation');
+
+  const conditions = new Map(report.conditions.map(item => [item.id, item]));
+  const text = (id) => {
+    const condition = conditions.get(id);
+    if (!condition) return '';
+    if (condition.kind === 'predicate') return condition.expression;
+    if (condition.kind === 'all' || condition.kind === 'any') return condition.operandIds.map(text).join(' && ');
+    return condition.kind;
+  };
+  assert.match(text(subscription.conditionId), /starts when the toSignal call runs/);
+  assert.match(text(subscription.conditionId), /ends when the owning injection context is destroyed/);
+});
+
 test('interop-apis: the after-render phase and the explicit destroy stay on their own effect', async () => {
   const bump = await analyzeFixture('interop-apis', { target: 'data-id=bumpButton' });
   const afterRender = bump.report.edges.find(edge => edge.kind === 'reactive-link' &&
