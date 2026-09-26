@@ -32,6 +32,8 @@ export class MethodsComponent {
   }
 
   remember(): void {
+    this.store.remember('saved');
     this.store.remember(this.term);
+    this.store.remember(this.stream);
   }
 }

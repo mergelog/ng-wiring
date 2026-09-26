@@ -158,8 +158,15 @@ export function analyzeReactiveMethods(context: AnalysisContext, stores?: Signal
     if (argument === 'unknown') gaps.push('the call argument type is not statically readable');
     calls.push({ id: location(context, node), methodId: method.id, capability: method.capability,
       argument, source: location(context, node),
-      conditions: [...method.conditions, ...(argument === 'signal'
-        ? ['the pipeline restarts on each change of the supplied Signal'] : [])], gaps });
+      conditions: [...method.conditions,
+        ...(argument === 'signal' ? [method.capability === 'signals/rxMethod'
+          ? 'the pipeline restarts on each change of the supplied Signal'
+          : 'the processing function runs once per change of the supplied Signal'] : []),
+        ...(argument === 'observable' && method.capability === 'signals/rxMethod'
+          ? ['the pipeline runs once per notification of the supplied Observable'] : []),
+        ...(argument === 'value' ? [method.capability === 'signals/rxMethod'
+          ? 'the pipeline runs once for the supplied value'
+          : 'the processing function runs once for the supplied value'] : [])], gaps });
     for (const gap of gaps) diagnostics.push(`${gap} at ${location(context, node)}`);
   });
   for (const method of methods)

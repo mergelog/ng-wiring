@@ -4,9 +4,9 @@
 
 ## 目的と基準
 
-[`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 20 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
+[`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 12 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
 
-作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R05 の 3 件と R06 の 3 件を対応し、現在は **90 件が fixture 設定済み、20 件が未達**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
+作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。現在の台帳は **98 件が fixture 設定済み、12 件が未達**。今回 R08 の6件に具体的な期待関係を追加した。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
 
 ## 進め方と完了判定
 
@@ -85,12 +85,12 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 
 ### R08: rxMethod / signalMethod の呼出し形態（6 件）
 
-- [ ] **R08/rxMethod.value** — 再現: `signal-store-apis`, `data-id=loadValueButton`。値引数で呼ぶときだけ method 本体に入り、定義だけでは起動しない。
-- [ ] **R08/rxMethod.signal** — 再現: `signal-store-apis`, `data-id=loadSignalButton`。Signal 引数による再実行を値引数の単発実行と区別する。
-- [ ] **R08/rxMethod.observable** — 再現: `signal-store-apis`, `data-id=loadStreamButton`。Observable 引数の購読・再実行を `rxMethod` 固有の経路として検証する。
-- [ ] **R08/signalMethod.value** — 再現: `signal-store-apis`, `data-id=rememberButton`。値引数での起動から method 本体に入る。
-- [ ] **R08/signalMethod.signal** — 再現: `signal-store-apis`, `data-id=rememberButton`。Signal 引数の再実行を条件とともに保持する。
-- [ ] **R08/signalMethod.no-observable** — 再現: `signal-store-apis`, `data-id=rememberButton`。Observable 引数を `rxMethod` と同じ対応と推定しない反例を検証する。
+- [x] **R08/rxMethod.value** — 再現: `signal-store-apis`, `data-id=loadValueButton`。値引数で呼ぶときだけ method 本体に入り、定義だけでは起動しない。
+- [x] **R08/rxMethod.signal** — 再現: `signal-store-apis`, `data-id=loadSignalButton`。Signal 引数による再実行を値引数の単発実行と区別する。
+- [x] **R08/rxMethod.observable** — 再現: `signal-store-apis`, `data-id=loadStreamButton`。Observable 引数の購読・再実行を `rxMethod` 固有の経路として検証する。
+- [x] **R08/signalMethod.value** — 再現: `signal-store-apis`, `data-id=rememberButton`。値引数での起動から method 本体に入る。
+- [x] **R08/signalMethod.signal** — 再現: `signal-store-apis`, `data-id=rememberButton`。Signal 引数の再実行を条件とともに保持する。
+- [x] **R08/signalMethod.no-observable** — 再現: `signal-store-apis`, `data-id=rememberButton`。Observable 引数を `rxMethod` と同じ対応と推定しない反例を検証する。
 
 ### R09: NgRx Store の action と読み出し（4 件）
 

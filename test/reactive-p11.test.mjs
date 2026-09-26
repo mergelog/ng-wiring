@@ -395,7 +395,7 @@ export const LoadStore=signalStore(withState({count:0}),
 @Component({selector:'app-root',template:''}) export class Root {
   store=inject(LoadStore);
   n=signal(1);
-  go(){this.store.load(1);this.store.load(of(2));this.store.load(this.n);this.store.sync(this.n);}
+  go(){this.store.load(1);this.store.load(of(2));this.store.load(this.n);this.store.sync(this.n);this.store.sync(of(3));}
 }
 `, ({ context }) => {
   const stores = catalogSignalStores(context);
@@ -415,5 +415,7 @@ export const LoadStore=signalStore(withState({count:0}),
   const sync = graph.calls.find(item => item.capability === 'signals/signalMethod');
   assert.equal(sync.argument, 'signal');
   assert(sync.conditions.some(item => item.includes('not supported and is not inferred from rxMethod')));
-  assert(graph.calls.every(item => item.gaps.length === 0));
+  const unsupportedSync = graph.calls.find(item => item.capability === 'signals/signalMethod' && item.argument === 'observable');
+  assert.equal(unsupportedSync.gaps.length, 1);
+  assert(unsupportedSync.gaps[0].includes('does not accept'));
 }));

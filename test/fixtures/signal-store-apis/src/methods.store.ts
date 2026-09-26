@@ -6,7 +6,7 @@ import { switchMap } from 'rxjs/operators';
 import { CatalogApi } from './api';
 
 export const MethodsStore = signalStore(
-  withState({ hits: 0, last: '' }),
+  withState({ hits: 0, last: '', unusedHits: 0 }),
   withMethods((store, api = inject(CatalogApi)) => ({
     /** Takes a value, a Signal or an Observable; the API result writes the state. */
     load: rxMethod<string>(pipe(
@@ -16,6 +16,6 @@ export const MethodsStore = signalStore(
     /** Takes a value or a Signal; it has no Observable form. */
     remember: signalMethod<string>(value => patchState(store, { last: value })),
     /** Defined and never called. */
-    unused: rxMethod<string>(tap(() => patchState(store, { hits: -1 }))),
+    unused: rxMethod<string>(tap(() => patchState(store, { unusedHits: -1 }))),
   })),
 );

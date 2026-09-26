@@ -22,6 +22,7 @@ export interface StoreTraceOptions { outputElement?: IndexedElement; catalog?: C
   afterClosedLocation?: string;
   /** The selection reaches no route, so a route provided registration can be neither confirmed nor denied. */
   routeInjectorUnknown?: boolean }
+type StoreMethodNode = ts.MethodDeclaration | ts.PropertyAssignment;
 const LIMIT = 10000;
 const DEPTH = 64;
 const slash = (s: string): string => s.replaceAll('\\', '/');
@@ -248,7 +249,7 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
     }
     return null;
   };
-  const signalStoreMethod = (implementation: string, name: string): ts.MethodDeclaration | null => {
+  const signalStoreMethod = (implementation: string, name: string): StoreMethodNode | null => {
     const signalApi = (call: ts.CallExpression, api: string): boolean => {
       const callee = t.isPropertyAccessExpression(call.expression) ? call.expression.name : call.expression;
       let symbol = context.checker.getSymbolAtLocation(callee);
@@ -256,9 +257,9 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       return symbol?.getName() === api && !!symbol.declarations?.some(d =>
         slash(d.getSourceFile().fileName).includes('/node_modules/@ngrx/signals/'));
     };
-    const methodInStoreCall = (call: ts.CallExpression): ts.MethodDeclaration | null => {
+    const methodInStoreCall = (call: ts.CallExpression): StoreMethodNode | null => {
       if (!signalApi(call, 'signalStore')) return null;
-      const findInFeature = (expression: ts.Expression, depth = 0): ts.MethodDeclaration | null => {
+      const findInFeature = (expression: ts.Expression, depth = 0): StoreMethodNode | null => {
         if (depth >= 16) return null;
         const resolved = (node: ts.Expression): ts.Expression => {
           let current = unwrap(t, node);
@@ -286,9 +287,9 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
             ? factory.body.statements.find(t.isReturnStatement)?.expression : factory.body;
           const object = returned && unwrap(t, returned);
           if (!object || !t.isObjectLiteralExpression(object)) return null;
-          const method = object.properties.find(property => t.isMethodDeclaration(property) &&
+          const method = object.properties.find(property => (t.isMethodDeclaration(property) || t.isPropertyAssignment(property)) &&
             property.name.getText() === name);
-          return method && t.isMethodDeclaration(method) ? method : null;
+          return method && (t.isMethodDeclaration(method) || t.isPropertyAssignment(method)) ? method : null;
         }
         if (api === 'withFeature') {
           const factory = feature.arguments[0];
@@ -338,13 +339,14 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
     }
     return null;
   };
-  const visitMethod = (method: ts.MethodDeclaration, receiver: string, path: string[],
+  const visitMethod = (method: StoreMethodNode, receiver: string, path: string[],
     conditions: string[], depth: number, callSite: ts.Node, args: readonly ts.Expression[],
     currentLayers: InjectorLayer[] = layers): void => {
     if (!enter(callSite,path)) return;
     if (depth >= DEPTH) { add('boundary',receiver,'call stack depth limit',method,path,conditions); return; }
+    const memberName = method.name.getText();
     const key = keyFor(context,method.name,callSite,receiver,methodName,args);
-    if (active.has(key)) { add('boundary',receiver,method.name.getText(),method,path,conditions,'recursive call on current branch'); return; }
+    if (active.has(key)) { add('boundary',receiver,memberName,method,path,conditions,'recursive call on current branch'); return; }
     const cached = memo.get(key);
     if (cached) {
       for (const item of cached) {
@@ -356,7 +358,9 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
     active.add(key);
     const before = steps.length;
     const known = new Map<string, Known>();
-    method.parameters.forEach((parameter, index) => {
+    const callable = t.isMethodDeclaration(method) ? method :
+      (t.isArrowFunction(method.initializer) || t.isFunctionExpression(method.initializer)) ? method.initializer : null;
+    callable?.parameters.forEach((parameter, index) => {
       if (!t.isIdentifier(parameter.name) || !args[index]) return;
       const value = valueOf(args[index]!, known);
       if (value !== unknown) known.set(parameter.name.text, value);
@@ -365,7 +369,7 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       if (!enter(node,path)) return;
       if (level >= DEPTH) { add('boundary',receiver,'call stack depth limit',node,path,localConditions); return; }
       if (t.isIfStatement(node)) {
-        if (method.name.getText() === 'ngOnChanges' && options.changedInput) {
+        if (memberName === 'ngOnChanges' && options.changedInput) {
           const changed = /\bchanges\?\.([A-Za-z_$][\w$]*)/.exec(node.expression.getText())?.[1];
           if (changed && changed !== options.changedInput) {
             if (node.elseStatement) visit(node.elseStatement, localConditions, level);
@@ -485,11 +489,46 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
               }
               const implementation = result.bindings[0].implementation;
               const klass = classFor(implementation);
-              const target = klass?.members.find(member => t.isMethodDeclaration(member) && member.name.getText() === callee.name.text)
-                ?? signalStoreMethod(implementation,callee.name.text);
-              if (target && t.isMethodDeclaration(target)) {
+              const classTarget = klass?.members.find(member => t.isMethodDeclaration(member) &&
+                member.name.getText() === callee.name.text);
+              const target: StoreMethodNode | null = classTarget && t.isMethodDeclaration(classTarget)
+                ? classTarget : signalStoreMethod(implementation,callee.name.text);
+              if (target) {
+                const methodConditions: string[] = [];
+                let unsupportedReactiveArgument = false;
+                if (t.isPropertyAssignment(target) && t.isCallExpression(target.initializer)) {
+                  const factory = importedApi(context, target.initializer.expression);
+                  const argument = node.arguments[0];
+                  const type = argument ? context.checker.getTypeAtLocation(argument) : null;
+                  const typeNames = new Set<string>();
+                  const collectTypeNames = (candidate: ts.Type): void => {
+                    const symbol = candidate.getSymbol() ?? candidate.aliasSymbol;
+                    if (symbol) typeNames.add(symbol.getName());
+                    if (candidate.isUnionOrIntersection()) candidate.types.forEach(collectTypeNames);
+                  };
+                  if (type) collectTypeNames(type);
+                  const isSignal = ['Signal', 'WritableSignal', 'InputSignal', 'ModelSignal', 'DeepSignal']
+                    .some(name => typeNames.has(name));
+                  const isObservable = ['Observable', 'Subject', 'BehaviorSubject'].some(name => typeNames.has(name));
+                  if (factory?.name === 'rxMethod') {
+                    methodConditions.push(isSignal ? 'the pipeline restarts on each change of the supplied Signal' :
+                      isObservable ? 'the pipeline runs once per notification of the supplied Observable' :
+                        'the pipeline runs once for the supplied value');
+                  } else if (factory?.name === 'signalMethod') {
+                    unsupportedReactiveArgument = isObservable;
+                    methodConditions.push(isSignal ? 'the processing function runs once per change of the supplied Signal' :
+                      'the processing function runs once for the supplied value');
+                  }
+                }
+                if (unsupportedReactiveArgument) {
+                  add('boundary',receiver,`${fieldName}.${callee.name.text}`,node,nextPath,
+                    [...localConditions,'signalMethod does not accept Observable arguments'],
+                    'signalMethod does not support Observable arguments; its processing function is not entered');
+                  return;
+                }
                 add('call',receiver,`${fieldName}.${callee.name.text}`,node,nextPath,localConditions);
-                visitMethod(target,implementation,nextPath,localConditions,level+1,node,node.arguments,currentLayers); return;
+                visitMethod(target,implementation,nextPath,[...localConditions,...methodConditions],
+                  level+1,node,node.arguments,currentLayers); return;
               }
               add('boundary',receiver,`${fieldName}.${callee.name.text}`,node,nextPath,localConditions,
                 'resolved service method body is unavailable'); return;
@@ -501,6 +540,10 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
         return;
       }
       if (t.isCallExpression(node) && t.isIdentifier(node.expression)) {
+        // SignalStore patchState writes are materialized from the reactive write catalog. They do not
+        // have a traversable package body, so treating the call as an unresolved function hides the
+        // locally analysed write behind a false boundary.
+        if (importedApi(context, node.expression)?.name === 'patchState') return;
         const symbol = context.checker.getSymbolAtLocation(node.expression);
         const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
         const nextPath = [...path,location(context,node)];
@@ -524,8 +567,9 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       }
       t.forEachChild(node,child => visit(child,localConditions,level));
     };
-    if (method.body) visit(method.body,conditions,depth);
-    else add('boundary',receiver,method.name.getText(),method,path,conditions,'method body is unavailable');
+    const body = callable?.body ?? (t.isPropertyAssignment(method) ? method.initializer : undefined);
+    if (body) visit(body,conditions,depth);
+    else add('boundary',receiver,memberName,method,path,conditions,'method body is unavailable');
     memo.set(key,steps.slice(before).map(item => ({...item,path:item.path.slice(path.length),
       conditions:item.conditions.slice(conditions.length)})));
     active.delete(key);

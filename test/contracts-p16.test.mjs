@@ -49,7 +49,7 @@ test('rows with several APIs or forms carry one subcase each', () => {
     R06: ['R06/withState', 'R06/withComputed', 'R06/withLinkedState', 'R06/withProps', 'R06/withMethods', 'R06/withHooks'],
     R07: ['R07/signalState', 'R07/getState', 'R07/watchState', 'R07/deepComputed'],
     R08: ['R08/rxMethod.value', 'R08/rxMethod.signal', 'R08/rxMethod.observable',
-      'R08/signalMethod.value', 'R08/signalMethod.signal'],
+      'R08/signalMethod.value', 'R08/signalMethod.signal', 'R08/signalMethod.no-observable'],
     R10: ['R10/Store.dispatch.thunk', 'R10/Store.next'],
     R11: ['R11/createEffect', 'R11/ofType', 'R11/createEffect.dispatch-false'],
     R12: ['R12/event', 'R12/eventGroup', 'R12/injectDispatch', 'R12/Dispatcher.dispatch'],

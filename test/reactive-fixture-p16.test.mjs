@@ -277,9 +277,9 @@ test('signal-store-apis: a snapshot read is no dependency and a deep mutation is
 // R08: what is defined but never entered must not be reported as having run.
 test('signal-store-apis: an rxMethod that was never called writes nothing', async () => {
   const { report } = await analyzeFixture('signal-store-apis', { target: 'data-id=loadValueButton' });
-  assert.deepEqual(edgeKeys(report).filter(key => key.endsWith('|hits')), [],
+  assert.deepEqual(edgeKeys(report).filter(key => key.endsWith('|unusedHits')), [],
     'an uncalled rxMethod was treated as running');
-  // The call this version cannot enter is a boundary, not a silent success.
+  // The downstream service call remains an explicit unresolved boundary, not a silent success.
   assert(report.edges.some(edge => edge.kind === 'boundary' && edge.confidence === 'unresolved'));
   assert.equal(report.status, 'partial');
 });

@@ -292,9 +292,9 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                     const object = returned && unwrap(t, returned);
                     if (!object || !t.isObjectLiteralExpression(object))
                         return null;
-                    const method = object.properties.find(property => t.isMethodDeclaration(property) &&
+                    const method = object.properties.find(property => (t.isMethodDeclaration(property) || t.isPropertyAssignment(property)) &&
                         property.name.getText() === name);
-                    return method && t.isMethodDeclaration(method) ? method : null;
+                    return method && (t.isMethodDeclaration(method) || t.isPropertyAssignment(method)) ? method : null;
                 }
                 if (api === 'withFeature') {
                     const factory = feature.arguments[0];
@@ -360,9 +360,10 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
             add('boundary', receiver, 'call stack depth limit', method, path, conditions);
             return;
         }
+        const memberName = method.name.getText();
         const key = keyFor(context, method.name, callSite, receiver, methodName, args);
         if (active.has(key)) {
-            add('boundary', receiver, method.name.getText(), method, path, conditions, 'recursive call on current branch');
+            add('boundary', receiver, memberName, method, path, conditions, 'recursive call on current branch');
             return;
         }
         const cached = memo.get(key);
@@ -377,7 +378,9 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
         active.add(key);
         const before = steps.length;
         const known = new Map();
-        method.parameters.forEach((parameter, index) => {
+        const callable = t.isMethodDeclaration(method) ? method :
+            (t.isArrowFunction(method.initializer) || t.isFunctionExpression(method.initializer)) ? method.initializer : null;
+        callable?.parameters.forEach((parameter, index) => {
             if (!t.isIdentifier(parameter.name) || !args[index])
                 return;
             const value = valueOf(args[index], known);
@@ -392,7 +395,7 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                 return;
             }
             if (t.isIfStatement(node)) {
-                if (method.name.getText() === 'ngOnChanges' && options.changedInput) {
+                if (memberName === 'ngOnChanges' && options.changedInput) {
                     const changed = /\bchanges\?\.([A-Za-z_$][\w$]*)/.exec(node.expression.getText())?.[1];
                     if (changed && changed !== options.changedInput) {
                         if (node.elseStatement)
@@ -511,11 +514,47 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                             }
                             const implementation = result.bindings[0].implementation;
                             const klass = classFor(implementation);
-                            const target = klass?.members.find(member => t.isMethodDeclaration(member) && member.name.getText() === callee.name.text)
-                                ?? signalStoreMethod(implementation, callee.name.text);
-                            if (target && t.isMethodDeclaration(target)) {
+                            const classTarget = klass?.members.find(member => t.isMethodDeclaration(member) &&
+                                member.name.getText() === callee.name.text);
+                            const target = classTarget && t.isMethodDeclaration(classTarget)
+                                ? classTarget : signalStoreMethod(implementation, callee.name.text);
+                            if (target) {
+                                const methodConditions = [];
+                                let unsupportedReactiveArgument = false;
+                                if (t.isPropertyAssignment(target) && t.isCallExpression(target.initializer)) {
+                                    const factory = importedApi(context, target.initializer.expression);
+                                    const argument = node.arguments[0];
+                                    const type = argument ? context.checker.getTypeAtLocation(argument) : null;
+                                    const typeNames = new Set();
+                                    const collectTypeNames = (candidate) => {
+                                        const symbol = candidate.getSymbol() ?? candidate.aliasSymbol;
+                                        if (symbol)
+                                            typeNames.add(symbol.getName());
+                                        if (candidate.isUnionOrIntersection())
+                                            candidate.types.forEach(collectTypeNames);
+                                    };
+                                    if (type)
+                                        collectTypeNames(type);
+                                    const isSignal = ['Signal', 'WritableSignal', 'InputSignal', 'ModelSignal', 'DeepSignal']
+                                        .some(name => typeNames.has(name));
+                                    const isObservable = ['Observable', 'Subject', 'BehaviorSubject'].some(name => typeNames.has(name));
+                                    if (factory?.name === 'rxMethod') {
+                                        methodConditions.push(isSignal ? 'the pipeline restarts on each change of the supplied Signal' :
+                                            isObservable ? 'the pipeline runs once per notification of the supplied Observable' :
+                                                'the pipeline runs once for the supplied value');
+                                    }
+                                    else if (factory?.name === 'signalMethod') {
+                                        unsupportedReactiveArgument = isObservable;
+                                        methodConditions.push(isSignal ? 'the processing function runs once per change of the supplied Signal' :
+                                            'the processing function runs once for the supplied value');
+                                    }
+                                }
+                                if (unsupportedReactiveArgument) {
+                                    add('boundary', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, [...localConditions, 'signalMethod does not accept Observable arguments'], 'signalMethod does not support Observable arguments; its processing function is not entered');
+                                    return;
+                                }
                                 add('call', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, localConditions);
-                                visitMethod(target, implementation, nextPath, localConditions, level + 1, node, node.arguments, currentLayers);
+                                visitMethod(target, implementation, nextPath, [...localConditions, ...methodConditions], level + 1, node, node.arguments, currentLayers);
                                 return;
                             }
                             add('boundary', receiver, `${fieldName}.${callee.name.text}`, node, nextPath, localConditions, 'resolved service method body is unavailable');
@@ -527,6 +566,11 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                 return;
             }
             if (t.isCallExpression(node) && t.isIdentifier(node.expression)) {
+                // SignalStore patchState writes are materialized from the reactive write catalog. They do not
+                // have a traversable package body, so treating the call as an unresolved function hides the
+                // locally analysed write behind a false boundary.
+                if (importedApi(context, node.expression)?.name === 'patchState')
+                    return;
                 const symbol = context.checker.getSymbolAtLocation(node.expression);
                 const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
                 const nextPath = [...path, location(context, node)];
@@ -550,10 +594,11 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
             }
             t.forEachChild(node, child => visit(child, localConditions, level));
         };
-        if (method.body)
-            visit(method.body, conditions, depth);
+        const body = callable?.body ?? (t.isPropertyAssignment(method) ? method.initializer : undefined);
+        if (body)
+            visit(body, conditions, depth);
         else
-            add('boundary', receiver, method.name.getText(), method, path, conditions, 'method body is unavailable');
+            add('boundary', receiver, memberName, method, path, conditions, 'method body is unavailable');
         memo.set(key, steps.slice(before).map(item => ({ ...item, path: item.path.slice(path.length),
             conditions: item.conditions.slice(conditions.length) })));
         active.delete(key);

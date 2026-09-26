@@ -654,6 +654,12 @@ function addOperations(input) {
     const httpCatalog = analyzeHttp(context);
     const signals = analyzeSignals(context);
     const methods = analyzeReactiveMethods(context, stores);
+    for (const call of methods.calls)
+        for (const gap of call.gaps) {
+            const at = evidence.location(call.source);
+            builder.diagnostic({ code: 'reactive-method-argument', severity: 'warning', message: gap,
+                ...(at ? { evidenceIds: [at] } : {}) });
+        }
     const eventGraph = analyzeEvents(context, stores);
     const patchStates = findPatchStateCalls(context);
     /** The class and member a recorded position sits in, so a write inside a called method is attributed. */
@@ -945,8 +951,8 @@ function addOperations(input) {
             };
             // The reactive layer runs first so the NgRx and HTTP traces can be reconciled against what it resolved.
             const keys = addReactiveWrites({ listenerNode, inside: reached, signals, eventGraph, owners, materialize,
-                scope, storeGraph, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId,
-                context, catalog, httpCatalog, layers,
+                scope, storeGraph, storeTrace, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId,
+                context, catalog, httpCatalog, layers, reactiveMethods: methods,
                 reachedConsumers: new Set(storeTrace.steps.filter(step => step.kind === 'reactive-link')
                     .map(step => step.target)) });
             addDisplayReads({ analysis, builder, evidence, connect, declarationNode, spanOf, keys, placed, scope,
@@ -1093,7 +1099,7 @@ function addOperations(input) {
 }
 /** §7.6 the state this operation writes through Signal and SignalStore APIs, with no effect required. */
 function addReactiveWrites(input) {
-    const { context, catalog, httpCatalog, layers, listenerNode, inside, signals, eventGraph, owners, storeGraph, materialize, scope, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId, reachedConsumers } = input;
+    const { context, catalog, httpCatalog, layers, listenerNode, inside, signals, eventGraph, owners, storeGraph, storeTrace, reactiveMethods, materialize, scope, callRangeAt, withinRange, memberNameAt, stores, patchStates, entered, ownerId, reachedConsumers } = input;
     const keys = [];
     const traced = [];
     const listenerEnd = { kind: 'listener', id: 'listener', label: 'listener', nodeId: listenerNode };
@@ -1188,13 +1194,18 @@ function addReactiveWrites(input) {
                 continue;
             if (!patch.member || !entered.has(patch.member))
                 continue;
+            const reactiveMethodConditions = [
+                ...storeTrace.steps.filter(step => step.kind === 'state-write' && step.location === patch.location)
+                    .flatMap(step => step.conditions),
+                ...reactiveMethods.calls.filter(call => inside(call.source)).flatMap(call => call.conditions),
+            ];
             const written = patch.keys.length ? patch.keys : declaration.stateKeys;
             for (const key of written) {
                 // State belongs to the injected Store instance. Two providers of the same declaration therefore
                 // keep distinct state nodes, even when their member keys are identical.
                 const node = { kind: 'state', id: `${instance.id}.${key}`, label: key };
                 traced.push({ kind: 'state-write', from: listenerEnd, to: node, location: patch.location,
-                    conditions: [...instance.conditions,
+                    conditions: [...instance.conditions, ...reactiveMethodConditions,
                         ...storeLifetime(stores, declaration.id, instance.id).start.map(item => `Store starts at ${item}`),
                         ...storeLifetime(stores, declaration.id, instance.id).end.map(item => `Store ends at ${item}`),
                         ...declaration.members.filter(member => member.name === key && member.kind === 'linked-state')
