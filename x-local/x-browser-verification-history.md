@@ -129,3 +129,23 @@
   ```
 - 実行時URL: `http://192.168.0.4:4200/projects/37d14cf85a97476489b532343bb9d0e6/tasks?columns=selected&columns=type&columns=name&columns=tags&columns=status&columns=project.name&columns=users&columns=started&columns=last_update&columns=last_iteration&columns=parent.name&order=-name&q=comparison`。B01のdouble click後は同URLの `/tasks/4037754160124faf9db09ff81cfaea2e/execution`。
 - `npm test`: 終了コード0、251 passed / 0 failed。`.env` の統合テスト対象を `data-id=3DotMenuButton` とcandidate `cand:1d7451318c97c1124e77d3a00afc015acd4781ed9f617ec56e1b98aa26b84f05` にし、外部 `stackup` workspaceを確認。
+
+### 2026-09-26 — D01〜D05 / NgRx Store・Effects
+
+- **D01 class effect → generated API:** Workers & Queues → Workers utilization で期間を `3 Hours` から `1 Day` に変更。selector `name=time-frame` は画面上1件。`workers.get_all` と `workers.get_activity_report` の再要求を確認（200）。simple は `setStatsParams` dispatch後に `workersReducer` の選択 injectorでの登録未検出として停止し、APIを表示しなかった（終了コード5）。レポート: [`ngwi-30-WorkersStatsComponent.name=time-frame-260926.210441.md`](tmp/ngwi-30-WorkersStatsComponent.name=time-frame-260926.210441.md)。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'name=time-frame' --project stackup --route '/workers-and-queues/workers' --selector 'body > sm-root > sm-app-shell > div.root-container > div.app-container > sm-orchestration > div.content > sm-workers > sm-workers-graph > div.header > mat-form-field > div > div > div > mat-select' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- **D02 `createActionGroup` → effect → HTTP:** Data CatalogでName containsに`semiconductor`を入力してApply。URLが`/data-catalog?q=semiconductor`へ変わり、絞り込まれた一覧を表示。`tasks.get_all_ex` / `models.get_all_ex` POST 200。simpleは`dataCatalogActions.filterChanged` dispatch後で停止（終了コード5）、URL/effect/HTTPを表示しなかった。レポート: [`ngwi-29-CatalogFiltersComponent.data-id=catalogApply-260926.210113.md`](tmp/ngwi-29-CatalogFiltersComponent.data-id=catalogApply-260926.210113.md)。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=catalogApply' --project stackup --route '/data-catalog' --selector 'body > sm-root > sm-app-shell > div > div > sm-data-catalog-page > section > section > sm-catalog-filters > form > div > button' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- **D03 effect follow-up action chain:** 同じData Catalogで`semiconductor-quality-training #12`を開いた。画面に詳細と`Where it came from`を表示し、Networkで`tasks.get_by_id_ex`と関連するtasks/models読み取り200を確認。ソースは`openDetail` → `loadDetail` → `detailLoaded` → `loadLineage`と続く。source起点解析は終了コード5（`Target detection incomplete`、レポートなし）。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js --source src/app/features/data-catalog/components/catalog-assets-table/catalog-assets-table.component.html:23 --event click --project stackup --route '/data-catalog/run/:id' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- **D04 functional effect:** `src/app`の`createEffect` / `provideEffects` を調べた。effectはinjectable classのmemberとして定義され、providersも`provideEffects([Class])`形式。class外に定義されたfunctional effectは見つからず、実画面対象はなし。実行時確認とCLI実行はなし。
+- **D05 reducer-only / 通信なし候補:** Compare Tasksの`Hide Identical Fields`をON/OFF。selectorは1件。`setHideIdenticalFields` → reducer state → 表示切替のソースを確認し、対応するHTTP effectはない。切替後に`tasks.get_all_ex`が1件記録されたが、定期更新との時間的重複を排除できず、このtoggleの因果とは判定しない。simpleは`compareHeader`の登録未検出後に停止（終了コード5）。レポート: [`ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md`](tmp/ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md)。比較表示は元のOFFへ戻した。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/experiments-compare/dumbs/experiment-compare-header/experiment-compare-header.component.html:87 --event change --project stackup --route '/projects/:projectId/compare-tasks' --out-dir ../ng-wiring/x-local/tmp
+  ```

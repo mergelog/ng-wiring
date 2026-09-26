@@ -64,20 +64,25 @@
   - 2026-09-26 実施: Training の Tasks 一覧で `.p-datatable-table-container` を末尾までスクロール。`smScrollEnd` IntersectionObserver → `sm-dots-load-more` の `loadMore` → `TableComponent.loadMore()` → tasks state → `tasks.get_all_ex` (200) を確認。load-more row selectorは1件。simple解析は終了コード5 / Target detection incomplete、レポートなし。履歴参照。
 
 ## D. NgRx Store / Effects（5件）
-- [ ] **D01 / P1: action creator dispatch → class-based effect → generated API service**
+- [x] **D01 / P1: action creator dispatch → class-based effect → generated API service**
   `store.dispatch(actionCreator(...))` → `createEffect` → `ofType` → flattening operator → `Api*Service` → `HttpClient` の標準経路を検証する。`exportTaskButton` とは別 action を選び、既知修正の過適合を避ける。
+  - 2026-09-26 実施: Workers の期間を `3 Hours` → `1 Day` に変更。期間変更後に `workers.get_all` / `workers.get_activity_report` の再要求（200）を確認。ソース上は `setStatsParams` dispatch と `WorkersEffects` の class effect があるが、simple は `workersReducer` の選択 injector での `provideState` 登録未検出を理由にdispatch直後で停止し、API未表示（終了コード5）。検出失敗。`ngwi-30-WorkersStatsComponent.name=time-frame-260926.210441.md`。
 
-- [ ] **D02 / P1: `createActionGroup` の event dispatch → effect → HTTP**
+- [x] **D02 / P1: `createActionGroup` の event dispatch → effect → HTTP**
   同じ group の複数 event が存在する経路を選び、正しい creator、consumer、effect だけが結合されるか確認する。表示名の正規化や property access による action 同定失敗を狙う。
+  - 2026-09-26 実施: Data Catalog で Name contains に `semiconductor` を入力してApply。`filterChanged` → URL更新 → URLから `openList` → 一覧APIの実行後、対象一覧へ絞り込まれた。`dataCatalogActions` は複数eventを持つ `createActionGroup`。simple は `filterChanged` dispatchで停止し、後続のURL/effect/HTTPを接続せず（終了コード5）。Networkでは `tasks.get_all_ex` / `models.get_all_ex` のPOST 200を確認。`ngwi-29-CatalogFiltersComponent.data-id=catalogApply-260926.210113.md`。
 
-- [ ] **D03 / P1: effect が別 action を返す多段チェーン**
+- [x] **D03 / P1: effect が別 action を返す多段チェーン**
   UI action → effect A → success / follow-up action → effect B → HTTP または主要副作用を追う。simple 版では正常系一本だけを表示し、failure action や error notification を混ぜない。
+  - 2026-09-26 部分実施: Data Catalog の `semiconductor-quality-training #12` を開いた。ソースでは route detail の `openDetail` → `loadDetail` effect → `detailLoaded` → `loadLineage` effect → lineage要求の順。画面に詳細と `Where it came from` が表示され、Networkで `tasks.get_by_id_ex` と関連する tasks/models 読み取りの200を確認。source起点のsimple実行は終了コード5（`Target detection incomplete`、レポートなし）、因果経路の結合は未達。実行コマンドは履歴参照。
 
-- [ ] **D04 / P1: functional effect / `provideEffects` 登録を経由する通信**
+- [x] **D04 / P1: functional effect / `provideEffects` 登録を経由する通信**
   class member ではない functional effect、inject による service / Actions 解決、application / route providers での登録を含む経路を対象にする。effect member 名を前提にした探索で停止しないか確認する。
+  - 2026-09-26 確認: 対象 `stackup` アプリの `src/app` で `createEffect` と `provideEffects` を照合。登録は `provideEffects([Class])` 形式で、class member外に定義された functional effect は見つからず、実画面の起点候補なし。対象なしとして記録。functional effectの実行時検証は未実施。
 
-- [ ] **D05 / P2: dispatch → reducer / selector / signal 表示更新のみで通信なし**
+- [x] **D05 / P2: dispatch → reducer / selector / signal 表示更新のみで通信なし**
   HTTP を行わない表示切替や selection 操作を意図的に選ぶ。action と reducer が存在するだけで無関係な effect / HTTP を結ばず、「通信なしを確認」と正しく判定できる反例にする。
+  - 2026-09-26 部分実施: Compare Tasks の `Hide Identical Fields` を切替。`setHideIdenticalFields` は reducerで表示データを選択し、対応するHTTP effectはない。Networkには切替後に `tasks.get_all_ex` が1件現れたが、定期更新との時間的重複がありこのtoggleの因果とは確認できず、通信なしの実行時証明は未確定。simple は reducer registrationを未解決としてdispatch後で停止（終了コード5）。`ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md`。
 
 ## E. Angular Signals / NgRx SignalStore（5件）
 - [ ] **E01 / P1: `signalStore` の `withMethods` → injected API service → HTTP**
