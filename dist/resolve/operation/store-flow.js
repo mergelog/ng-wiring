@@ -474,15 +474,33 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
             if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression)) {
                 const callee = node.expression;
                 const nextPath = [...path, location(context, node)];
-                if (callee.name.text === 'subscribe' && options.afterClosedLocation &&
-                    t.isCallExpression(callee.expression) && t.isPropertyAccessExpression(callee.expression.expression) &&
-                    callee.expression.expression.name.text === 'afterClosed' &&
-                    location(context, callee.expression) === options.afterClosedLocation) {
-                    add('reactive-link', receiver, 'MatDialogRef.afterClosed', callee.expression, nextPath, [...localConditions, 'the same dialog ref emits its close value']);
-                    const callback = node.arguments[0];
-                    if (callback && (t.isArrowFunction(callback) || t.isFunctionExpression(callback)))
-                        visit(callback.body, [...localConditions, 'afterClosed emits {confirmed: true, queue}'], level + 1);
-                    return;
+                if (callee.name.text === 'subscribe' && options.afterClosedLocation) {
+                    const stream = callee.expression;
+                    const pipeline = t.isCallExpression(stream) && t.isPropertyAccessExpression(stream.expression) &&
+                        stream.expression.name.text === 'pipe' ? stream : undefined;
+                    const source = pipeline?.expression && t.isPropertyAccessExpression(pipeline.expression)
+                        ? pipeline.expression.expression : stream;
+                    const afterClosed = t.isCallExpression(source) && t.isPropertyAccessExpression(source.expression) &&
+                        source.expression.name.text === 'afterClosed' && location(context, source) === options.afterClosedLocation
+                        ? source : undefined;
+                    if (afterClosed) {
+                        const filterConditions = (pipeline?.arguments ?? []).flatMap(operator => {
+                            if (!t.isCallExpression(operator))
+                                return [];
+                            const operatorCallee = t.isPropertyAccessExpression(operator.expression)
+                                ? operator.expression.name : operator.expression;
+                            const api = importedApi(context, operatorCallee);
+                            const semantics = api && operatorSemantics(api.name);
+                            return api?.family === 'rxjs' && semantics?.mode === 'filter'
+                                ? [`afterClosed filter condition ${operator.arguments[0]?.getText() ?? '(predicate)'}`] : [];
+                        });
+                        add('reactive-link', receiver, 'MatDialogRef.afterClosed', afterClosed, nextPath, [...localConditions, 'the same dialog ref emits its close value']);
+                        const callback = node.arguments[0];
+                        if (callback && (t.isArrowFunction(callback) || t.isFunctionExpression(callback)))
+                            visit(callback.body, [...localConditions, ...filterConditions,
+                                'afterClosed emits the result passed to MatDialogRef.close'], level + 1);
+                        return;
+                    }
                 }
                 if ((callee.name.text === 'dispatch' || callee.name.text === 'next') && storeReceiver(context, callee.expression)) {
                     let actionExpression = node.arguments[0];

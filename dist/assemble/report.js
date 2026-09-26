@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { classMethod } from '../index/catalog.js';
+import { classAt, classMethod, idForClass } from '../index/catalog.js';
 import { resolveEventListeners } from '../resolve/operation/events.js';
 import { componentInjectorLayers } from '../resolve/operation/di.js';
 import { analyzeStore, storeInputsForSelection } from '../resolve/operation/store.js';
@@ -467,9 +467,74 @@ function addOperations(input) {
         visit(source);
         return mode;
     };
-    const dynamicCallers = suppliedCallers.filter(call => !requiredMode || !fixedDialogMode(call) ||
+    const dialogTypeCallers = () => {
+        if (!selfOwner || !t.isClassDeclaration(selfOwner.node) || !selfOwner.node.name)
+            return [];
+        const dialogSymbol = context.checker.getSymbolAtLocation(selfOwner.node.name);
+        if (!dialogSymbol)
+            return [];
+        const found = [];
+        for (const fileName of context.sourceFiles) {
+            const source = context.program.getSourceFile(fileName);
+            if (!source)
+                continue;
+            const visit = (node) => {
+                if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
+                    node.expression.name.text === 'open' && node.arguments[0]) {
+                    const receiverType = context.checker.getTypeAtLocation(node.expression.expression).getSymbol();
+                    const packageDialog = receiverType?.getName() === 'MatDialog' && receiverType.declarations?.some(item => slash(item.getSourceFile().fileName).includes('/node_modules/@angular/material/'));
+                    const component = classAt(context, node.arguments[0]);
+                    const componentId = component && idForClass(context, component);
+                    if (packageDialog && componentId === selfOwner.id) {
+                        let owner = node.parent;
+                        while (owner && !t.isClassDeclaration(owner))
+                            owner = owner.parent;
+                        const ownerId = owner && idForClass(context, owner);
+                        let method;
+                        for (let parent = node.parent; parent && parent !== owner; parent = parent.parent)
+                            if (t.isMethodDeclaration(parent)) {
+                                method = parent;
+                                break;
+                            }
+                        const variable = t.isVariableDeclaration(node.parent) && t.isIdentifier(node.parent.name)
+                            ? node.parent.name.text : null;
+                        let subscribed = false;
+                        const findSubscription = (part) => {
+                            if (subscribed || !method?.body)
+                                return;
+                            if (t.isCallExpression(part) && t.isPropertyAccessExpression(part.expression) &&
+                                part.expression.name.text === 'afterClosed') {
+                                const receiver = part.expression.expression;
+                                const sameRef = variable ? t.isIdentifier(receiver) && receiver.text === variable : receiver === node;
+                                if (sameRef) {
+                                    let ancestor = part.parent;
+                                    while (ancestor && ancestor !== method && !(t.isCallExpression(ancestor) &&
+                                        t.isPropertyAccessExpression(ancestor.expression) && ancestor.expression.name.text === 'subscribe'))
+                                        ancestor = ancestor.parent;
+                                    subscribed = !!ancestor && ancestor !== method;
+                                }
+                            }
+                            t.forEachChild(part, findSubscription);
+                        };
+                        if (method?.body)
+                            findSubscription(method.body);
+                        if (ownerId && subscribed) {
+                            const point = source.getLineAndCharacterOfPosition(node.getStart(source));
+                            found.push({ ownerId, kind: 'dialog', file: slash(path.relative(context.workspaceRoot, source.fileName)),
+                                line: point.line + 1, column: point.character + 1 });
+                        }
+                    }
+                }
+                t.forEachChild(node, visit);
+            };
+            visit(source);
+        }
+        return found;
+    };
+    const dialogCallers = suppliedCallers.length ? [...suppliedCallers] : dialogTypeCallers();
+    const dynamicCallers = dialogCallers.filter(call => !requiredMode || !fixedDialogMode(call) ||
         fixedDialogMode(call) === requiredMode);
-    for (const call of suppliedCallers.filter(item => !dynamicCallers.includes(item)))
+    for (const call of dialogCallers.filter(item => !dynamicCallers.includes(item)))
         builder.diagnostic({ code: 'dynamic-call-site-excluded', severity: 'info',
             message: `${call.file}:${call.line} は data.mode が ${fixedDialogMode(call)} 固定で、表示条件 mode === ${requiredMode} を満たさない` });
     const dialogResultMethod = (call) => {
@@ -504,7 +569,7 @@ function addOperations(input) {
             }
         if (!method || !method.body)
             return null;
-        let delivered = null;
+        const delivered = [];
         const findResult = (node) => {
             if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
                 node.expression.name.text === 'afterClosed') {
@@ -517,15 +582,15 @@ function addOperations(input) {
                         ancestor.expression.name.text === 'subscribe'))
                         ancestor = ancestor.parent;
                     if (ancestor && ancestor !== method)
-                        delivered = node;
+                        delivered.push(node);
                 }
             }
             t.forEachChild(node, findResult);
         };
         findResult(method.body);
-        const resultCall = delivered;
-        if (!resultCall)
+        if (delivered.length !== 1)
             return null;
+        const resultCall = delivered[0];
         const point = source.getLineAndCharacterOfPosition(resultCall.getStart(source));
         return { owner, method: method.name.getText(source),
             location: `${call.file}:${point.line + 1}:${point.character + 1}` };
@@ -996,65 +1061,77 @@ function addOperations(input) {
             materialize(reconcile(httpTraceEdges(httpTrace), ownerId), scope);
             // MatDialogRef.close delivers its value only to the afterClosed stream of this
             // particular open() result. Keep each call site's effects in its own route context.
-            const closesWithConfirmation = () => {
-                if (rootArguments[0]?.kind !== t.SyntaxKind.TrueKeyword || !declaration)
-                    return false;
-                const parameter = declaration.parameters[0]?.name.getText();
-                let confirmed = false;
+            const dialogCloseResults = () => {
+                if (!declaration)
+                    return [];
+                const results = new Set();
                 const scan = (node) => {
                     if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
-                        node.expression.name.text === 'close' && node.arguments[0] &&
-                        t.isObjectLiteralExpression(node.arguments[0])) {
+                        node.expression.name.text === 'close') {
                         const receiverType = context.checker.getTypeAtLocation(node.expression.expression).getSymbol();
                         if (receiverType?.getName() !== 'MatDialogRef' || !receiverType.declarations?.some(item => item.getSourceFile().fileName.replaceAll('\\', '/').includes('/node_modules/@angular/material/')))
                             return;
-                        const field = node.arguments[0].properties.find(item => t.isPropertyAssignment(item) && item.name.getText() === 'confirmed' ||
-                            t.isShorthandPropertyAssignment(item) && item.name.text === 'confirmed');
-                        if (field && (t.isShorthandPropertyAssignment(field) && parameter === 'confirmed' ||
-                            t.isPropertyAssignment(field) && (field.initializer.kind === t.SyntaxKind.TrueKeyword ||
-                                field.initializer.getText() === parameter)))
-                            confirmed = true;
+                        results.add(node.arguments[0]?.getText() ?? 'undefined');
                     }
                     t.forEachChild(node, scan);
                 };
                 scan(declaration.body);
-                return confirmed;
+                return [...results];
             };
-            if (closesWithConfirmation())
-                for (const call of dynamicCallers) {
-                    const result = dialogResultMethod(call);
-                    if (!result)
-                        continue;
-                    const branchRoutes = routesForCaller(call.ownerId);
-                    const branchRoute = branchRoutes.length === 1 ? branchRoutes[0] : undefined;
-                    const branchBootstrapId = branchRoute && routes.configs.get(branchRoute.configId)?.bootstrapId;
-                    const branchBootstrap = routes.bootstraps.find(item => item.id === branchBootstrapId) ?? selectedBootstrap;
-                    const branchInputs = branchBootstrap
-                        ? storeInputsForSelection(context, catalog, routes, branchBootstrap, branchRoute)
-                        : { rootProviders: [], routeProviders: [] };
-                    const branchGraph = analyzeStore(context, catalog, branchInputs);
-                    const branchLayers = componentInjectorLayers(result.owner, [], branchInputs.rootProviders, branchInputs.routeProviders);
-                    const uses = index.elements.filter(item => item.component === result.owner.id);
-                    const branchScope = { nodes: scope.nodes, edges: scope.edges,
-                        conditions: [...scope.conditions, `MatDialogRef.close({confirmed: true}) reaches ${result.location} afterClosed()`,
-                            `dialog opened at ${call.file}:${call.line}`,
-                            ...(branchRoute ? [`route ${branchRoute.pattern} is active`] : [])] };
-                    const branchTrace = traceStoreDispatch(context, branchGraph, result.owner, result.method, branchLayers, { outputElement: uses.length === 1 ? uses[0] : undefined,
-                        outputUses: new Map(uses.length === 1 ? [[result.owner.id, uses[0]]] : []),
-                        catalog, parentLayers: branchLayers, routeInjectorUnknown: !branchRoute && branchRoutes.length > 1,
-                        afterClosedLocation: result.location });
-                    materialize(operationTraceEdges(traceOperation(context, result.owner, result.method), result.owner.id, new Map()), branchScope);
-                    materialize(storeTraceEdges(branchTrace), branchScope);
-                    for (const consumed of branchTrace.steps.filter(item => item.kind === 'action-consume')) {
-                        const effect = branchGraph.effects.find(item => item.id === consumed.target);
-                        if (!effect)
-                            continue;
-                        const effectHttp = traceHttpFromEffect(context, httpCatalog, effect, { catalog, store: branchGraph, methods, stores, layers: branchLayers }, consumed.conditions);
-                        materialize(httpTraceEdges(effectHttp), branchScope);
-                    }
-                    builder.diagnostic({ code: 'dialog-result-delivery', severity: 'info',
-                        message: `${call.file}:${call.line} の MatDialogRef.close({confirmed: true}) が ${result.location} の afterClosed() に届く` });
+            const closeResults = dialogCloseResults();
+            for (const call of dynamicCallers) {
+                const firstParameter = declaration?.parameters[0]?.name;
+                const passesFalseCloseValue = rootArguments[0]?.kind === t.SyntaxKind.FalseKeyword &&
+                    firstParameter && t.isIdentifier(firstParameter) &&
+                    closeResults.some(value => value === firstParameter.text ||
+                        value.includes(`{${firstParameter.text}}`) || value.includes(`${firstParameter.text}: ${firstParameter.text}`));
+                // A selected call such as closeDialog(false) is a known rejected result when the dialog
+                // returns that parameter as a flag; don't let an unknown callback parameter widen it.
+                if (passesFalseCloseValue)
+                    continue;
+                const result = dialogResultMethod(call);
+                if (!result) {
+                    if (closeResults.length)
+                        builder.diagnostic({ code: 'dialog-result-boundary', severity: 'info',
+                            message: `${call.file}:${call.line} の open 呼び出しに対応する afterClosed() 購読を一意に確認できない` });
+                    continue;
                 }
+                if (!closeResults.length) {
+                    builder.diagnostic({ code: 'dialog-result-boundary', severity: 'info',
+                        message: `${call.file}:${call.line} のダイアログに対応する Angular Material MatDialogRef.close(result) を確認できない` });
+                    continue;
+                }
+                const branchRoutes = routesForCaller(call.ownerId);
+                const branchRoute = branchRoutes.length === 1 ? branchRoutes[0] : undefined;
+                const branchBootstrapId = branchRoute && routes.configs.get(branchRoute.configId)?.bootstrapId;
+                const branchBootstrap = routes.bootstraps.find(item => item.id === branchBootstrapId) ?? selectedBootstrap;
+                const branchInputs = branchBootstrap
+                    ? storeInputsForSelection(context, catalog, routes, branchBootstrap, branchRoute)
+                    : { rootProviders: [], routeProviders: [] };
+                const branchGraph = analyzeStore(context, catalog, branchInputs);
+                const branchLayers = componentInjectorLayers(result.owner, [], branchInputs.rootProviders, branchInputs.routeProviders);
+                const uses = index.elements.filter(item => item.component === result.owner.id);
+                const branchScope = { nodes: scope.nodes, edges: scope.edges,
+                    conditions: [...scope.conditions,
+                        `MatDialogRef.close(result) reaches ${result.location} afterClosed()`,
+                        `dialog opened at ${call.file}:${call.line}`,
+                        ...(branchRoute ? [`route ${branchRoute.pattern} is active`] : [])] };
+                const branchTrace = traceStoreDispatch(context, branchGraph, result.owner, result.method, branchLayers, { outputElement: uses.length === 1 ? uses[0] : undefined,
+                    outputUses: new Map(uses.length === 1 ? [[result.owner.id, uses[0]]] : []),
+                    catalog, parentLayers: branchLayers, routeInjectorUnknown: !branchRoute && branchRoutes.length > 1,
+                    afterClosedLocation: result.location });
+                materialize(operationTraceEdges(traceOperation(context, result.owner, result.method), result.owner.id, new Map()), branchScope);
+                materialize(storeTraceEdges(branchTrace), branchScope);
+                for (const consumed of branchTrace.steps.filter(item => item.kind === 'action-consume')) {
+                    const effect = branchGraph.effects.find(item => item.id === consumed.target);
+                    if (!effect)
+                        continue;
+                    const effectHttp = traceHttpFromEffect(context, httpCatalog, effect, { catalog, store: branchGraph, methods, stores, layers: branchLayers }, consumed.conditions);
+                    materialize(httpTraceEdges(effectHttp), branchScope);
+                }
+                builder.diagnostic({ code: 'dialog-result-delivery', severity: 'info',
+                    message: `${call.file}:${call.line} の MatDialogRef.close(result) が ${result.location} の afterClosed() に届く` });
+            }
             // A write to a member bound to a sibling component input can trigger that component's
             // ngOnChanges on a later change-detection pass. It is a separate branch from calls in the
             // current handler; in particular, an immediate jump does not use the recalculated list yet.

@@ -28,6 +28,7 @@ test('dynamic dialog uses only a unique caller route injector and retains both a
     const files = {
       'node_modules/@angular/material/dialog.d.ts': `import {Observable} from 'rxjs';
 export declare class MatDialogRef<T> { close(result?:T):void; afterClosed():Observable<T|undefined>; }
+export declare class MatDialog { open<T>(component: new (...args:any[])=>T, config?:unknown):MatDialogRef<{confirmed:boolean}>; }
 `,
       'main.ts': `import {bootstrapApplication} from '@angular/platform-browser';
 import {provideRouter} from '@angular/router';
@@ -52,20 +53,20 @@ import {updated,created} from './actions';
 export class QueueDialog { store=inject(Store); ref!:MatDialogRef<{confirmed:boolean}>; id?: string; mode='move';
  save(){ if(this.id) this.store.dispatch(updated()); else this.store.dispatch(created()); }
  closeDialog(confirmed:boolean){this.ref.close({confirmed});} }`,
-      'hosts.ts': `import {Component,inject,Injectable,Injector} from '@angular/core'; import {QueueDialog} from './dialog';
+      'hosts.ts': `import {Component,inject,Injector} from '@angular/core'; import {QueueDialog} from './dialog'; import {filter} from 'rxjs';
+import {MatDialog} from '@angular/material/dialog';
 import {Store} from '@ngrx/store'; import {updated} from './actions'; import {MatDialogRef} from '@angular/material/dialog';
-@Injectable({providedIn:'root'}) export class DialogOpener { open(component:unknown, config?:unknown):MatDialogRef<{confirmed:boolean}>{return {} as MatDialogRef<{confirmed:boolean}>;} }
 @Component({selector:'host-a',template:'<button (click)="show()">A</button>'}) export class HostA {
-  dialog=inject(DialogOpener); injector=inject(Injector); store=inject(Store);
-  show(){ const ref=this.dialog.open(QueueDialog,{}); ref.afterClosed().subscribe(res=>{if(res?.confirmed)this.store.dispatch(updated());}); }
+  dialog=inject(MatDialog); injector=inject(Injector); store=inject(Store);
+  show(){ const ref=this.dialog.open(QueueDialog,{}); ref.afterClosed().pipe(filter(res=>res?.confirmed)).subscribe(res=>{if(res?.confirmed)this.store.dispatch(updated());}); }
   showOverride(){ this.dialog.open(QueueDialog,{injector:this.injector}); }
 }
 @Component({selector:'shell-a',imports:[HostA],template:'<host-a></host-a>'}) export class ShellA {}
 @Component({selector:'host-b',template:'<button (click)="show()">B</button>'}) export class HostB {
-  dialog=inject(DialogOpener); show(){ this.dialog.open(QueueDialog,{data:{mode:'create'}}); }
+  dialog=inject(MatDialog); show(){ this.dialog.open(QueueDialog,{data:{mode:'create'}}); }
 }
 @Component({selector:'host-c',template:'<button (click)="show()">C</button>'}) export class HostC {
-  dialog=inject(DialogOpener); show(){ this.dialog.open(QueueDialog,{}); }
+  dialog=inject(MatDialog); show(){ this.dialog.open(QueueDialog,{}); }
 }`,
       'api.ts': `import {Injectable,inject} from '@angular/core'; import {HttpClient} from '@angular/common/http';
 @Injectable({providedIn:'root'}) export class QueueApi { http=inject(HttpClient);
@@ -101,7 +102,7 @@ import {updated,created} from './actions';
         location: location('hosts.ts', 'this.dialog.open(QueueDialog,{injector:this.injector});'),
         order: 2, origin: 'ngmaze' },
       { from: 'src/hosts.ts#HostC', to: 'src/dialog.ts#QueueDialog', kind: 'dialog',
-        location: location('hosts.ts', 'export class HostC {\n  dialog=inject(DialogOpener); show(){ this.dialog.open(QueueDialog,{}); }'),
+        location: location('hosts.ts', 'export class HostC {\n  dialog=inject(MatDialog); show(){ this.dialog.open(QueueDialog,{}); }'),
         order: 3, origin: 'ngmaze' },
     ];
     // Both source snippets are identical apart from their position; find the second call explicitly.
@@ -120,7 +121,7 @@ import {updated,created} from './actions';
       const index = await indexTemplates(context, catalog, maze);
       const requested = { ...target, raw: `data-id=${value}`, value };
       const candidates = buildIndexedCandidates(context, catalog, index, requested, maze, routes);
-      const selected = candidates.find(item => item.path.end === 'dynamic-boundary');
+      const selected = candidates.find(item => item.path.end === 'dynamic-boundary') ?? candidates[0];
       assert(selected);
       const analysis = { context, catalog, index, routes, maze, mazeProblems: [], candidates };
       const report = assembleReport({ analysis, selected, candidates, options: {
@@ -149,10 +150,28 @@ import {updated,created} from './actions';
       .map(edge => edge.details.urlExpression?.value).sort(), ['/queues.create', '/queues.update']);
     const overridden = await analyze(edges.slice(2));
     assert.equal(overridden.report.edges.filter(edge => edge.kind === 'http-create').length, 0);
+    const viewUnresolved = await analyze([], 'confirm');
+    assert(viewUnresolved.report.diagnostics.some(item => item.code === 'dialog-result-delivery'),
+      JSON.stringify(viewUnresolved.report.diagnostics.filter(item => item.code.startsWith('dialog') || item.code.startsWith('dynamic'))));
+    assert(viewUnresolved.report.edges.some(edge => edge.kind === 'http-create' &&
+      edge.details.urlExpression?.value === '/queues.update'));
     const confirmed = await analyze(edges.slice(0, 1), 'confirm');
     assert(confirmed.report.diagnostics.some(item => item.code === 'dialog-result-delivery'));
     assert(confirmed.report.edges.some(edge => edge.kind === 'http-create' &&
       edge.details.urlExpression?.value === '/queues.update'));
+    const updateRequest = confirmed.report.edges.find(edge => edge.kind === 'http-create' &&
+      edge.details.urlExpression?.value === '/queues.update');
+    const byCondition = new Map(confirmed.report.conditions.map(item => [item.id, item]));
+    const describeCondition = (id, seen = new Set()) => {
+      if (!id || seen.has(id)) return [];
+      seen.add(id);
+      const item = byCondition.get(id);
+      return !item ? [] : [item.expression, item.detail, item.reason,
+        ...(item.operandIds ?? []).flatMap(child => describeCondition(child, seen))].filter(Boolean);
+    };
+    const updateConditions = describeCondition(updateRequest.conditionId);
+    assert(updateConditions.some(item => item.includes('afterClosed filter condition')),
+      JSON.stringify(updateConditions));
     const cancelled = await analyze(edges.slice(0, 1), 'cancel');
     assert(!cancelled.report.diagnostics.some(item => item.code === 'dialog-result-delivery'));
     const moveOnly = await analyze(edges.slice(0, 2), 'move-only');
