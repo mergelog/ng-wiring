@@ -75,6 +75,7 @@ export interface EventGraph {
 export declare function analyzeEvents(context: AnalysisContext, stores: SignalStoreCatalog): EventGraph;
 export interface DeliveryResolution {
     busId: string;
+    parentBusId: string;
     status: 'resolved' | 'boundary';
     consumers: EventConsumer[];
     conditions: string[];

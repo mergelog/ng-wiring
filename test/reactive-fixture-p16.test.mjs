@@ -235,6 +235,22 @@ test('ngrx-apis: a facade dispatch is still the dispatch, and a plain Subject.ne
     'a plain Subject.next was read as a Store dispatch');
 });
 
+test('R10: dispatch thunk and Store.next retain their own forms and injector lifetime', async () => {
+  const thunk = await analyzeFixture('ngrx-apis', { target: 'data-id=thunkButton' });
+  const dispatch = thunk.report.edges.find(edge => edge.kind === 'action-dispatch');
+  assert.equal(dispatch.details.dispatchMode.value, 'reactive-factory');
+  assert(thunk.report.conditions.some(condition =>
+    condition.expression?.includes('the dispatch registration uses this.injector')));
+  assert(thunk.report.conditions.some(condition =>
+    condition.expression?.includes('again when a Signal read by it changes')));
+
+  const next = await analyzeFixture('ngrx-apis', { target: 'data-id=nextButton' });
+  assert(edgeKeys(next.report).includes(
+    'action-dispatch|src/panel.component.ts#SearchPanelComponent|src/actions.ts#termChanged'));
+  const subject = await analyzeFixture('ngrx-apis', { target: 'data-id=subjectButton' });
+  assert.deepEqual(subject.report.edges.filter(edge => edge.kind === 'action-dispatch'), []);
+});
+
 // A13: a selector nobody's change reached is a background read, not a consequence of this operation.
 test('ngrx-apis: a display fed by another slice is not attributed to this operation', async () => {
   const { report } = await analyzeFixture('ngrx-apis', { target: 'data-id=subjectButton' });
@@ -314,6 +330,17 @@ test('events-apis: self, parent and global scopes resolve to different bus insta
   assert.equal(scoped.scope, 'parent');
   assert.equal(scoped.mode, 'explicit');
   assert.deepEqual(scoped.consumers, []);
+});
+
+test('R14: mapToScope on an event handler sends its redelivery to the parent bus', async () => {
+  const { report } = await analyzeFixture('events-map-to-scope', { target: 'data-id=pageButton' });
+  const keys = edgeKeys(report);
+  const redelivery = report.edges.find(edge => edge.kind === 'event-dispatch' &&
+    edge.details.dispatchMode.value === 'automatic-output');
+  assert(redelivery, keys.join('\n'));
+  assert.equal(redelivery.details.scope.value, 'parent');
+  assert.equal(redelivery.details.busId.value, 'root');
+  assert(keys.includes('event-consume|[Grid] pageChanged|src/grid.store.ts:10:5'));
 });
 
 test('events-apis: a single event creator reaches both reducers, ReducerEvents first', async () => {

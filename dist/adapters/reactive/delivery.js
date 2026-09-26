@@ -29,7 +29,8 @@ export function eventDeliverySteps(graph, dispatch, resolution) {
                 location: again.source, conditions: [...resolution.conditions, ...consumer.conditions],
                 capability: 'signals-events/withEventHandlers',
                 detail: 'the handler output is a new event and is dispatched again',
-                delivery: { bus: 'signal-store-event', busId: again.scope === 'global' ? 'root' : resolution.busId,
+                delivery: { bus: 'signal-store-event', busId: again.scope === 'global' ? 'root' :
+                        again.scope === 'parent' ? resolution.parentBusId : resolution.busId,
                     form: 'handler-redelivery', scope: again.scope, registration: consumer.conditions } });
         for (const gap of consumer.gaps)
             steps.push({ kind: 'boundary', source: consumer.id, target: gap, location: consumer.source,

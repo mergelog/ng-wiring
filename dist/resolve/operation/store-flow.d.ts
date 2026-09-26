@@ -14,6 +14,7 @@ export interface StoreStep {
     path: string[];
     conditions: string[];
     detail: string | null;
+    dispatchMode?: 'explicit' | 'reactive-factory' | 'observer-next';
 }
 export interface StoreTrace {
     steps: StoreStep[];

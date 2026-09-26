@@ -127,6 +127,7 @@ function scopeOf(context: AnalysisContext, config: ts.Expression | undefined): D
   if (!config) return 'self';
   const node = definition(context, config);
   const value = t.isObjectLiteralExpression(node) ? stringOf(context, getProperty(t, node, 'scope')) :
+    t.isStringLiteralLike(node) ? node.text :
     t.isCallExpression(node) && matcherOf(context, node) === 'signals-events/toScope'
       ? stringOf(context, node.arguments[0]) : null;
   return value === 'parent' || value === 'global' || value === 'self' ? value : 'self';
@@ -210,6 +211,10 @@ function emittedEvents(context: AnalysisContext, pipeline: ts.Node, creators: Ma
   walk(context, pipeline, child => {
     if (!t.isCallExpression(child)) return;
     if (matcherOf(context, child) === 'signals-events/mapToScope') mapped = scopeOf(context, child.arguments[0]);
+  });
+  walk(context, pipeline, child => {
+    if (!t.isCallExpression(child) || matcherOf(context, child) !== 'signals-events/mapToScope') return;
+    passThrough(child, scopeOf(context, child.arguments[0]));
   });
   walk(context, pipeline, child => {
     if (!t.isCallExpression(child)) return;
@@ -434,6 +439,7 @@ export function analyzeEvents(context: AnalysisContext, stores: SignalStoreCatal
 
 export interface DeliveryResolution {
   busId: string;
+  parentBusId: string;
   status: 'resolved' | 'boundary';
   consumers: EventConsumer[];
   conditions: string[];
@@ -444,7 +450,7 @@ export function resolveEventDelivery(graph: EventGraph, dispatch: EventDispatch,
   ancestry: string[], consumerAncestry: (consumer: EventConsumer) => string[] | null = () => null): DeliveryResolution {
   const providers = ancestry.filter(owner => graph.dispatcherOwners.includes(owner));
   const reasons: string[] = [];
-  const unresolved = (reason: string): DeliveryResolution => ({ busId: 'unknown', status: 'boundary', consumers: [],
+  const unresolved = (reason: string): DeliveryResolution => ({ busId: 'unknown', parentBusId: 'unknown', status: 'boundary', consumers: [],
     conditions: [...dispatch.conditions], reasons: [reason] });
   if (dispatch.scope !== 'global' && !ancestry.length)
     return unresolved(`${dispatch.scope} scope needs the injector ancestry of ${dispatch.owner ?? 'the dispatch site'}`);
@@ -453,6 +459,7 @@ export function resolveEventDelivery(graph: EventGraph, dispatch: EventDispatch,
     return unresolved('parent scope was requested where the injected dispatcher is already the root one');
   const busId = dispatch.scope === 'global' ? 'root' :
     dispatch.scope === 'self' ? providers[0] ?? 'root' : providers[1] ?? 'root';
+  const activeProviderIndex = dispatch.scope === 'self' ? 0 : dispatch.scope === 'parent' ? 1 : providers.length;
   const busOf = (consumer: EventConsumer): string | null => {
     const owners = consumerAncestry(consumer);
     if (!owners) return null;
@@ -472,7 +479,8 @@ export function resolveEventDelivery(graph: EventGraph, dispatch: EventDispatch,
     matched.push(consumer);
   }
   if (!matched.length) reasons.push('dispatched; no matching consumer was found on this bus');
-  return { busId, status: reasons.length ? 'boundary' : 'resolved', consumers: matched,
+  return { busId, parentBusId: providers[activeProviderIndex + 1] ?? 'root',
+    status: reasons.length ? 'boundary' : 'resolved', consumers: matched,
     conditions: [...dispatch.conditions,
       ...(dispatch.scope === 'self' ? ['the local dispatcher scope must be the one that was provided'] : [])],
     reasons };

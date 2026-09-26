@@ -13,7 +13,7 @@ import type { StoreAction, StoreGraph } from './store.js';
 export type StoreStepKind = 'call' | 'output-emit' | 'output-subscription' | 'action-dispatch' | 'action-consume' | 'state-write' | 'state-read' |
   'reactive-link' | 'boundary';
 export interface StoreStep { kind: StoreStepKind; source: string; target: string; location: string;
-  path: string[]; conditions: string[]; detail: string | null }
+  path: string[]; conditions: string[]; detail: string | null; dispatchMode?: 'explicit' | 'reactive-factory' | 'observer-next' }
 export interface StoreTrace { steps: StoreStep[]; diagnostics: string[]; backgroundReads: string[] }
 export interface StoreTraceOptions { outputElement?: IndexedElement; catalog?: Catalog;
   outputUses?: ReadonlyMap<string, IndexedElement>;
@@ -102,10 +102,11 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
     return false;
   };
   const add = (kind: StoreStepKind, source: string, target: string, node: ts.Node, path: string[],
-    conditions: string[] = [], detail: string | null = null): void => {
+    conditions: string[] = [], detail: string | null = null,
+    dispatchMode?: StoreStep['dispatchMode']): void => {
     if (expanded > LIMIT) return;
     steps.push({ kind, source, target, location: location(context,node), path: [...path],
-      conditions: [...conditions], detail });
+      conditions: [...conditions], detail, ...(dispatchMode ? { dispatchMode } : {}) });
   };
   const actionFor = (expression: ts.Expression): StoreAction | undefined => {
     if (t.isObjectLiteralExpression(expression)) {
@@ -424,19 +425,32 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
             visit(callback.body, [...localConditions, 'afterClosed emits {confirmed: true, queue}'], level + 1);
           return;
         }
-        if (callee.name.text === 'dispatch' && storeReceiver(context,callee.expression)) {
+        if ((callee.name.text === 'dispatch' || callee.name.text === 'next') && storeReceiver(context,callee.expression)) {
           let actionExpression: ts.Expression | undefined = node.arguments[0];
-          if (actionExpression && (t.isArrowFunction(actionExpression) || t.isFunctionExpression(actionExpression))) {
+          const reactiveFactory = callee.name.text === 'dispatch' && !!actionExpression &&
+            (t.isArrowFunction(actionExpression) || t.isFunctionExpression(actionExpression));
+          if (reactiveFactory && actionExpression && (t.isArrowFunction(actionExpression) || t.isFunctionExpression(actionExpression))) {
             const body = actionExpression.body;
             actionExpression = t.isBlock(body) ? body.statements.find(t.isReturnStatement)?.expression : body;
           }
           const action = actionExpression && actionFor(actionExpression);
-          if (!action) add('boundary',receiver,'dynamic action',node,nextPath,localConditions,
-            'Store.dispatch argument has no statically identified action creator');
+          const config = node.arguments[1] && t.isObjectLiteralExpression(node.arguments[1])
+            ? node.arguments[1] : undefined;
+          const injectorOption = config?.properties.find((property): property is ts.PropertyAssignment =>
+            t.isPropertyAssignment(property) &&
+            (t.isIdentifier(property.name) || t.isStringLiteralLike(property.name)) && property.name.text === 'injector');
+          const injectorExpression = injectorOption?.initializer.getText();
+          const mode = callee.name.text === 'next' ? 'observer-next' : reactiveFactory ? 'reactive-factory' : 'explicit';
+          const dispatchConditions = reactiveFactory ? [...localConditions,
+            'the dispatch function runs initially and again when a Signal read by it changes',
+            injectorExpression ? `the dispatch registration uses ${injectorExpression}; destroying it stops redispatch` :
+              'the Store injector must remain alive; destroying it stops redispatch'] : localConditions;
+          if (!action) add('boundary',receiver,'dynamic action',node,nextPath,dispatchConditions,
+            `Store.${callee.name.text} argument has no statically identified action creator`);
           else {
-            add('action-dispatch',receiver,action.id,node,nextPath,localConditions,
-              `action type ${JSON.stringify(action.type)}`);
-            if (action.type) stateFromAction(action,receiver,node,nextPath,localConditions,level+1);
+            add('action-dispatch',receiver,action.id,node,nextPath,dispatchConditions,
+              `action type ${JSON.stringify(action.type)}`, mode);
+            if (action.type) stateFromAction(action,receiver,node,nextPath,dispatchConditions,level+1);
             else add('boundary',action.id,'dynamic action type',node,nextPath,localConditions,
               'action type is not a static string');
           }

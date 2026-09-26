@@ -70,9 +70,12 @@ export function storeTraceEdges(trace) {
                         subscriber: detail(step.target) } }));
                 break;
             case 'action-dispatch':
-                edges.push(traced({ ...common, kind: 'action-dispatch', from: end('symbol', step.source), to: end('action', step.target),
+                edges.push(traced({ ...common, capability: step.dispatchMode === 'reactive-factory'
+                        ? 'ngrx-store/Store.dispatch#thunk' : step.dispatchMode === 'observer-next'
+                        ? 'ngrx-store/Store.next' : 'ngrx-store/Store.dispatch',
+                    kind: 'action-dispatch', from: end('symbol', step.source), to: end('action', step.target),
                     details: { caller: detail(step.source), action: detail(step.target), busId: detail('root'),
-                        dispatchMode: detail('explicit') } }));
+                        dispatchMode: detail(step.dispatchMode === 'reactive-factory' ? 'reactive-factory' : 'explicit') } }));
                 break;
             case 'action-consume':
                 edges.push(traced({ ...common, kind: 'action-consume', from: end('action', step.source), to: end('symbol', step.target),

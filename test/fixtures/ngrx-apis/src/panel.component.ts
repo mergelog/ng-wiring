@@ -1,10 +1,9 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, Injector, signal } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { Subject } from 'rxjs';
 import { auditEvents, noteAdded, searchRequested, termChanged } from './actions';
 import { SearchFacade } from './facade';
 import { notesFeature, selectHits, selectOpened, selectTerm } from './reducer';
-
 @Component({
   selector: 'app-search-panel',
   template: `
@@ -24,6 +23,7 @@ import { notesFeature, selectHits, selectOpened, selectTerm } from './reducer';
 })
 export class SearchPanelComponent {
   private readonly store = inject(Store);
+  private readonly injector = inject(Injector);
   private readonly facade = inject(SearchFacade);
   private readonly local = new Subject<string>();
   readonly draft = signal('');
@@ -45,7 +45,7 @@ export class SearchPanelComponent {
 
   /** The registration-shaped overload: it re-dispatches when the signals it reads change. */
   viaThunk(): void {
-    this.store.dispatch(() => termChanged({ term: this.draft() }));
+    this.store.dispatch(() => termChanged({ term: this.draft() }), { injector: this.injector });
   }
 
   viaNext(): void {

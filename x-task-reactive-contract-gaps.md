@@ -6,7 +6,7 @@
 
 [`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 12 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
 
-作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R08 の6件、R09 の4件に期待関係を追加し、現在の台帳は **102 件が fixture 設定済み、8 件が未達**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
+作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R08 の6件、R09 の4件、および R10 の3件・R14 の1件に期待関係を追加し、現在の台帳は **106 件が fixture 設定済み、4 件が未達**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
 
 ## 進め方と完了判定
 
@@ -101,13 +101,13 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 
 ### R10: Store の送信形態（3 件）
 
-- [ ] **R10/Store.dispatch.thunk** — 再現: `ngrx-apis`, `data-id=thunkButton`。関数 overload を単発 dispatch と区別し、Signal 依存の再 dispatch として `dispatchMode` を記録する。
-- [ ] **R10/Store.dispatch.thunk-injector** — 再現: `ngrx-apis`, `data-id=thunkButton`。明示 injector 指定時の登録先と生存期間を記録する。
-- [ ] **R10/Store.next** — 再現: `ngrx-apis`, `data-id=nextButton`。`Store.next` を当該 Store の送信 API として解決し、一般の `Subject.next` と混同しない。
+- [x] **R10/Store.dispatch.thunk** — 再現: `ngrx-apis`, `data-id=thunkButton`。関数 overload を単発 dispatch と区別し、Signal 依存の再 dispatch として `dispatchMode` を記録する。
+- [x] **R10/Store.dispatch.thunk-injector** — 再現: `ngrx-apis`, `data-id=thunkButton`。明示 injector 指定時の登録先と生存期間を記録する。
+- [x] **R10/Store.next** — 再現: `ngrx-apis`, `data-id=nextButton`。`Store.next` を当該 Store の送信 API として解決し、一般の `Subject.next` と混同しない。
 
 ### R14: Events の scope 演算子（1 件）
 
-- [ ] **R14/mapToScope** — 再現: `events-apis`, `data-id=scopedButton`。`toScope` の既存ケースとは別に `mapToScope` を使う handler fixture を作り、演算子による scope 変更と配送先を検証する。
+- [x] **R14/mapToScope** — 再現: `events-map-to-scope`, `data-id=pageButton`。`toScope` の既存ケースとは別に `mapToScope` を使う handler fixture を作り、演算子による scope 変更と配送先を検証する。
 
 ### R15: 実例 Store と RxJS アダプタ（4 件）
 
