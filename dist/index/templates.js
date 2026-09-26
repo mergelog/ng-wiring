@@ -75,20 +75,42 @@ function selectorFor(context, element) {
 }
 export async function indexTemplates(context, catalog, maze) {
     const ng = context.toolchain.angularCompiler;
-    const stopsPropagation = (handler) => {
-        let stops = false;
-        const visitor = new class extends ng.RecursiveAstVisitor {
-            visitCall(ast, ctx) {
-                const callee = ast.receiver;
-                if (callee instanceof ng.PropertyRead && ['stopPropagation', 'stopImmediatePropagation'].includes(callee.name) &&
-                    callee.receiver instanceof ng.PropertyRead && callee.receiver.name === '$event' &&
-                    callee.receiver.receiver instanceof ng.ImplicitReceiver)
-                    stops = true;
-                return super.visitCall(ast, ctx);
+    const stopPropagation = (handler) => {
+        let definite = false;
+        let possible = false;
+        const isAst = (value) => !!value && typeof value === 'object' &&
+            'visit' in value && typeof value.visit === 'function';
+        const visit = (node, conditional) => {
+            const callee = node instanceof ng.Call ? node.receiver : null;
+            if (callee instanceof ng.PropertyRead && ['stopPropagation', 'stopImmediatePropagation'].includes(callee.name) &&
+                callee.receiver instanceof ng.PropertyRead && callee.receiver.name === '$event' &&
+                callee.receiver.receiver instanceof ng.ImplicitReceiver) {
+                possible = true;
+                if (!conditional)
+                    definite = true;
             }
-        }();
-        handler.visit(visitor);
-        return stops;
+            if (node instanceof ng.Conditional) {
+                visit(node.condition, conditional);
+                visit(node.trueExp, true);
+                visit(node.falseExp, true);
+                return;
+            }
+            if (node instanceof ng.Binary) {
+                visit(node.left, conditional);
+                visit(node.right, true);
+                return;
+            }
+            for (const value of Object.values(node)) {
+                if (isAst(value))
+                    visit(value, conditional);
+                else if (Array.isArray(value))
+                    for (const child of value)
+                        if (isAst(child))
+                            visit(child, conditional);
+            }
+        };
+        visit(handler, false);
+        return { definite, possible };
     };
     const scopes = new ScopeResolver(catalog);
     const elements = [];
@@ -252,7 +274,10 @@ export async function indexTemplates(context, catalog, maze) {
                             })),
                             events: node.outputs.map(output => output.name),
                             eventHandlers: node.outputs.map(output => source.slice(output.handlerSpan.start.offset, output.handlerSpan.end.offset)),
-                            eventStops: node.outputs.map(output => stopsPropagation(output.handler)),
+                            eventStops: node.outputs.flatMap(output => {
+                                const stop = stopPropagation(output.handler);
+                                return stop.possible ? [{ event: output.name, definite: stop.definite }] : [];
+                            }),
                             eventSpans: node.outputs.map(output => map(output.sourceSpan.start.offset, output.sourceSpan.end.offset)),
                             references: node.references.map(ref => ref.name), lexical: new Map(lexical), repeated, parent, fallbackSlot: localFallback,
                             component, directives: [...new Set(directives)],

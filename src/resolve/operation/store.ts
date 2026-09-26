@@ -155,6 +155,29 @@ function array(context: AnalysisContext, expression: ts.Expression): ts.Expressi
   }
   return result;
 }
+function featureReducerLeaves(context: AnalysisContext, expression: ts.Expression,
+  active = new Set<ts.Expression>()): ts.Expression[] {
+  const t = context.toolchain.typescript;
+  const node = definition(context, expression);
+  if (!t.isObjectLiteralExpression(node) || active.has(node)) return [expression];
+  if (!node.properties.length) return [];
+  active.add(node);
+  const leaves: ts.Expression[] = [];
+  for (const property of node.properties) {
+    if (t.isPropertyAssignment(property)) leaves.push(...featureReducerLeaves(context, property.initializer, active));
+    else if (t.isShorthandPropertyAssignment(property)) {
+      const value = context.checker.getShorthandAssignmentValueSymbol(property)?.valueDeclaration;
+      const initializer = value && t.isVariableDeclaration(value) ? value.initializer : undefined;
+      if (initializer && t.isObjectLiteralExpression(definition(context, initializer)))
+        leaves.push(...featureReducerLeaves(context, initializer, active));
+      else leaves.push(value && t.isVariableDeclaration(value) && t.isIdentifier(value.name) ? value.name : property.name);
+    }
+    else if (t.isSpreadAssignment(property)) leaves.push(...featureReducerLeaves(context, property.expression, active));
+    else leaves.push(expression);
+  }
+  active.delete(node);
+  return leaves;
+}
 function stringValue(context: AnalysisContext, expression: ts.Expression | undefined,
   seen = new Set<ts.Node>()): string | null {
   if (!expression) return null;
@@ -249,10 +272,12 @@ function register(context: AnalysisContext, input: ts.Expression, scope: StoreRe
         (t.isObjectLiteralExpression(definition(context, first)) ?
           stringValue(context, getProperty(t, definition(context, first) as ts.ObjectLiteralExpression, 'name')) : null) : null;
       const target = feature ? node.arguments[1] ?? first : first;
-      const id = target ? tokenId(context, target) : null;
-      output.push({ kind, scope, key, target: id, source: location(context, node),
-        conditions: scope === 'route' ? ['lazy route injector must be active'] : [],
-        status: feature && (!key || !target) ? 'boundary' : 'resolved' });
+      const targets = target && feature ? featureReducerLeaves(context, target) : target ? [target] : [];
+      for (const item of targets.length ? targets : [undefined]) {
+        output.push({ kind, scope, key, target: item ? tokenId(context, item) : null, source: location(context, node),
+          conditions: scope === 'route' ? ['lazy route injector must be active'] : [],
+          status: feature && (!key || !item) ? 'boundary' : 'resolved' });
+      }
       if (feature && !key) diagnostics.push(`Unresolved feature key at ${location(context, node)}`);
     }
   }

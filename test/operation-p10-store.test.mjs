@@ -94,6 +94,50 @@ export class Output extends BaseOutput {}
   assert(!trace.diagnostics.some(message => message.includes('No method updateExperimentName')));
 }));
 
+test('inherited this calls dispatch through the selected override and stop at an abstract method', async () => fixture(`
+import {Component} from '@angular/core';
+export abstract class Base {
+  value = 0;
+  fieldHandler = () => { this.value = 2; };
+  get getterHandler() { return () => { this.value = 3; }; }
+  run() { this.commit(); }
+  runField() { this.fieldHandler(); }
+  runGetter() { this.getterHandler(); }
+  abstract commit(): void;
+}
+@Component({selector:'app-unresolved',template:''})
+export class Unresolved extends Base {}
+@Component({selector:'app-concrete',template:''})
+export class Concrete extends Base {
+  override commit() { this.value = 1; }
+}
+@Component({selector:'app-platform',template:''})
+export class Platform extends EventTarget {
+  activate() { this.addEventListener('complete', () => {}); }
+}
+`, ({context,catalog}) => {
+  const unresolved = [...catalog.declarations.values()].find(d => d.className === 'Unresolved');
+  const concrete = [...catalog.declarations.values()].find(d => d.className === 'Concrete');
+  const platform = [...catalog.declarations.values()].find(d => d.className === 'Platform');
+  const missing = traceOperation(context,unresolved,'run');
+  assert(missing.steps.some(step => step.kind === 'boundary' && step.target === 'commit' &&
+    step.detail?.includes('no local implementation')));
+  assert(!missing.steps.some(step => step.kind === 'state-write'));
+  const implemented = traceOperation(context,concrete,'run');
+  assert(implemented.steps.some(step => step.kind === 'call' && step.target === 'commit'));
+  assert(implemented.steps.some(step => step.kind === 'state-write' && step.target === 'this.value'));
+  assert(!implemented.steps.some(step => step.kind === 'boundary' && step.target === 'commit'));
+  for (const method of ['runField','runGetter']) {
+    const indirect = traceOperation(context,concrete,method);
+    assert(indirect.steps.some(step => step.kind === 'boundary' &&
+      ['fieldHandler','getterHandler'].includes(step.target)));
+    assert(!indirect.steps.some(step => step.kind === 'state-write'));
+  }
+  const external = traceOperation(context,platform,'activate');
+  assert(external.steps.some(step => step.kind === 'boundary' && step.target === 'addEventListener'));
+  assert(!external.steps.some(step => step.kind === 'call' && step.target === 'addEventListener'));
+}));
+
 test('makeEnvironmentProviders exposes route registered effects to a dispatched action', async () => fixture(`
 import {Component, Injectable, inject, makeEnvironmentProviders} from '@angular/core';
 import {Store, createAction, provideStore} from '@ngrx/store';

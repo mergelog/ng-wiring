@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type ts from 'typescript';
+import type { AST } from '@angular/compiler';
 import type { CliOptions } from '../cli/arguments.js';
 import type { Declaration } from '../index/catalog.js';
 import { classAt, classMethod, idForClass } from '../index/catalog.js';
@@ -61,6 +62,25 @@ const handlerMethod = (handler: string, inputs: ReadonlyMap<string, string>): st
   if (!branch) return null;
   const value = inputs.get(branch[1]!);
   return value === 'true' ? branch[2]! : value === 'false' ? branch[3]! : null;
+};
+const chainedHandlerMethod = (handler: AST, element: IndexedElement, owner: Declaration,
+  context: ContextAnalysis['context']): string | null => {
+  const ng = context.toolchain.angularCompiler;
+  const t = context.toolchain.typescript;
+  const expression = (handler as AST & { ast?: AST }).ast ?? handler;
+  if (!(expression instanceof ng.Chain)) return null;
+  const methods = new Set<string>();
+  for (const part of expression.expressions) {
+    if (!(part instanceof ng.Call) || !(part.receiver instanceof ng.PropertyRead)) continue;
+    const receiver = part.receiver;
+    const implicit = receiver.receiver instanceof ng.ImplicitReceiver;
+    if (!implicit && !(receiver.receiver instanceof ng.ThisReceiver)) continue;
+    if (implicit && element.lexical.has(receiver.name)) continue;
+    const method = classMethod(context, owner.node, receiver.name);
+    if (!method || method.modifiers?.some(modifier => modifier.kind === t.SyntaxKind.PrivateKeyword)) continue;
+    methods.add(receiver.name);
+  }
+  return methods.size === 1 ? [...methods][0]! : null;
 };
 const handlerGuard = (handler: string): string | null => {
   const guarded = /^\s*(.+)\s+&&\s*(?:this\.)?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*;?\s*$/.exec(handler);
@@ -929,7 +949,15 @@ function addOperations(input: OperationInput): void {
       if (propagated) scopeEdges.push(propagated);
     }
 
-    const method = handlerMethod(listener.handler, contextualInputs);
+    const ownerForHandler = catalog.declarations.get(ownerId);
+    const eventPosition = listener.listenerElement?.eventSpans.findIndex((span, index) =>
+      !!span && span.file === listener.span?.file && span.start === listener.span?.start &&
+      listener.listenerElement?.events[index] === listener.eventName &&
+      listener.listenerElement?.eventHandlers[index] === listener.handler) ?? -1;
+    const handlerAst = eventPosition >= 0 ? listener.listenerElement?.node.outputs[eventPosition]?.handler : undefined;
+    const method = handlerMethod(listener.handler, contextualInputs) ??
+      (ownerForHandler && listener.listenerElement && handlerAst
+        ? chainedHandlerMethod(handlerAst, listener.listenerElement, ownerForHandler, context) : null);
     const owner = catalog.declarations.get(ownerId);
     if (method && owner) {
       const declaration = classMethod(context, owner.node, method);

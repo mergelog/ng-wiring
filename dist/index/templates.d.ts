@@ -21,7 +21,10 @@ export interface IndexedElement {
     boundSpans: Map<string, Span>;
     events: string[];
     eventHandlers: string[];
-    eventStops: boolean[];
+    eventStops: {
+        event: string;
+        definite: boolean;
+    }[];
     eventSpans: (Span | null)[];
     references: string[];
     lexical: Map<string, LexicalBinding>;

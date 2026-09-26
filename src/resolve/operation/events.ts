@@ -74,6 +74,11 @@ function outputProducer(context: AnalysisContext, catalog: Catalog, index: Templ
 }
 
 function baseName(event: string): string { return event.split('.')[0]!; }
+function isFormsModelUpdate(subscription: string): boolean {
+  const normalized = subscription.replaceAll('\\', '/');
+  return normalized.includes('/node_modules/@angular/forms/') &&
+    /#(?:NgModel|FormControlName|FormControlDirective)\.update$/.test(normalized);
+}
 function hostEvents(context: AnalysisContext, catalog: Catalog, element: IndexedElement): { event: string; handler: string; subscription: string }[] {
   const t = context.toolchain.typescript;
   const result: { event: string; handler: string; subscription: string }[] = [];
@@ -193,6 +198,9 @@ export function resolveEventListeners(selected: IndexedElement, context: Analysi
       const modifiers = binding.event.split('.').slice(1);
       const global = binding.target === 'window' || binding.target === 'document' ||
         binding.event.startsWith('window:') || binding.event.startsWith('document:');
+      const innerStops = ancestry.slice(0, depth).flatMap(item => item.eventStops.filter(stop =>
+        baseName(stop.event) === name));
+      if (depth > 0 && !global && innerStops.some(stop => stop.definite)) continue;
       const actualName = normalized;
       const event = uiEvents[baseName(actualName)];
       const outputs = global ? [] : element.appliedOutputs.get(name) ?? [];
@@ -201,19 +209,23 @@ export function resolveEventListeners(selected: IndexedElement, context: Analysi
         const producer = placement ? outputProducer(context, catalog, placement.index, subscription) :
           { conditions: [], diagnostic: null };
         if (producer.diagnostic && !diagnostics.includes(producer.diagnostic)) diagnostics.push(producer.diagnostic);
+        const formUpdate = isFormsModelUpdate(subscription);
         outputSubscriptions.push({ selectedElement: selected, listenerElement: element,
         eventSource: subscription.includes('#') && (catalog.declarations.get(subscription.slice(0, subscription.lastIndexOf('.')))?.kind === 'component')
           ? 'component-output' : 'directive-output', eventName: actualName, modifiers, subscription,
         handler: binding.handler, span: binding.span,
         conditions: [...selected.controlFlow.map(frame => `source view requires ${frame.condition}`),
-          'requires explicit output emit from this instance; a DOM event does not trigger it', ...producer.conditions],
+          ...(formUpdate
+            ? ['Angular Forms emits ngModelChange after a view-to-model update',
+              'a registered ControlValueAccessor must forward the view change; updateOn may defer the update']
+            : ['requires explicit output emit from this instance; a DOM event does not trigger it', ...producer.conditions])],
         status: 'conditional', registration: binding.registration });
       }
       if (depth > 0 && !event?.bubbles && !global) continue;
       if (!event && !global) conditions.push('DOM event bubbles/composed are unknown');
       if (modifiers.length) conditions.push(`event modifiers ${modifiers.join('.')} must match`);
       if (placementUnknown) conditions.push('actual DOM placement across component or projection boundary is unknown');
-      if (depth > 0 && ancestry.slice(0, depth).some(item => item.eventStops.some(Boolean)))
+      if (depth > 0 && !global && innerStops.length)
         conditions.push('an inner listener may stop propagation');
       if (selected.staticAttributes.has('disabled') || selected.boundAttributes.includes('disabled'))
         conditions.push('disabled state may suppress user activation');

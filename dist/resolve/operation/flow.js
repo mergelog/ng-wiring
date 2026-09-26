@@ -1,4 +1,4 @@
-import { classMethod } from '../../index/catalog.js';
+import { classAt, classMethod } from '../../index/catalog.js';
 import { importedApi, inspectPipe, location, operatorSemantics } from './reactive.js';
 const maxDepth = 64;
 const maxSteps = 10000;
@@ -76,6 +76,35 @@ function ownedMethod(context, owner, call) {
     const t = context.toolchain.typescript;
     if (!t.isPropertyAccessExpression(call.expression) || call.expression.expression.kind !== t.SyntaxKind.ThisKeyword)
         return null;
+    const name = call.expression.name.text;
+    let lexicalClass;
+    for (let node = call.parent; node; node = node.parent) {
+        if (t.isClassDeclaration(node)) {
+            lexicalClass = node;
+            break;
+        }
+    }
+    const ownerHierarchy = new Set();
+    const pending = [owner.node];
+    while (pending.length) {
+        const current = pending.pop();
+        if (ownerHierarchy.has(current))
+            continue;
+        ownerHierarchy.add(current);
+        for (const clause of current.heritageClauses ?? []) {
+            if (clause.token !== t.SyntaxKind.ExtendsKeyword)
+                continue;
+            for (const heritage of clause.types) {
+                const base = classAt(context, heritage.expression);
+                if (base)
+                    pending.push(base);
+            }
+        }
+    }
+    const selectedImplementation = lexicalClass && ownerHierarchy.has(lexicalClass)
+        ? classMethod(context, owner.node, name) : null;
+    if (selectedImplementation)
+        return selectedImplementation;
     const symbol = context.checker.getSymbolAtLocation(call.expression.name);
     const method = symbol?.valueDeclaration;
     return method && t.isMethodDeclaration(method) &&
@@ -169,6 +198,8 @@ export function traceOperation(context, owner, methodName) {
                     visit(method.body, nextPath, depth + 1, conditions);
                     active.delete(method);
                 }
+                else
+                    add('boundary', methodName, method.name.getText(), node, nextPath, 'unknown', conditions, 'method declaration has no local implementation (abstract or declaration-only)');
                 for (const arg of node.arguments)
                     visit(arg, nextPath, depth + 1, conditions);
                 return;

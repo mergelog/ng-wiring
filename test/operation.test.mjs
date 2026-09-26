@@ -103,12 +103,14 @@ test('query keeps optional and required creation conditions without treating a t
 }));
 
 test('global listeners have no invented element and stopPropagation differs from preventDefault', async () => fixture({
-  'src/main.ts': "import {Component} from '@angular/core'; @Component({selector:'app-root',template:'<div (click)=\"outer()\" (window:keydown)=\"outer()\"><span (click)=\"$event.preventDefault()\"><button data-id=target (click)=\"$event.stopPropagation()\"></button></span></div>'}) export class Root {outer(){}}",
+  'src/main.ts': "import {Component} from '@angular/core'; @Component({selector:'app-root',template:'<div (click)=\"outer()\" (window:keydown)=\"outer()\"><span (click)=\"$event.preventDefault()\"><button data-id=target (click)=\"$event.stopPropagation()\"></button><button data-id=default (click)=\"$event.preventDefault()\"></button></span></div>'}) export class Root {outer(){}}",
 }, ({ context, catalog, find }) => {
   const click = resolveEventListeners(find('target'), context, catalog, 'click');
-  assert.equal(click.listeners.length, 3);
-  assert(click.listeners.at(-1).conditions.some(item => item.includes('stop propagation')));
-  assert(!click.listeners.at(-1).conditions.some(item => item.includes('preventDefault')));
+  assert.equal(click.listeners.length, 1);
+  const defaultClick = resolveEventListeners(find('default'), context, catalog, 'click');
+  assert.equal(defaultClick.listeners.length, 3);
+  assert(!defaultClick.listeners.some(listener => listener.conditions.some(item =>
+    item.includes('stop propagation') || item.includes('preventDefault'))));
   const keydown = resolveEventListeners(find('target'), context, catalog, 'keydown');
   assert.equal(keydown.listeners.length, 1);
   assert.equal(keydown.listeners[0].eventSource, 'global');

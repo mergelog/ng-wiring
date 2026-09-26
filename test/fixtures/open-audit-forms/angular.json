@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "app": {
+      "projectType": "application",
+      "root": "",
+      "targets": {
+        "build": {
+          "options": { "tsConfig": "tsconfig.app.json", "browser": "src/main.ts" }
+        }
+      }
+    }
+  }
+}
