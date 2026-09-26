@@ -8,11 +8,11 @@ CSSセレクターの取得自体を目的とはしない。ブラウザ上の�
 
 ## 対象環境
 
-- ng-wiring: `/home/mtrysd/work_2026/ng-wiring`
-- 検証対象Angularプロジェクト: `/home/mtrysd/work_2026/000-learn-ClearML-pro`
+- ng-wiring: `.`
+- 検証対象Angularプロジェクト: `../000-learn-ClearML-pro`
 - Angularプロジェクト名: `stackup`
 - ブラウザ操作: Chrome DevTools MCP
-- 一時出力先: `/home/mtrysd/work_2026/ng-wiring/x-local/tmp`
+- 一時出力先: `x-local/tmp`
 
 ## 出力と履歴のルール
 
@@ -70,11 +70,11 @@ body
 検証対象プロジェクトをカレントディレクトリにして、ターゲット属性とブラウザから取得したセレクターを渡す。
 
 ```bash
-node /home/mtrysd/work_2026/ng-wiring/dist/cli/index.js \
+node ../ng-wiring/dist/cli/index.js \
   'data-id=TARGET' \
   --project stackup \
   --selector 'body > sm-root > ... > button' \
-  --out-dir /home/mtrysd/work_2026/ng-wiring/x-local/tmp
+  --out-dir ../ng-wiring/x-local/tmp
 ```
 
 `--detail`、`--details`、`--json`は追加しない。
