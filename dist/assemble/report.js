@@ -1121,13 +1121,15 @@ function addReactiveWrites(input) {
                 signals.reads.some(read => read.sourceId === write.sourceId && withinRange(read.location, range)));
             if (!dependsOn)
                 continue;
-            // A derived value holds a value the template reads, so it is a state node and not a plain symbol.
-            const derived = { kind: 'state', id: `${link.capability}:${link.to ?? link.id}`, label: link.to ?? link.id };
+            // Derived Signals are state nodes; toObservable produces a stream operation instead.
+            const derivedKind = link.capability === 'angular/toObservable' ? 'operation' : 'state';
+            const derived = { kind: derivedKind, id: `${link.capability}:${link.to ?? link.id}`, label: link.to ?? link.id };
             traced.push({ kind: 'reactive-link', from: node, to: derived, location: link.location,
                 conditions: link.conditions, capability: link.capability,
                 details: { source: detail(label), consumer: detail(link.to ?? link.id), operator: detail(link.capability),
-                    scheduling: detail('読み出し時に再計算') } });
-            if (link.to)
+                    scheduling: detail(link.capability === 'angular/toObservable'
+                        ? 'change-detection boundary' : '読み出し時に再計算') } });
+            if (link.to && derivedKind === 'state')
                 keys.push({ ownerId: source?.state.instance ?? null, member: link.to,
                     node: { kind: 'state', id: derived.id, label: derived.label } });
         }

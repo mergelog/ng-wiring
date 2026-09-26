@@ -64,7 +64,7 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 ### R04: Angular と RxJS の相互運用（2 件）
 
 - [x] **R04/toSignal** — 再現: `interop-apis`, `data-id=commitButton`。Observable を消費する内部購読の開始・破棄を記録し、操作起点からの依存経路を証明する。
-- [ ] **R04/toObservable** — 再現: `interop-apis`, `data-id=commitButton`。`this.value` の write から変換先へ接続し、set 回数と通知回数の一致を仮定しない。
+- [x] **R04/toObservable** — 再現: `interop-apis`, `data-id=commitButton`。`this.value` の write から Observable 変換先へ接続し、通知は change-detection boundary に従う条件を記録。
 
 ### R05: 生成 Store と feature 合成（3 件）
 

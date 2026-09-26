@@ -105,7 +105,8 @@ function nameOf(context: AnalysisContext, node: ts.Node): string | null {
   if (t.isPropertyDeclaration(parent) && t.isIdentifier(parent.name)) return parent.name.text;
   return null;
 }
-function sourceOf(context: AnalysisContext, expression: ts.Expression | undefined): {
+function sourceOf(context: AnalysisContext, expression: ts.Expression | undefined,
+  byDeclaration: ReadonlyMap<ts.Node, string>): {
   id: string | null; expression: string | null;
 } {
   if (!expression) return { id: null, expression: null };
@@ -116,7 +117,7 @@ function sourceOf(context: AnalysisContext, expression: ts.Expression | undefine
       : expression;
   const declaration = symbolOf(context, target)?.valueDeclaration;
   return {
-    id: declaration ? location(context, declaration) : null,
+    id: declaration ? byDeclaration.get(declaration) ?? location(context, declaration) : null,
     expression: expression.getText().replace(/^this\./, ''),
   };
 }
@@ -243,7 +244,7 @@ export function analyzeSignals(context: AnalysisContext, files?: readonly ts.Sou
       const name = nameOf(context, node);
       const equalOption = equalityArgument(context, matcher, node);
       const adapterSource = matcher === 'angular/toSignal' || matcher === 'angular/toObservable'
-        ? sourceOf(context, node.arguments[0]) : { id: null, expression: null };
+        ? sourceOf(context, node.arguments[0], byDeclaration) : { id: null, expression: null };
       const options = node.arguments[1] ? unwrap(t, node.arguments[1]) : null;
       const option = (key: string): ts.ObjectLiteralElementLike | undefined =>
         options && t.isObjectLiteralExpression(options)

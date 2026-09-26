@@ -415,6 +415,20 @@ test('interop-apis: toSignal is a background subscription with its own lifetime 
   assert.match(text(subscription.conditionId), /ends when the owning injection context is destroyed/);
 });
 
+test('interop-apis: toObservable connects the selected Signal write at a change-detection boundary', async () => {
+  const { report } = await analyzeFixture('interop-apis', { target: 'data-id=commitButton' });
+  const edge = report.edges.find(item => item.kind === 'reactive-link' &&
+    item.details.operator?.value === 'angular/toObservable');
+  assert(edge, edgeKeys(report).join('\n'));
+  assert.equal(edgeKeys(report).includes('reactive-link|value|value$'), true);
+  assert.equal(edge.details.scheduling.value, 'change-detection boundary');
+  const condition = report.conditions.find(item => item.id === edge.conditionId);
+  assert(condition);
+  assert.match(condition.expression, /each notification follows a change-detection boundary, not every set/);
+  assert.equal(report.nodes.find(item => item.id === edge.to)?.kind, 'operation',
+    'the adapter output is an Observable operation, not another Signal state');
+});
+
 test('interop-apis: the after-render phase and the explicit destroy stay on their own effect', async () => {
   const bump = await analyzeFixture('interop-apis', { target: 'data-id=bumpButton' });
   const afterRender = bump.report.edges.find(edge => edge.kind === 'reactive-link' &&

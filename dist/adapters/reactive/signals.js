@@ -48,7 +48,7 @@ function nameOf(context, node) {
         return parent.name.text;
     return null;
 }
-function sourceOf(context, expression) {
+function sourceOf(context, expression, byDeclaration) {
     if (!expression)
         return { id: null, expression: null };
     const t = context.toolchain.typescript;
@@ -58,7 +58,7 @@ function sourceOf(context, expression) {
             : expression;
     const declaration = symbolOf(context, target)?.valueDeclaration;
     return {
-        id: declaration ? location(context, declaration) : null,
+        id: declaration ? byDeclaration.get(declaration) ?? location(context, declaration) : null,
         expression: expression.getText().replace(/^this\./, ''),
     };
 }
@@ -199,7 +199,7 @@ export function analyzeSignals(context, files) {
                 const name = nameOf(context, node);
                 const equalOption = equalityArgument(context, matcher, node);
                 const adapterSource = matcher === 'angular/toSignal' || matcher === 'angular/toObservable'
-                    ? sourceOf(context, node.arguments[0]) : { id: null, expression: null };
+                    ? sourceOf(context, node.arguments[0], byDeclaration) : { id: null, expression: null };
                 const options = node.arguments[1] ? unwrap(t, node.arguments[1]) : null;
                 const option = (key) => options && t.isObjectLiteralExpression(options)
                     ? options.properties.find(item => item.name?.getText() === key) : undefined;
