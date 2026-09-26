@@ -13,7 +13,8 @@ import { analyzeStore, storeInputsForSelection, type StoreGraph } from '../resol
 import { traceStoreDispatch, type StoreTrace } from '../resolve/operation/store-flow.js';
 import { traceOperation } from '../resolve/operation/flow.js';
 import { analyzeHttp, type HttpCatalog } from '../resolve/operation/http.js';
-import { traceHttpFromEffect, traceHttpFromEventConsumer, traceHttpFromMethod } from '../resolve/operation/http-flow.js';
+import { traceHttpFromEffect, traceHttpFromEventConsumer, traceHttpFromMethod,
+  traceHttpFromStoreMethod } from '../resolve/operation/http-flow.js';
 import { resolveElementBindings } from '../resolve/operation/bindings.js';
 import { resolveTemplateExpressions } from '../resolve/operation/expressions.js';
 import { analyzeSignals, type SignalGraph, type SignalSource } from '../adapters/reactive/signals.js';
@@ -908,6 +909,34 @@ function addOperations(input: OperationInput): void {
         outputTypes, outputValues), scope);
       const httpTrace = traceHttpFromMethod(context, httpCatalog, owner, method,
         { catalog, store: storeGraph, methods, stores, layers });
+      const calledStoreMethods = new Set(storeTrace.steps.filter(step => step.kind === 'call' &&
+        step.target.includes('.')).map(step => step.target.slice(step.target.lastIndexOf('.') + 1)));
+      for (const patch of patchStates) {
+        if (!patch.member || !calledStoreMethods.has(patch.member)) continue;
+        const at = evidence.offsetOf(patch.location);
+        if (!at) continue;
+        const source = context.program.getSourceFile(path.resolve(context.workspaceRoot, at.file));
+        if (!source) continue;
+        let storeMethod: ts.MethodDeclaration | null = null;
+        const locate = (node: ts.Node): void => {
+          if (storeMethod) return;
+          if (t.isMethodDeclaration(node) && node.name.getText() === patch.member &&
+            node.getStart() <= at.offset && node.getEnd() >= at.offset) { storeMethod = node; return; }
+          t.forEachChild(node, locate);
+        };
+        locate(source);
+        if (!storeMethod) continue;
+        const store = [...stores.declarations.values()].find(record =>
+          record.members.some(member => member.name === patch.member && member.kind === 'method'));
+        if (!store) continue;
+        const storeHttp = traceHttpFromStoreMethod(context, httpCatalog, storeMethod, store.name,
+          { catalog, store: storeGraph, methods, stores, layers });
+        const flowOffset = httpTrace.flows.length;
+        httpTrace.steps.push(...storeHttp.steps.map(step => ({ ...step,
+          flowIndex: step.flowIndex === undefined ? undefined : step.flowIndex + flowOffset })));
+        httpTrace.flows.push(...storeHttp.flows);
+        httpTrace.diagnostics.push(...storeHttp.diagnostics);
+      }
       for (const consumed of storeTrace.steps.filter(step => step.kind === 'action-consume')) {
         const effect = storeGraph.effects.find(item => item.id === consumed.target);
         if (!effect) continue;
@@ -1197,11 +1226,17 @@ function addReactiveWrites(input: ReactiveWriteInput): DisplayKey[] {
   // §7.6 a Store method this operation called writes its state with patchState; no effect is involved.
   for (const instance of stores.instances.filter(item => sameOwnerId(ownerId, item.owner) && item.created)) {
     const declaration = stores.declarations.get(instance.declarationId);
-    const range = declaration ? callRangeAt(declaration.source) : null;
-    if (!declaration || !range) continue;
+    if (!declaration) continue;
     for (const patch of patchStates) {
-      if (!withinRange(patch.location, range)) continue;
       if (!patch.member || !entered.has(patch.member)) continue;
+      // A composed feature may declare a method and its patchState in another file from the
+      // signalStore(...) call. Resolve ownership through the collected member catalog, not the
+      // lexical range of that outer call.
+      const storeMember = declaration.members.find(member =>
+        member.name === patch.member && member.kind === 'method');
+      const feature = storeMember && declaration.features[storeMember.featureIndex];
+      const featureRange = feature ? callRangeAt(feature.source) : null;
+      if (!featureRange || !withinRange(patch.location, featureRange)) continue;
       const reactiveMethodConditions = [
         ...storeTrace.steps.filter(step => step.kind === 'state-write' && step.location === patch.location)
           .flatMap(step => step.conditions),

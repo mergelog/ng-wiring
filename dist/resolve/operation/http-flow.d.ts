@@ -59,6 +59,8 @@ export interface HttpTraceOptions extends HttpFlowInputs {
     layers?: InjectorLayer[];
 }
 export declare function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatalog, owner: Declaration, methodName: string, options?: HttpTraceOptions): HttpTrace;
+/** Traces a method contributed by a composed SignalStore feature. */
+export declare function traceHttpFromStoreMethod(context: AnalysisContext, catalog: HttpCatalog, method: ts.MethodDeclaration | ts.PropertyAssignment, storeName: string, options?: HttpTraceOptions): HttpTrace;
 /** Only an effect reached by the selected Action is entered; other registered effects stay outside this trace. */
 export declare function traceHttpFromEffect(context: AnalysisContext, catalog: HttpCatalog, effect: StoreEffect, options?: HttpTraceOptions, conditions?: string[]): HttpTrace;
 /** Follows only the handler pipeline that received the selected SignalStore event. */

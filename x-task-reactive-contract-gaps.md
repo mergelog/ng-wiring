@@ -6,7 +6,7 @@
 
 [`test/contracts/reactive-cases.ts`](test/contracts/reactive-cases.ts) の `fixture: null` で残る 12 subcase を実装し、期待する経路と反例を fixture で検証する。ここでの「完了」は `npm run check:contracts` が 110 件すべてを検査して成功すること。単に CI を緑にするために台帳の項目を削除したり、必須 API を `unsupported` に移したり、検査を無効化したりしない（[`x-local/x-structure.md`](x-local/x-structure.md) §10、P16-12）。
 
-作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R08 の6件、R09 の4件、および R10 の3件・R14 の1件に期待関係を追加し、現在の台帳は **106 件が fixture 設定済み、4 件が未達**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
+作成時の基準値は **110 件中 82 件が fixture 合格、28 件が未達**。R08 の6件、R09 の4件、R10 の3件、R14 の1件、および R15 の4件に期待関係を追加し、現在の台帳は **110 件すべて fixture 設定済み**。`npm run check:contracts` の残件は台帳の `missingFixture` / `demonstratedBy` を正本とする。`scripts/smoke-dist.mjs` の詳細 Markdown 指定は `543b600` で修正済み。
 
 ## 進め方と完了判定
 
@@ -111,10 +111,10 @@ P1 は解析結果だけでなく、選択した表示値について**値の計
 
 ### R15: 実例 Store と RxJS アダプタ（4 件）
 
-- [ ] **R15/settings-store** — 再現: `signal-settings-store`, `data-id=loadScalarsButton`。`signalStoreFeature` 越しの `withMethods` → `lastValueFrom(forkJoin)` → `patchState` を追い、外部 feature の未対応境界は保持する。
-- [ ] **R15/rxjs.of** — 再現: `rxjs-consume`, `data-id=ofButton`。`of` による ObservableInput 生成を既知アダプタの関係として記録する。
-- [ ] **R15/rxjs.from** — 再現: `rxjs-consume`, `data-id=fromButton`。Promise/配列からの `from` 変換を既知アダプタの関係として記録する。
-- [ ] **R15/rxjs.distinctUntilChanged** — 再現: `rxjs-consume`, `data-id=ofButton`。重複値を条件付きで通す演算子として記録し、未知演算子を透過扱いしない。
+- [x] **R15/settings-store** — 再現: `signal-settings-store`, `data-id=loadScalarsButton`。`signalStoreFeature` 越しの `withMethods` → `lastValueFrom(forkJoin)` → `patchState` を追い、外部 feature の未対応境界は保持する。
+- [x] **R15/rxjs.of** — 再現: `rxjs-consume`, `data-id=ofButton`。`of` による ObservableInput 生成を既知アダプタの関係として記録する。
+- [x] **R15/rxjs.from** — 再現: `rxjs-consume`, `data-id=fromButton`。Promise/配列からの `from` 変換を既知アダプタの関係として記録する。
+- [x] **R15/rxjs.distinctUntilChanged** — 再現: `rxjs-consume`, `data-id=ofButton`。重複値を条件付きで通す演算子として記録し、未知演算子を透過扱いしない。
 
 ## 最終確認
 

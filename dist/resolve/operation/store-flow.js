@@ -1,6 +1,6 @@
 import { classAt, classMethod, idForClass, unwrap } from '../../index/catalog.js';
 import { resolveElementBindings } from './bindings.js';
-import { importedApi, location } from './reactive.js';
+import { importedApi, location, operatorSemantics } from './reactive.js';
 import { traceOperation } from './flow.js';
 import { externalToken, injectionRequestFor, resolveInjection, tokenId } from './di.js';
 const LIMIT = 10000;
@@ -293,8 +293,19 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                     return current;
                 };
                 const feature = resolved(expression);
-                if (!t.isCallExpression(feature))
-                    return null;
+                if (!t.isCallExpression(feature)) {
+                    let symbol = context.checker.getSymbolAtLocation(feature);
+                    if (symbol && symbol.flags & t.SymbolFlags.Alias)
+                        symbol = context.checker.getAliasedSymbol(symbol);
+                    const declaration = symbol?.valueDeclaration;
+                    const body = declaration && (t.isFunctionDeclaration(declaration) || t.isMethodDeclaration(declaration)
+                        ? declaration.body : (t.isPropertyAssignment(declaration) || t.isVariableDeclaration(declaration)) &&
+                        declaration.initializer && (t.isArrowFunction(declaration.initializer) ||
+                        t.isFunctionExpression(declaration.initializer)) ? declaration.initializer.body : undefined);
+                    const returned = body && (t.isBlock(body)
+                        ? body.statements.find(t.isReturnStatement)?.expression : body);
+                    return returned && returned !== feature ? findInFeature(returned, depth + 1) : null;
+                }
                 const callee = t.isPropertyAccessExpression(feature.expression) ? feature.expression.name : feature.expression;
                 let symbol = context.checker.getSymbolAtLocation(callee);
                 if (symbol && symbol.flags & t.SymbolFlags.Alias)
@@ -330,6 +341,22 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                             return found;
                     }
                 }
+                // Local feature factories commonly wrap signalStoreFeature in a named function. Expand that
+                // source to find its withMethods declaration, while the SignalStore catalog independently
+                // retains any unknown feature inside the wrapper as a boundary.
+                const declaration = symbol?.valueDeclaration;
+                const implementation = declaration && (t.isFunctionDeclaration(declaration) ||
+                    t.isMethodDeclaration(declaration) || t.isPropertyAssignment(declaration) ||
+                    t.isVariableDeclaration(declaration)) ? declaration : null;
+                const body = implementation && (t.isFunctionDeclaration(implementation) ||
+                    t.isMethodDeclaration(implementation) ? implementation.body :
+                    (t.isPropertyAssignment(implementation) || t.isVariableDeclaration(implementation)) &&
+                        implementation.initializer && (t.isArrowFunction(implementation.initializer) ||
+                        t.isFunctionExpression(implementation.initializer)) ? implementation.initializer.body : undefined);
+                const returned = body && (t.isBlock(body)
+                    ? body.statements.find(t.isReturnStatement)?.expression : body);
+                if (returned && returned !== feature)
+                    return findInFeature(returned, depth + 1);
                 return null;
             };
             for (const feature of call.arguments) {
@@ -595,11 +622,21 @@ export function traceStoreDispatch(context, graph, owner, methodName, layers = [
                 return;
             }
             if (t.isCallExpression(node) && t.isIdentifier(node.expression)) {
+                const api = importedApi(context, node.expression);
+                if (api?.family === 'rxjs' && ['forkJoin', 'lastValueFrom', 'firstValueFrom', 'of', 'from'].includes(api.name)) {
+                    const semantics = operatorSemantics(api.name);
+                    if (semantics)
+                        add('reactive-link', methodName, api.name, node, [...path, location(context, node)], [...localConditions, ...semantics.conditions], semantics.mode);
+                }
                 // SignalStore patchState writes are materialized from the reactive write catalog. They do not
                 // have a traversable package body, so treating the call as an unresolved function hides the
                 // locally analysed write behind a false boundary.
-                if (importedApi(context, node.expression)?.name === 'patchState')
+                if (api?.name === 'patchState')
                     return;
+                if (api?.family === 'rxjs') {
+                    t.forEachChild(node, child => visit(child, localConditions, level));
+                    return;
+                }
                 const symbol = context.checker.getSymbolAtLocation(node.expression);
                 const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
                 const nextPath = [...path, location(context, node)];

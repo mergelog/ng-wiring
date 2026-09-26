@@ -129,6 +129,41 @@ export function traceOperation(context: AnalysisContext, owner: Declaration, met
     if (t.isCallExpression(node)) {
       const callSite = location(context, node);
       const nextPath = [...path, callSite];
+      // A locally composed Observable pipeline is part of the selected operation even when it is not
+      // subscribed through a Subject registration. Keep each operator in order and stop at an unknown
+      // operator instead of silently treating it as transparent.
+      if (t.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'pipe') {
+        const sourceExpression = node.expression.expression;
+        const sourceCall = t.isCallExpression(sourceExpression) ? sourceExpression : null;
+        const sourceCallee = sourceCall
+          ? (t.isPropertyAccessExpression(sourceCall.expression) ? sourceCall.expression.name : sourceCall.expression)
+          : null;
+        const sourceApi = sourceCallee ? importedApi(context, sourceCallee) : null;
+        let previous = sourceApi?.family === 'rxjs' ? sourceApi.name : sourceExpression.getText();
+        if (sourceApi?.family === 'rxjs' && ['of', 'from', 'forkJoin', 'timer'].includes(sourceApi.name)) {
+          const semantics = operatorSemantics(sourceApi.name)!;
+          add('reactive-link', methodName, sourceApi.name, sourceCall!, [...nextPath, location(context, sourceCall!)],
+            semantics.timing, [...conditions, ...semantics.conditions], semantics.mode);
+        }
+        const operators = inspectPipe(context, node);
+        for (const [index, operator] of operators.entries()) {
+          const operatorCall = node.arguments[index];
+          if (operator.boundary || !operator.semantics) {
+            add('boundary', previous, operator.name, operatorCall ?? node, [...nextPath, operator.location],
+              'unknown', conditions, operator.boundary);
+            break;
+          }
+          add('reactive-link', previous, operator.name, operatorCall ?? node,
+            [...nextPath, operator.location], operator.semantics.timing,
+            [...conditions, ...operator.semantics.conditions], operator.semantics.mode);
+          previous = operator.name;
+          for (const argument of operatorCall && t.isCallExpression(operatorCall) ? operatorCall.arguments : []) {
+            if (t.isArrowFunction(argument) || t.isFunctionExpression(argument))
+              visit(argument.body, [...nextPath, operator.location], depth + 1, conditions);
+          }
+        }
+        return;
+      }
       const method = ownedMethod(context, owner, node);
       if (method) {
         add('call', methodName, method.name.getText(), node, nextPath, 'sync', conditions);

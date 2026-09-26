@@ -557,15 +557,21 @@ function traceHttpFromRoot(context: AnalysisContext, catalog: HttpCatalog,
           callee.expression.expression.kind === t.SyntaxKind.ThisKeyword
           ? callee.expression : boundReceiver && t.isPropertyAccessExpression(boundReceiver) &&
             boundReceiver.expression.kind === t.SyntaxKind.ThisKeyword ? boundReceiver : null;
-        if (serviceReceiver && container) {
-          const fieldName = serviceReceiver.name.text;
-          const field = container.members.find(item => t.isPropertyDeclaration(item) &&
+        const serviceParameter = t.isIdentifier(callee.expression)
+          ? declarationsAt(context, callee.expression).find(t.isParameter) : undefined;
+        const parameterInitializer = serviceParameter?.initializer;
+        const parameterRequest = parameterInitializer && t.isCallExpression(parameterInitializer)
+          ? injectionRequestFor(context, parameterInitializer) : null;
+        if (serviceReceiver || parameterRequest) {
+          const fieldName = serviceReceiver?.name.text ?? callee.expression.getText();
+          const field = container?.members.find(item => t.isPropertyDeclaration(item) &&
             item.name.getText() === fieldName);
           const initializer = field && t.isPropertyDeclaration(field) ? field.initializer : undefined;
-          const constructor = container.members.find(t.isConstructorDeclaration);
+          const constructor = container?.members.find(t.isConstructorDeclaration);
           const parameter = constructor?.parameters.find(item => item.name.getText() === fieldName);
           const request = initializer && t.isCallExpression(initializer)
-            ? injectionRequestFor(context, initializer) : parameter ? injectionRequestFor(context, parameter) : null;
+            ? injectionRequestFor(context, initializer) : parameter ? injectionRequestFor(context, parameter) :
+              parameterRequest;
           if (request) {
             const resolution = resolveInjection(context, request, layers);
             const implementation = resolution.bindings[0]?.implementation;
@@ -621,6 +627,14 @@ export function traceHttpFromMethod(context: AnalysisContext, catalog: HttpCatal
   methodName: string, options: HttpTraceOptions = {}): HttpTrace {
   return traceHttpFromRoot(context, catalog, classMethod(context, owner.node, methodName),
     methodName, owner.id, options);
+}
+
+/** Traces a method contributed by a composed SignalStore feature. */
+export function traceHttpFromStoreMethod(context: AnalysisContext, catalog: HttpCatalog,
+  method: ts.MethodDeclaration | ts.PropertyAssignment, storeName: string,
+  options: HttpTraceOptions = {}): HttpTrace {
+  const name = method.name?.getText() ?? 'store method';
+  return traceHttpFromRoot(context, catalog, method, name, storeName, options);
 }
 
 /** Only an effect reached by the selected Action is entered; other registered effects stay outside this trace. */
