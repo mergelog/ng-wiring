@@ -28,6 +28,7 @@ yarn-debug.log*
 yarn-error.log*
 
 x-local/
+x-todo.md
 AGENTS.local.md
 
 # Claude Code local settings
