@@ -48,6 +48,33 @@
 
 ## 失敗・部分資料
 
+### 2026-09-26 — C01〜C05 / Angular template・form・component boundaries
+
+- **C01 child output → parent → communication:** Projects の `Semiconductor Quality Prediction` cardをクリック。`ProjectCardComponent.projectCardClicked` → `ProjectsPage.projectCardClicked` → `setDeep` / `setSelectedProjectId` → effect → `projects.get_all_ex` POST 200。実行時URLは `/projects/` から `/projects/0f2765fc37a24c1e9f3752b1f96330e3/projects`。`sm-project-card:nth-of-type(4) > sm-card` は1件。simpleは `setDeep` の先で無関係な `getUsersEffect` 登録を停止理由にした後、別分岐のAPIを表示し終了コード5。経路結合失敗。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'class=project-card' --project stackup --route '/projects/:projectId/projects' --selector 'body > sm-root > sm-app-shell > div > div > sm-projects-page > sm-projects-list > div > sm-project-card:nth-of-type(4) > sm-card' --out-dir ../ng-wiring/x-local/tmp
+  ```
+  生成ファイル: `x-local/tmp/ngwi-28-ProjectCardComponent.class=project-card-260926.192601.md`。
+- **C02 multi-level projection:** Pipelines を Project view に切替え、`Semiconductor Quality Prediction` cardを選択。親 `NestedPipelinePage` の `cardContent` / `cardFooterContent` TemplateRefを`NestedProjectViewPage`が受け取り、`ngTemplateOutlet`から`NestedCard`経由で`sm-card`内へ投影するソース・DOM経路を照合。routeは `/pipelines/*/projects` → `/pipelines/0f2765fc37a24c1e9f3752b1f96330e3/projects`。`data-id=projectCard` は1件。`projects.get_all_ex` POST 200。simpleは`NestedProjectViewPage.cardClicked.emit`で停止、通信未検出、終了コード5。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=projectCard' --project stackup --route '/pipelines/:projectId/projects' --selector 'body > sm-root > sm-app-shell > div > div > sm-nested-pipeline-page > sm-nested-project-view-page > div > sm-nested-card > sm-card' --out-dir ../ng-wiring/x-local/tmp
+  ```
+  生成ファイル: `x-local/tmp/ngwi-27-NestedCardComponent.data-id=projectCard-260926.192216.md`。
+- **C03 Reactive Forms submit:** Data Catalog `/data-catalog` の `catalogText` に `semiconductor` を入力して Apply。validな`ngSubmit`→`apply()`→`filterChange`→`applyFilter`→action dispatchを確認し、URLは `/data-catalog?q=semiconductor`、一覧は一致行に絞られた。`catalogApply`は1件。`tasks.get_all_ex` / `models.get_all_ex` POST 200。simpleはaction dispatch以降を接続できず終了コード5、通信経路の結合失敗。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=catalogApply' --project stackup --route '/data-catalog' --selector 'body > sm-root > sm-app-shell > div > div > sm-data-catalog-page > section > section > sm-catalog-filters > form > div > button' --out-dir ../ng-wiring/x-local/tmp
+  ```
+  生成ファイル: `x-local/tmp/ngwi-25-CatalogFiltersComponent.data-id=catalogApply-260926.191650.md`。
+- **C04 signal `model()` two-way binding:** Tasks の Customize table → ADD METRICを選択。`ExperimentCustomColsMenuComponent.customColumnMode` の変更が `ExperimentHeaderComponent` の `[(customColumnMode)]` に反映され、metric候補画面に遷移。候補ロードの `projects.get_unique_metric_variants` と `projects.get_hyper_parameters` POST 200。`input[placeholder="Search metric"]` は1件。simpleは終了コード5 (`Target detection incomplete`)、レポートなし。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'placeholder=Search metric' --project stackup --route '/projects/:projectId/tasks' --selector 'body > div > div > div > div > div > div > sm-select-metric-for-custom-col > div > sm-search > span > span > input' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- **C05 directive scroll → load more:** Training の Tasks一覧で`.p-datatable-table-container`を下端へスクロール。`smScrollEnd` IntersectionObserver → `sm-dots-load-more` → `TableComponent.loadMore()` の後、追加 `tasks.get_all_ex` POST 200を確認。`.p-datatable-table-container` は1件、`tr.table-load-more` も1件。simpleは終了コード5 (`Target detection incomplete`)、レポートなし。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'class=table-load-more' --project stackup --route '/projects/:projectId/tasks' --selector 'body > sm-root > sm-app-shell > div > div > sm-common-experiments > div > as-split > as-split-area > sm-experiments-table > div > sm-table > p-table > div > table > tbody > tr.table-load-more > div > div > sm-dots-load-more' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 各試行のブラウザURLは `http://192.168.0.4:4200` を基点とした。全5件のCLI終了コードは5。C01〜C03はレポートあり、C04/C05はレポートなし。生成ファイルは `x-local/tmp`（git管理外）。
+
 ### 2026-09-26 — A03 / autocomplete候補取得と選択後の確定境界
 
 - 画面・UI: Task menu → Clone。Project autocompleteへ `Semiconductor Quality Prediction` を入力し、既存 `Semiconductor Quality Prediction/Model Comparison` を選択してCancel。Project selectorの一意性は1件。

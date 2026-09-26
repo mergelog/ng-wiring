@@ -43,20 +43,25 @@
   - 2026-09-26 実施: ClearMLソース内に `p-dialog` はなく、Clone は Angular Material dialog。PrimeNG行menuからCloneを開き、`formcontrolname=project` 1件とCancelを確認。project候補の `projects.get_all_ex` (200) のみで、Cancel後にClone作成通信なし。ngwiの同target試行は終了コード5、レポートなし。PrimeNG dialogパターン自体は対象なしとして記録。履歴参照。
 
 ## C. Angular テンプレート・フォーム・コンポーネント境界（5件）
-- [ ] **C01 / P1: child `output()` / `EventEmitter` → parent handler → 通信**
+- [x] **C01 / P1: child `output()` / `EventEmitter` → parent handler → 通信**
   dumb component の click が output alias を経由し、container component で dispatch または service call される代表経路を選ぶ。output 名と handler 名が異なるケースを優先する。
+  - 2026-09-26 実施: Projects の Semiconductor Quality Prediction カードを選択。`projectCardClicked` → `ProjectsPage.projectCardClicked` → `setDeep` / `setSelectedProjectId` → `getSelectedProject` effect → `projects.get_all_ex` (200)。selectorは `nth-of-type(4)` を含め1件。simpleレポートは `setDeep` から無関係な `getUsersEffect` 登録停止を誤結合し終了コード5、後続の正しい `projects.get_all_ex` は表示した。履歴と `ngwi-28-ProjectCardComponent.class=project-card-260926.192601.md` を参照。
 
-- [ ] **C02 / P1: `ng-content` / `ng-template` / `TemplateRef` 多段投影から通信**
+- [x] **C02 / P1: `ng-content` / `ng-template` / `TemplateRef` 多段投影から通信**
   table 以外の dialog、card、menu template で、宣言元 → 投影先 → 実 DOM → 親処理を照合する。content query やテンプレート変数を名前だけで推測せず、実際の投影先を確認する。
+  - 2026-09-26 実施: Pipelines の nested project view で、親 `NestedPipelinePage` が宣言した `cardContent` / `cardFooterContent` を `TemplateRef` として渡し、`NestedProjectViewPage` が `ngTemplateOutlet` で `NestedCard` 内へ描画する経路をソースとDOMで確認。Semiconductor Quality Prediction カードを選択すると project route が変わり、`projects.get_all_ex` (200)。`data-id=projectCard` selectorは1件。simpleレポートは NestedProjectViewPage の output emit で停止し通信未検出（終了コード5）。履歴と `ngwi-27-NestedCardComponent.data-id=projectCard-260926.192216.md` を参照。
 
-- [ ] **C03 / P1: Reactive Forms の `ngSubmit` → validation → API**
+- [x] **C03 / P1: Reactive Forms の `ngSubmit` → validation → API**
   submit button / form を起点に、valid の正常分岐だけを通って、form value → component method → action / service → HTTP → dialog close / success notification までを確認する。invalid 分岐は主経路へ展開しない。
+  - 2026-09-26 実施: Data Catalog の Name contains に `semiconductor` を入力して Apply。validな `ngSubmit` → `apply()` → `filterChange` → 親 `applyFilter` → `filterChanged` dispatch 後、一覧が絞られ、`tasks.get_all_ex` / `models.get_all_ex` が200。button selectorは1件。simpleレポートはdispatch後のeffect/APIを結合できず終了コード5。履歴と `ngwi-25-CatalogFiltersComponent.data-id=catalogApply-260926.191650.md` を参照。
 
-- [ ] **C04 / P2: signal `input()` / `model()` の変更 → 親子双方向処理 → 通信**
+- [x] **C04 / P2: signal `input()` / `model()` の変更 → 親子双方向処理 → 通信**
   signal input、model output、computed を挟む UI を探し、値の変化が親 component の通信起点へ届くか確認する。通常の `@Input` / `@Output` と同じ形だと推測して誤接続しないことも判定する。
+  - 2026-09-26 実施: Tasks の Customize table → ADD METRIC を選択。`ExperimentCustomColsMenuComponent.customColumnMode = model(...)` は親 `ExperimentHeaderComponent` の `[(customColumnMode)]` へ反映され、候補画面を表示。候補を表示するため `projects.get_unique_metric_variants` と `projects.get_hyper_parameters` が200。simple解析は候補検索の `placeholder=Search metric` で終了コード5 / Target detection incomplete、レポートなし。通信は候補表示の起点で確認。履歴参照。
 
-- [ ] **C05 / P2: directive / host listener が代理するイベントから通信**
+- [x] **C05 / P2: directive / host listener が代理するイベントから通信**
   infinite scroll、resize、keyboard、options scroll など、template 上に直接 handler がない操作を選ぶ。directive output / `HostListener` → component → state → HTTP を追い、DOM event だけで停止しないかを見る。
+  - 2026-09-26 実施: Training の Tasks 一覧で `.p-datatable-table-container` を末尾までスクロール。`smScrollEnd` IntersectionObserver → `sm-dots-load-more` の `loadMore` → `TableComponent.loadMore()` → tasks state → `tasks.get_all_ex` (200) を確認。load-more row selectorは1件。simple解析は終了コード5 / Target detection incomplete、レポートなし。履歴参照。
 
 ## D. NgRx Store / Effects（5件）
 - [ ] **D01 / P1: action creator dispatch → class-based effect → generated API service**
