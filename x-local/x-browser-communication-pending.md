@@ -85,20 +85,25 @@
   - 2026-09-26 部分実施: Compare Tasks の `Hide Identical Fields` を切替。`setHideIdenticalFields` は reducerで表示データを選択し、対応するHTTP effectはない。Networkには切替後に `tasks.get_all_ex` が1件現れたが、定期更新との時間的重複がありこのtoggleの因果とは確認できず、通信なしの実行時証明は未確定。simple は reducer registrationを未解決としてdispatch後で停止（終了コード5）。`ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md`。
 
 ## E. Angular Signals / NgRx SignalStore（5件）
-- [ ] **E01 / P1: `signalStore` の `withMethods` → injected API service → HTTP**
+- [x] **E01 / P1: `signalStore` の `withMethods` → injected API service → HTTP**
   UI → Store method → `withMethods` 内の service call → HTTP → `patchState` / 表示更新を追う。実例候補は project settings 系 Store。生成 Store member と method 本体の対応失敗を確認する。
+  - 2026-09-26 実施: Projects → Semiconductor Quality Prediction → Training → Project Settings を開くと `loadScalars()` が `ApiProjectsService.projectsGetUniqueMetricVariants()` を2系統呼び、`forkJoin` 後に `patchState({scalars})`。Networkで `projects.get_unique_metric_variants` POST 200を2件確認。実DOMのoverlay menu item `data-id=Edit` は1件。ngwiのsimpleはrouteを指定するとProjectCardクリック側の `projects.get_all_ex` へ誤結合（終了コード5）。source起点は画面表示経路だけとなりmethod/API未検出。selector付き実行はoverlayを候補hostへ結び付けられず終了コード3。実行詳細とコマンドは履歴を参照。
 
-- [ ] **E02 / P1: `signalStoreFeature` 合成越しの method → HTTP**
+- [x] **E02 / P1: `signalStoreFeature` 合成越しの method → HTTP**
   `withProjectSettingsStore` や view feature のような feature factory を合成した Store を対象にする。feature 展開、withProps の DI、withMethods の method 解決が途中で未確定にならないかを見る。
+  - 2026-09-26 実施: E01と同じ `ProjectSettingsStore = signalStore(withProjectSettingsStore, withMethods(...))` を実行時に確認。合成featureの `withMethods` から注入された `ApiProjectsService` を経て上記2件のHTTPが発生し、成功後 `scalars` を更新。ngwiはこのfeature/method連鎖を出力せず、E01と同じ経路結合失敗。
 
-- [ ] **E03 / P1: `rxMethod` → RxJS pipeline → HTTP → `tapResponse` / `patchState`**
+- [x] **E03 / P1: `rxMethod` → RxJS pipeline → HTTP → `tapResponse` / `patchState`**
   値、Signal、Observable のいずれで起動されたかを記録し、`switchMap` 等の内側の HTTP と success state write まで確認する。method 定義があるだけで起動済みと誤認しない。
+  - 2026-09-26 確認: 対象 `stackup/src/app` に `rxMethod` の定義・import・呼出しがなく、実画面候補なし。SignalStoreの別の `withEventHandlers` / RxJS経路はあるが、`rxMethod` 起点と混同しない。対象なし（実行時検証なし）。
 
-- [ ] **E04 / P2: SignalStore method → NgRx `Store.dispatch` → effect → HTTP**
+- [x] **E04 / P2: SignalStore method → NgRx `Store.dispatch` → effect → HTTP**
   SignalStore と通常の NgRx Store をまたぐ明示的な橋を探す。二つの state system を形だけで同一視せず、実際の dispatch site から action bus の consumer に接続できるか確認する。
+  - 2026-09-26 確認: 対象の `withMethods` は project settings の `loadScalars` / `setProject` と dashboard-search store の `checkPermissions` のみ。SignalStore method 内から `Store.dispatch` する実例なし。`withViewBridge` はSignalStore `withEventHandlers` からNgRx dispatchする実例だが、method起点ではないため本項の対象にはしない。対象なし。
 
-- [ ] **E05 / P2: `withComputed` / local signal / `patchState` だけで完結する通信なし操作**
+- [x] **E05 / P2: `withComputed` / local signal / `patchState` だけで完結する通信なし操作**
   filter toggle や local selection を対象にし、Signal / SignalStore の write と派生表示は示しつつ、無関係な HTTP に接続しないことを確認する。E01〜E04の偽陽性を防ぐ反例とする。
+  - 2026-09-26 実施: 同じProject Settingsの Scalar View Defaults で `Find scalars` に `accuracy` を入力。結果一覧が5項目から1項目へ絞られ、`searchTerm` signal → `searchTermChanged()` → 子の `filteredList` computed の経路を確認。操作後にNetworkのXHR/fetch件数は31のままで、新規通信なし。キャンセルで入力を破棄。simpleはselector一致1件だが終了コード5 (`Target detection incomplete`、レポートなし)。通信なしを実行時確認。
 
 ## F. HTTP・RxJS・動的呼び出し境界（5件）
 - [ ] **F01 / P1: generated `Api*Service` wrapper → `HttpClient` method / endpoint**

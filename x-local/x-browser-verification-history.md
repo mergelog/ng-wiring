@@ -149,3 +149,39 @@
   ```bash
   node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/experiments-compare/dumbs/experiment-compare-header/experiment-compare-header.component.html:87 --event change --project stackup --route '/projects/:projectId/compare-tasks' --out-dir ../ng-wiring/x-local/tmp
   ```
+
+### 2026-09-26 — E01〜E05 / Angular Signals・NgRx SignalStore
+
+- **E01 `withMethods` → API service → HTTP:** `/projects/0f2765fc37a24c1e9f3752b1f96330e3/projects` の Training card menuからProject Settingsを開いた。overlay内の `sm-menu-item[data-id="Edit"]` は1件。constructorが `setProject()` と `loadScalars()` を呼ぶ。`loadScalars()` は injected `ApiProjectsService` で experiment/model metricの2要求を作り、`forkJoin` 後に `patchState({scalars})`。`projects.get_unique_metric_variants` POSTを2件確認し、ともに200。
+- **E02 `signalStoreFeature` 合成:** 同じ実行で `ProjectSettingsStore = signalStore(withProjectSettingsStore, withMethods(...))` → feature内 `withMethods` → injected serviceまで確認。実行時HTTPは上記2件。ngwiのroute付きsimpleレポートはmenu itemをProjectCard自体のclickと誤結合し、`projects.get_all_ex` を表示（終了コード5）。selector経由ではoverlay DOMと候補component hostを対応できず終了コード3。feature method/API連鎖はレポートに出ず、経路結合失敗。
+  - route付きsimpleコマンド:
+    ```bash
+    node ../ng-wiring/dist/cli/index.js 'data-id=Edit' --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+    ```
+  - 出力: `x-local/tmp/ngwi-33-ProjectCardMenuExtendedComponent.data-id=Edit-260926.214845.md`（git管理外）。
+  - overlay selectorコマンド（終了コード3、no component host tag）:
+    ```bash
+    node ../ng-wiring/dist/cli/index.js 'data-id=Edit' --project stackup --selector 'body > div.cdk-overlay-container > div.cdk-overlay-connected-position-bounding-box > div.cdk-overlay-pane > div#mat-menu-panel-17 > div.mat-mdc-menu-content > div.results > sm-menu-item[data-id="Edit"]' --out-dir ../ng-wiring/x-local/tmp
+    ```
+  - overlay境界の診断試行: 同selectorを内側 `div[role="menuitem"]` まで延長した場合も終了コード3 (`no component host tag`)。DevTools pathでない単独selectorは終了コード3 (`expects a DevTools Copy selector path`)。routeなしでは候補列挙後の選択待ちとなり終了コード2。候補番号を3に固定したroute実行は終了コード3 (`Candidate 3 is outside the discovered candidates`)。
+    ```bash
+    node ../ng-wiring/dist/cli/index.js 'data-id=Edit' --project stackup --selector 'body > div.cdk-overlay-container > div.cdk-overlay-connected-position-bounding-box > div.cdk-overlay-pane > div#mat-menu-panel-17 > div.mat-mdc-menu-content > div.results > sm-menu-item[data-id="Edit"] > div[role="menuitem"]' --out-dir ../ng-wiring/x-local/tmp
+    node ../ng-wiring/dist/cli/index.js 'data-id=Edit' --project stackup --selector 'sm-menu-item[data-id="Edit"]' --out-dir ../ng-wiring/x-local/tmp
+    node ../ng-wiring/dist/cli/index.js 'data-id=Edit' --project stackup --out-dir ../ng-wiring/x-local/tmp
+    node ../ng-wiring/dist/cli/index.js 'data-id=Edit' --project stackup --route '/projects/:projectId/projects' --candidate 3 --out-dir ../ng-wiring/x-local/tmp
+    ```
+  - source起点の候補確認では表示経路のみのレポートとなり、終了コード5。生成物: `x-local/tmp/ngwi-32-ProjectCardMenuExtendedComponent.sm-menu-item-L2-81e8711e863d-260926.214758.md`。
+    ```bash
+    node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/shared/ui-components/panel/project-card-menu/project-card-menu.component.html:2 --event itemClicked --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+    ```
+  - Store method行へのsource起点は終了コード5 (`Target detection incomplete`)、レポートなし。
+    ```bash
+    node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/shared/project-dialog/project-settings/project-settings-dialog.component.ts:160 --project stackup --route '/projects/:projectId/projects' --out-dir ../ng-wiring/x-local/tmp
+    ```
+- **E03 `rxMethod`:** `stackup/src/app` 全体に定義・import・呼出しが見つからず、対象なし。実行時検証・CLI実行なし。
+- **E04 SignalStore method → NgRx dispatch:** `withMethods` を持つ対象Storeを検索し、method内の `Store.dispatch` はなし。`withViewBridge` には `withEventHandlers` → NgRx dispatchの別構造があるため対象外。対象なし、実行時検証・CLI実行なし。
+- **E05 local signal → computed / 通信なし:** Project Settings → Scalar View Defaultsで `Find scalars` (`input[placeholder="Find scalars"]`) に `accuracy` を入力。selector一致1件。表示が5指標からaccuracyのみへ変化し、`searchTerm` signal / `filteredList` computedを確認。操作前後のXHR/fetchはどちらも31件で、新規通信なし。入力を空に戻してCancelし、保存操作なし。simpleは終了コード5 (`Target detection incomplete`)、レポートなし。
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'placeholder=Find scalars' --project stackup --route '/projects/:projectId/projects' --selector 'body > div.cdk-overlay-container > div.cdk-global-overlay-wrapper > div#cdk-overlay-2 > mat-dialog-container#mat-mdc-dialog-1 > div.mat-mdc-dialog-inner-container > div.mat-mdc-dialog-surface > sm-project-settings > sm-dialog-template > div.dialog-template-container > div.generic-container > mat-tab-group > div.mat-mdc-tab-body-wrapper > mat-tab-body#mat-tab-group-1-content-1 > div.mat-mdc-tab-body-content > div.list > sm-selectable-grouped-filter-list > sm-search > span.search-input-container > span.search-input > input[placeholder="Find scalars"]' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- ソース確認: `project-settings-dashboard-search-permissions.store.ts`, `project-settings-dialog.store.ts`, `project-settings-dialog.component.ts`, `selectable-grouped-filter-list.component.ts`, `core/state/view.store.ts`。E01/E02のservice/patchStateとE05のlocal filterに対応する実行時表示は確認できたが、ngwiのsimpleはE01/E02で別のHTTPに誤結合し、E05はtarget detectionで停止した。
