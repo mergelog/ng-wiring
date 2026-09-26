@@ -96,6 +96,31 @@ simpleレポートでは、少なくとも次を確認する。
 - イベントからhandler、dispatch、状態処理、HTTP処理まで期待する範囲を追跡できている。
 - 停止した場合は、停止位置と理由が妥当である。
 
+## simple版の経路表示方針
+
+simple版では、検出したすべての成功・失敗分岐を主経路へ並べない。通常の操作が成功したときの正常系を一本だけ表示し、読みやすさを優先する。
+
+通信を伴う操作では、正常系の期待着地点を最初のHTTP要求とする。
+
+```text
+UIイベント
+→ handler
+→ action dispatch
+→ effect
+→ API service
+→ HTTP method / endpoint
+```
+
+HTTP応答後のダウンロード、成功通知、エラー通知、`requestFailed`などは、正常系の通信経路を理解するために必要な場合を除き、simple版の主経路には含めない。すべての分岐を確認する用途はsimple版とは分ける。
+
+通信が表示されない場合は、次の状態を区別する。
+
+- 通信なしを確認: 解析対象の正常系がローカル処理だけで終了すると確認できた。
+- 通信有無は未確定: 動的呼び出し、DI、effect登録などの解析境界で追跡が止まった。
+- 通信経路の結合失敗: action、effect、HTTPは個別に検出したが、一本の経路として結合できなかった。
+
+「通信への接続を確認できない」だけでは、通信が存在しない場合と解析できない場合を区別できないため、simple版の最終表示としては使用しない。
+
 ### 6. 必要に応じて実行時挙動と照合する
 
 安全に実行できるUIでは、Chrome DevTools MCPで実際に操作し、操作前後を比較する。
@@ -129,6 +154,50 @@ ngwiは対象を`ExperimentInfoHeaderComponent`のボタンとして特定し、
 - 履歴: `x-his-fail.md`
 
 この試行により、ブラウザ上のUI選択、DOM経路取得、候補の一意化、simpleレポート生成、結果記録までは自律的に実行できることを確認した。
+
+## 最優先の改善対象: exportTaskButtonの通信経路
+
+### 現在の出力
+
+`exportTaskButton`のsimpleレポートは、コンポーネントから`exportTaskInfo` actionをdispatchした後、次の表示で停止する。
+
+```text
+this.store.dispatch(exportTaskInfo({taskId: task.id}))
+→ 停止: 通信への接続を確認できない
+```
+
+### ソース上の正常系
+
+ソース上では、dispatchされたactionを`exportTaskInfo$` effectが受け取り、`tasksGetByIdEx()`を通じてHTTP要求を作成している。
+
+```text
+click
+→ ExperimentInfoHeaderComponent.exportTaskInfo()
+→ exportTaskInfo action
+→ CommonExperimentsInfoEffects.exportTaskInfo$
+→ ApiTasksService.tasksGetByIdEx()
+→ POST ${basePath}/tasks.get_by_id_ex
+```
+
+HTTP応答後には`downloadObjectAsJson()`と成功通知があるが、この改善では正常系の期待着地点をHTTP要求とし、それ以降の成功・失敗分岐はsimple版の主経路へ追加しない。
+
+### 調査対象
+
+1. simple rendererがaction dispatchと`action-consume`を対応付ける条件を確認する。
+2. `exportTaskInfo$`と`tasksGetByIdEx()`、`http-create`の対応付けが失敗する位置を特定する。
+3. conditionの互換判定、effect memberの特定、service callとendpointの対応判定を確認する。
+4. action、effect、HTTPがモデル内に存在する場合は、名前の推測だけに依存せず、edge間の関係から正常系を結合できるようにする。
+5. 通信なし、解析未確定、経路結合失敗を区別して表示する。
+
+### 完了条件
+
+- `exportTaskButton`のsimpleレポートに`exportTaskInfo$`が表示される。
+- `ApiTasksService.tasksGetByIdEx()`が表示される。
+- `POST ${basePath}/tasks.get_by_id_ex`が正常系の終点として表示される。
+- dispatch直後の「通信への接続を確認できない」が表示されない。
+- success/error通知の全分岐を主経路へ展開しない。
+- 既存の通信なしケースを、誤ってHTTP経路へ接続しない。
+- ブラウザでボタンを操作した際のNetwork requestと、simpleレポートのmethod・endpointが一致する。
 
 ## 今後の自律確認ループ
 
