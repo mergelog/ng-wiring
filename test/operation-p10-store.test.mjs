@@ -14,7 +14,7 @@ import { traceOperation } from '../dist/resolve/operation/index.js';
 import { buildRouteGraph } from '../dist/resolve/view/routes.js';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-async function fixture(source, check) {
+async function fixture(source, check, files = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'ngwi-p10-store-'));
   try {
     await mkdir(path.join(root, 'src'));
@@ -25,6 +25,8 @@ async function fixture(source, check) {
       target: 'es2022', module: 'esnext', moduleResolution: 'bundler', skipLibCheck: true,
     }, files: ['src/main.ts'] }));
     await writeFile(path.join(root, 'src/main.ts'), source);
+    for (const [name, content] of Object.entries(files))
+      await writeFile(path.join(root, 'src', name), content);
     const toolchain = await resolveToolchain(root);
     const context = await createContext({ workspaceRoot: root, project: (await selectProjects(root, toolchain))[0], toolchain });
     const catalog = await buildCatalog(context);
@@ -163,6 +165,107 @@ export const routeProviders = makeEnvironmentProviders([provideEffects([RenameEf
   const trace = traceStoreDispatch(context,graph,owner,'run');
   assert(trace.steps.some(step => step.kind === 'action-consume' &&
     step.target.endsWith(':save$')));
+}));
+
+test('a same-route queryParams navigation can trigger the selected constructor effect', async () => fixture(`
+import {Component, Injectable, inject, effect} from '@angular/core';
+import {toSignal} from '@angular/core/rxjs-interop';
+import {ActivatedRoute, Router} from '@angular/router';
+import {Store, createActionGroup, emptyProps, provideStore} from '@ngrx/store';
+import {Actions, createEffect, ofType, provideEffects} from '@ngrx/effects';
+import {concatMap} from 'rxjs/operators';
+export const actions = createActionGroup({source:'Catalog',events:{
+  'filter changed':emptyProps(), 'open list':emptyProps(), 'unrelated':emptyProps(),
+  'guarded':emptyProps(), 'blocked':emptyProps(), 'deferred':emptyProps(),
+}});
+@Injectable() export class Effects {
+  actions = inject(Actions); router = inject(Router);
+  syncUrl = createEffect(() => this.actions.pipe(
+    ofType(actions.filterChanged),
+    concatMap(() => this.router.navigate(['/catalog'],{queryParams:{q:'term'}}))
+  ),{dispatch:false});
+}
+export const rootProviders=[provideStore()];
+export const routeProviders=[provideEffects([Effects])];
+@Component({selector:'app-root',template:''}) export class Root {
+  store=inject(Store); route=inject(ActivatedRoute); ready=false;
+  queryParams=toSignal(this.route.queryParams,{initialValue:{}});
+  constructor() { effect(() => {
+    this.queryParams();
+    if (false) this.store.dispatch(actions.blocked());
+    if (this.ready) this.store.dispatch(actions.guarded());
+    setTimeout(() => this.store.dispatch(actions.deferred()), 0);
+    Promise.resolve().then(() => this.store.dispatch(actions.deferred()));
+    this.store.dispatch(actions.openList());
+  }); }
+  apply() { this.store.dispatch(actions.filterChanged()); }
+}
+`, ({context,catalog,expr}) => {
+  const graph=analyzeStore(context,catalog,{rootProviders:[expr('rootProviders')],
+    routeProviders:[expr('routeProviders')]});
+  const owner=[...catalog.declarations.values()].find(d=>d.className==='Root');
+  const linked=traceStoreDispatch(context,graph,owner,'apply',[],{selectedRoutePath:'/catalog'});
+  assert(linked.steps.some(step=>step.kind==='action-consume'&&step.target.endsWith(':syncUrl')));
+  assert(linked.steps.some(step=>step.kind==='reactive-link'&&step.detail?.includes('Router.navigate')));
+  assert(linked.steps.some(step=>step.kind==='action-dispatch'&&step.target.endsWith(':openList')));
+  assert(linked.steps.some(step=>step.kind==='action-dispatch'&&step.target.endsWith(':guarded')&&
+    step.conditions.includes('if this.ready')));
+  assert(!linked.steps.some(step=>step.kind==='action-dispatch'&&step.target.endsWith(':blocked')));
+  assert(!linked.steps.some(step=>step.kind==='action-dispatch'&&step.target.endsWith(':deferred')));
+  assert(!linked.steps.some(step=>step.kind==='action-dispatch'&&step.target.endsWith(':unrelated')));
+  const otherRoute=traceStoreDispatch(context,graph,owner,'apply',[],{selectedRoutePath:'/other'});
+  assert(!otherRoute.steps.some(step=>step.kind==='action-dispatch'&&step.target.endsWith(':openList')));
+}));
+
+test('route bridge excludes navigation without a proven same-route queryParams consumer', async () => fixture(`
+import {Component,Injectable,inject,effect} from '@angular/core';
+import {toSignal} from '@angular/core/rxjs-interop';
+import {ActivatedRoute,Router} from '@angular/router';
+import {Store,createAction,provideStore} from '@ngrx/store';
+import {Actions,createEffect,ofType,provideEffects} from '@ngrx/effects';
+import {concatMap,map,tap,of} from 'rxjs';
+export const noQuery=createAction('[Route] No query');
+export const byUrl=createAction('[Route] By URL');
+export const segments=createAction('[Route] Segments');
+export const relative=createAction('[Route] Relative');
+export const dispatching=createAction('[Route] Dispatching');
+export const followUp=createAction('[Route] Follow up');
+@Injectable() export class Effects {
+  actions=inject(Actions); router=inject(Router);
+  withoutQuery=createEffect(()=>this.actions.pipe(ofType(noQuery),
+    concatMap(()=>this.router.navigate(['/catalog']))),{dispatch:false});
+  viaUrl=createEffect(()=>this.actions.pipe(ofType(byUrl),
+    concatMap(()=>this.router.navigateByUrl('/catalog?q=term'))),{dispatch:false});
+  multi=createEffect(()=>this.actions.pipe(ofType(segments),
+    concatMap(()=>this.router.navigate(['/','catalog'],{queryParams:{q:'term'}}))),{dispatch:false});
+  local=createEffect(()=>this.actions.pipe(ofType(relative),
+    concatMap(()=>this.router.navigate(['catalog'],{queryParams:{q:'term'}}))),{dispatch:false});
+  enabled=createEffect(()=>this.actions.pipe(ofType(dispatching),
+    tap(()=>this.router.navigate(['/catalog'],{queryParams:{q:'term'}})),map(()=>followUp())));
+}
+@Component({selector:'app-other',template:''}) export class Other {
+  store=inject(Store); route=inject(ActivatedRoute);
+  queryParams=toSignal(this.route.queryParams,{initialValue:{}});
+  constructor(){effect(()=>{this.queryParams();this.store.dispatch(followUp());});}
+}
+@Component({selector:'app-root',template:''}) export class Root {
+  store=inject(Store);
+  runNoQuery(){this.store.dispatch(noQuery());}
+  runByUrl(){this.store.dispatch(byUrl());}
+  runSegments(){this.store.dispatch(segments());}
+  runRelative(){this.store.dispatch(relative());}
+  runDispatching(){this.store.dispatch(dispatching());}
+}
+export const rootProviders=[provideStore(),provideEffects(Effects)];
+`, ({context,catalog,expr}) => {
+  const graph=analyzeStore(context,catalog,{rootProviders:[expr('rootProviders')]});
+  const owner=[...catalog.declarations.values()].find(item=>item.className==='Root');
+  for (const method of ['runNoQuery','runByUrl','runSegments','runRelative','runDispatching']) {
+    const trace=traceStoreDispatch(context,graph,owner,method,[],{selectedRoutePath:'/catalog'});
+    assert(!trace.steps.some(step=>step.kind==='reactive-link'&&
+      step.detail?.includes('Router.navigate with queryParams')),method);
+    assert(!trace.steps.some(step=>step.kind==='action-dispatch'&&step.detail?.includes('route queryParams effect')),method);
+  }
 }));
 
 test('a bootstrap config function with a single return supplies root Store providers', async () => fixture(`
@@ -321,6 +424,71 @@ export const rootProviders=[provideStore({count:reducer})];
   const trace=traceStoreDispatch(context,graph,owner,'run');
   assert(trace.steps.some(s=>s.kind==='reactive-link'&&s.target===graph.consumers.find(c=>c.active).id));
   assert(!trace.steps.some(s=>s.kind==='reactive-link'&&s.target===graph.consumers.find(c=>!c.active).id));
+}));
+
+test('createFeature selectors keep known writes distinct from multi-return unknown writes', async () => fixture(`
+import {Component,inject} from '@angular/core';
+import {Store,createAction,createFeature,createReducer,createSelector,on,provideStore,provideState} from '@ngrx/store';
+export const changeA=createAction('[Pair] Change A');
+export const changeB=createAction('[Pair] Change B');
+export const changeUnknown=createAction('[Pair] Change unknown');
+export const feature=createFeature({name:'pair',reducer:createReducer({a:0,b:0},
+  on(changeA,state=>({...state,a:state.a+1})),
+  on(changeB,state=>{return {...state,b:state.b+1};}),
+  on(changeUnknown,state=>{if(state.a>0)return {...state,a:1};return {...state,b:1};}))});
+export const selectBoth=createSelector(feature.selectA,feature.selectB,(a,b)=>a+b);
+export const rootProviders=[provideStore(),provideState(feature)];
+@Component({selector:'app-root',template:'{{a()}} {{both()}}'}) export class Root {
+  store=inject(Store); a=this.store.selectSignal(feature.selectA);
+  both=this.store.selectSignal(selectBoth);
+  runA(){this.store.dispatch(changeA());}
+  runB(){this.store.dispatch(changeB());}
+  runUnknown(){this.store.dispatch(changeUnknown());}
+}
+`, ({context,catalog,expr}) => {
+  const graph=analyzeStore(context,catalog,{rootProviders:[expr('rootProviders')]});
+  const reducer=graph.reducers.find(item=>item.id.endsWith(':feature'));
+  assert(reducer?.registered);
+  assert.deepEqual(reducer.writesByAction[graph.actions.find(item=>item.id.endsWith(':changeA')).id],['a']);
+  assert.deepEqual(reducer.writesByAction[graph.actions.find(item=>item.id.endsWith(':changeB')).id],['b']);
+  assert.equal(reducer.writesByAction[graph.actions.find(item=>item.id.endsWith(':changeUnknown')).id],null);
+  const generated=graph.selectors.find(item=>item.id.endsWith('.selectA'));
+  const combined=graph.selectors.find(item=>item.id.endsWith(':selectBoth'));
+  assert.deepEqual(generated?.projectedKeys,['a']);
+  assert.deepEqual(generated?.dependencies,['pair']);
+  assert(combined?.dependencies.includes(generated.id));
+  const owner=[...catalog.declarations.values()].find(item=>item.className==='Root');
+  const a=traceStoreDispatch(context,graph,owner,'runA');
+  const b=traceStoreDispatch(context,graph,owner,'runB');
+  assert(a.steps.some(step=>step.kind==='reactive-link'&&step.source===generated.id));
+  assert(b.steps.some(step=>step.kind==='reactive-link'&&step.source===generated.id&&
+    step.conditions.includes('selected projection must change for a new emitted value')));
+}));
+
+test('a shorthand reducer imported into a feature map keeps its original declaration', async () => fixture(`
+import {Component,inject} from '@angular/core';
+import {Store,provideStore,provideState} from '@ngrx/store';
+import {change} from './actions';
+import {leaf} from './leaf';
+export const reducers={leaf};
+export const rootProviders=[provideStore(),provideState('nested',reducers)];
+@Component({selector:'app-root',template:''}) export class Root {
+  store=inject(Store); run(){this.store.dispatch(change());}
+}
+`, ({context,catalog,expr}) => {
+  const graph=analyzeStore(context,catalog,{rootProviders:[expr('rootProviders')]});
+  const reducer=graph.reducers.find(item=>item.id.endsWith(':leaf'));
+  assert(reducer?.registered);
+  assert.equal(reducer.feature,'nested');
+  const owner=[...catalog.declarations.values()].find(item=>item.className==='Root');
+  const trace=traceStoreDispatch(context,graph,owner,'run');
+  assert(trace.steps.some(step=>step.kind==='action-consume'&&step.target===reducer.id));
+}, {
+  'actions.ts': `import {createAction} from '@ngrx/store';
+export const change=createAction('[Nested] Change');`,
+  'leaf.ts': `import {createReducer,on} from '@ngrx/store';
+import {change} from './actions';
+export const leaf=createReducer({flag:false},on(change,state=>({...state,flag:true})));`,
 }));
 
 test('effect success and error actions keep branch conditions; latest read stays background', async () => fixture(`

@@ -24,6 +24,7 @@
     "check:dist": "node scripts/check-dist.mjs",
     "check:install": "node scripts/check-install.mjs",
     "check:smoke": "node scripts/smoke-dist.mjs",
+    "check:clearml": "node scripts/check-clearml-regression.mjs",
     "measure": "node scripts/measure-performance.mjs"
   },
   "dependencies": {

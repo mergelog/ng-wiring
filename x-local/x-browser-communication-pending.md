@@ -1,21 +1,26 @@
 # ブラウザ通信経路検証の残件
 
-元計画: [_old/x-browser-communication-path-verification-plan.md](_old/x-browser-communication-path-verification-plan.md)。完了済みの A01 と過去の実績は元計画に保存した。このファイルは続く29パターンの実施状況、分類レビュー、残件を記録する。共通手順は [x-browser-verification-procedure.md](x-browser-verification-procedure.md) を参照。2026-09-26時点で未完了のパターンはA03。
+元計画: [_old/x-browser-communication-path-verification-plan.md](_old/x-browser-communication-path-verification-plan.md)。完了済みの A01 と過去の実績は元計画に保存した。このファイルは続く29パターンの実施状況、分類レビュー、残件を記録する。共通手順は [x-browser-verification-procedure.md](x-browser-verification-procedure.md) を参照。2026-10-04にA03の実操作まで確認し、30パターンの実例確認を終えた。解析上の残件は下記「回帰候補」に示す。
 
 - デグレ確認を怠らないこと。
+
+2026-10-04 回帰再確認: [`x-regression-verification-tasks.md`](x-regression-verification-tasks.md) の P0 fixture と [`../scripts/check-clearml-regression.mjs`](../scripts/check-clearml-regression.mjs) を追加。実プロジェクトの simple レポートは [`A02/D01`](tmp/clearml-regression/A02-D01.md)、[`C03/D02`](tmp/clearml-regression/C03-D02.md)、[`D05`](tmp/clearml-regression/D05.md) に保存した。A02 は `workers.get_activity_report`、C03 は `tasks.get_all_ex` / `models.get_all_ex` に到達し、`projects.get_all_ex` は空 project では実行しない条件付き候補と明示した。D05 は `compareHeader` reducer の登録を解決し、操作起点の HTTP は探索範囲で未検出。ブラウザ観測は [`x-browser-verification-history.md`](x-browser-verification-history.md) の同日 A02/C03/D01/D02/D05 と照合した。全30パターンの下記完了条件は引き続き未完了。
 
 ## A. Angular Material と CDK overlay（残り4件）
 - [x] **A02 / P1: `mat-select` の overlay option 選択から再取得通信**
   trigger はコンポーネント配下、`mat-option` は `body > .cdk-overlay-container` 配下になる経路を対象にする。`selectionChange` / form value change → handler → store → HTTP が、DOM の親子関係が切れることで失われないかを確認する。
   - 2026-09-26 実施: Workers の期間を `3 Hours` → `6 Hours` に変更。selector一致1件。Networkで `workers.get_all` / `workers.get_activity_report` の再要求を確認（200）。simpleレポートは `setStatsParams` から reducer の `provideState` 登録未検出で停止し、通信未検出と表示。実行時とは不一致。履歴と `ngwi-18-WorkersStatsComponent.name=time-frame-260926.182921.md` を参照。
+  - 2026-10-04 再検証: 現行の登録解決では reducer に到達。selector 購読から `getWorkerStats`、`WorkersEffects.getStats$`、`workers.get_activity_report` までの simple 経路を修正・照合した。CLI は他の解析境界により exit 5 のまま。詳細は検証履歴の同日 A02 / D01 を参照。
 
-- [ ] **A03 / P1: `mat-autocomplete` の候補選択から API 呼出し**
+- [x] **A03 / P1: `mat-autocomplete` の候補選択から API 呼出し**
   入力による候補取得と、overlay 内 `mat-option` の `optionSelected` による確定後処理を別イベントとして検証する。`displayWith`、async options、FormControl の中間層で通信起点を取り違えないかを見る。
   - 2026-09-26 部分実施: Clone Task の Project autocomplete で入力候補を取得し、既存プロジェクトを選択後Cancel。候補検索は `projects.get_all_ex` (200) と照合。Clone確定後は新規タスク作成を伴うため未実施。安全な別autocomplete候補も調査したが、option選択後の通信を起こすものは保存・作成等の変更操作を伴い、読み取り専用の代替は見つからなかった。simpleレポートは候補取得経路を表示するがexit 5。検証用タスクと作成操作の許可を得た後に再開する。履歴と `ngwi-20-CloneDialogComponent.formcontrolname=project-260926.183955.md` を参照。
+  - 2026-10-04 再検証: 現存する `p20260927` の `task_2` から Clone ダイアログを開き、Project に `p2026` を入力して overlay の既存 `p20260927` option を選択。候補検索の `projects.get_all_ex` は200、選択後は FormControl 値の確定のみで `tasks.clone` は発生しなかった。selectorは1件。続いて許可済みの検証名 `ngwi-a03-verify-20261004` で Clone を確定すると `tasks.clone` 200、新規 task detail への遷移を確認。作成した ID だけを Archive → Delete し、`tasks.delete_many` 200 と元の `task_2` の存続を確認。ファイルサーバーのartifact削除は無効にした。simple は入力検索から `projects.get_all_ex` まで表示する一方、CloneButton 起点では無関係な `users.set_preferences` を結合し、`tasks.clone` を表示できない（双方 exit 5）。検証履歴の同日 A03 を参照。
 
 - [x] **A04 / P1: `MatDialog.open()` → dialog action → `afterClosed()` → 通信**
   親画面の open 操作、dialog 内の confirm、`MatDialogRef.close(result)`、呼出し元の `afterClosed()`、dispatch / service を一本にできるか確認する。別 overlay subtree、DI token、Observable callback が主な停止候補。
   - 2026-09-26 実施: Compare Tasks の追加ダイアログで既存タスクを追加して APPLY。`afterClosed()` 後に比較URLが3件へ更新され、`tasks.get_all_ex` が再取得（200）。simpleレポートは `openAddExperimentSearch()` で停止し通信未検出、実行時とは不一致。履歴と `ngwi-21-ExperimentCompareHeaderComponent.data-id=addExperimentButton-260926.184134.md` を参照。
+  - 2026-10-04 再検証: 現存する `p20260927` の2タスク比較から `error_test` を追加。URLは3件になり `tasks.get_all_ex` は200、selectorは1件、コンソールエラーなし。simple は exit 5 で click の先を表示できない。解析境界を含む場合に「通信有無は未確定」と表示する修正を加えたが、`afterClosed()` → URL → HTTP の結合は未解決。ダイアログの APPLY は `(click)` ではなく、実際に解決された `MatDialogClose` directive の `[mat-dialog-close]` を使用する。これを操作起点として生成できないことが追加の停止点。検証履歴の同日 A04 を参照。
 
 - [x] **A05 / P2: `mat-menu` trigger → menu item → dispatch / route / HTTP**
   `matMenuTriggerFor` と overlay 内 `mat-menu-item` の投影関係を確認する。menu item の click が呼出し元 component の処理へ戻る場合と、route 遷移だけで終わる場合を区別する。
@@ -54,6 +59,7 @@
 - [x] **C03 / P1: Reactive Forms の `ngSubmit` → validation → API**
   submit button / form を起点に、valid の正常分岐だけを通って、form value → component method → action / service → HTTP → dialog close / success notification までを確認する。invalid 分岐は主経路へ展開しない。
   - 2026-09-26 実施: Data Catalog の Name contains に `semiconductor` を入力して Apply。validな `ngSubmit` → `apply()` → `filterChange` → 親 `applyFilter` → `filterChanged` dispatch 後、一覧が絞られ、`tasks.get_all_ex` / `models.get_all_ex` が200。button selectorは1件。simpleレポートはdispatch後のeffect/APIを結合できず終了コード5。履歴と `ngwi-25-CatalogFiltersComponent.data-id=catalogApply-260926.191650.md` を参照。
+  - 2026-10-04 再検証: D02と同じ Apply 操作で、NgRx dispatch 以降の URL と一覧 HTTP を simple に接続。CLI は partial。後続の回帰修正で project lookup に `else of name === ''` の条件を表示した。検証履歴の同日 C03 / D02 を参照。
 
 - [x] **C04 / P2: signal `input()` / `model()` の変更 → 親子双方向処理 → 通信**
   signal input、model output、computed を挟む UI を探し、値の変化が親 component の通信起点へ届くか確認する。通常の `@Input` / `@Output` と同じ形だと推測して誤接続しないことも判定する。
@@ -67,10 +73,12 @@
 - [x] **D01 / P1: action creator dispatch → class-based effect → generated API service**
   `store.dispatch(actionCreator(...))` → `createEffect` → `ofType` → flattening operator → `Api*Service` → `HttpClient` の標準経路を検証する。`exportTaskButton` とは別 action を選び、既知修正の過適合を避ける。
   - 2026-09-26 実施: Workers の期間を `3 Hours` → `1 Day` に変更。期間変更後に `workers.get_all` / `workers.get_activity_report` の再要求（200）を確認。ソース上は `setStatsParams` dispatch と `WorkersEffects` の class effect があるが、simple は `workersReducer` の選択 injector での `provideState` 登録未検出を理由にdispatch直後で停止し、API未表示（終了コード5）。検出失敗。`ngwi-30-WorkersStatsComponent.name=time-frame-260926.210441.md`。
+  - 2026-10-04 同じ Workers の経路を再検証し、reducer → selector 購読 → 再 dispatch → class effect → API を simple に表示できた。実行時の `workers.get_activity_report` (200) と一致。レポートは partial のため D01 全体の完了判定には使わない。
 
 - [x] **D02 / P1: `createActionGroup` の event dispatch → effect → HTTP**
   同じ group の複数 event が存在する経路を選び、正しい creator、consumer、effect だけが結合されるか確認する。表示名の正規化や property access による action 同定失敗を狙う。
   - 2026-09-26 実施: Data Catalog で Name contains に `semiconductor` を入力してApply。`filterChanged` → URL更新 → URLから `openList` → 一覧APIの実行後、対象一覧へ絞り込まれた。`dataCatalogActions` は複数eventを持つ `createActionGroup`。simple は `filterChanged` dispatchで停止し、後続のURL/effect/HTTPを接続せず（終了コード5）。Networkでは `tasks.get_all_ex` / `models.get_all_ex` のPOST 200を確認。`ngwi-29-CatalogFiltersComponent.data-id=catalogApply-260926.210113.md`。
+  - 2026-10-04 再検証: `filterChanged` → `syncUrl` → 同じ route の queryParams signal → constructor effect の `openList` → `loadList` → 一覧 API を simple に接続。別 route への遷移では再 dispatch しない fixture も追加。ブラウザでは Apply 後の tasks 2件 / models 1件の200を確認。後続の回帰修正で `projects.get_all_ex` に project 指定時のみの条件を表示した。CLI は partial。詳細は検証履歴の同日 C03 / D02 を参照。
 
 - [x] **D03 / P1: effect が別 action を返す多段チェーン**
   UI action → effect A → success / follow-up action → effect B → HTTP または主要副作用を追う。simple 版では正常系一本だけを表示し、failure action や error notification を混ぜない。
@@ -82,7 +90,7 @@
 
 - [x] **D05 / P2: dispatch → reducer / selector / signal 表示更新のみで通信なし**
   HTTP を行わない表示切替や selection 操作を意図的に選ぶ。action と reducer が存在するだけで無関係な effect / HTTP を結ばず、「通信なしを確認」と正しく判定できる反例にする。
-  - 2026-09-26 再確認: 別タブの Compare Tasks で `Hide Identical Fields` を ON/OFF。`mat-slide-toggle` は1件。行表示は切り替わり、ソース上も `setHideIdenticalFields` → reducer → selector購読による表示更新のみで、対応するHTTP effectはない。前後に発生した `tasks.get_all_ex` は約10秒間隔の定期更新で、いずれも `only_fields: ["last_change"]` の同じ要求。toggle起点の追加要求は観測せず、**通信なしを確認**へ分類。simple は reducer registration を未解決としてdispatch後に停止（終了コード5）。比較表示はOFFへ戻した。レポート: `ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md`。詳細は履歴参照。
+  - 2026-09-26 再確認: 別タブの Compare Tasks で `Hide Identical Fields` を ON/OFF。`mat-slide-toggle` は1件。行表示は切り替わり、ソース上も `setHideIdenticalFields` → reducer → selector購読による表示更新のみで、対応するHTTP effectはない。前後に発生した `tasks.get_all_ex` は約10秒間隔の定期更新で、いずれも `only_fields: ["last_change"]` の同じ要求。toggle起点の追加要求は観測せず、**通信なしを確認**へ分類。当時の simple は reducer registration を未解決としてdispatch後に停止。後続の回帰修正で登録を解決し、HTTP は探索範囲で未検出と表示。比較表示はOFFへ戻した。旧レポート: `ngwi-31-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-260926.210639.md`。詳細は履歴参照。
 
 ## E. Angular Signals / NgRx SignalStore（5件）
 - [x] **E01 / P1: `signalStore` の `withMethods` → injected API service → HTTP**
@@ -128,14 +136,13 @@
 
 ## 実施順
 - [x] **第1巡: P1 の非破壊操作** — A02/A04、B01-B04、C01-C03、D01-D03、E01-E02、F01-F03で実施。
-- [x] **第1巡: P1 の非破壊操作** — A02/A04、B01-B04、C01-C03、D01-D03、E01-E02、F01-F03で実施。
-- [ ] **第2巡: P1 の残件** — A03の選択確定後を残す。Cloneの確定はタスク作成を伴うため、専用テストデータと操作許可が揃うまで未実施。
-- [x] **第3巡: P2 / P3** — 実例または対象なしの確認を実施。D05/E05は通信なし、A03/F05は未確定、B05/D04/E03/E04は対象なし。
+- [x] **第2巡: P1 の残件** — A03の候補選択とClone確定を実施し、作成物の削除まで確認。
+- [x] **第3巡: P2 / P3** — 実例または対象なしの確認を実施。D05/E05は通信なし、F05は未確定、B05/D04/E03/E04は対象なし。
 - [x] **分類レビュー** — 30件を下記「分類レビュー」に整理。
 - [x] **回帰候補選定** — 同一の解析停止をまとめ、下記「回帰候補」に最小 fixture と ClearML 代表を記録。実装は別タスク。
 
 ## 完了条件
-- [ ] 30パターンすべてが、完了または根拠付きの「対象なし」になっている。
+- [x] 30パターンすべてが、完了または根拠付きの「対象なし」になっている。
 - [ ] 各実施項目で DOM selector の一意性を確認している。
 - [ ] 各実施項目で simple レポートと実行時挙動を独立に判定している。
 - [ ] 通信が表示されない項目を「通信なし」「通信有無は未確定」「通信経路の結合失敗」に分類している。
@@ -151,15 +158,17 @@
 | --- | ---: | --- |
 | 成功 | 2 | A01, A05 |
 | 通信なしを確認 | 2 | D05, E05 |
-| 通信有無は未確定 | 2 | A03, F05 |
-| 通信経路の結合失敗 | 20 | A02, A04, B01-B04, C01-C05, D01-D03, E01-E02, F01-F04 |
+| 通信有無は未確定 | 1 | F05 |
+| 主要経路を再照合（全体 partial） | 4 | A02, C03, D01-D02 |
+| 通信経路の結合失敗 | 17 | A03-A04, B01-B04, C01-C02, C04-C05, D03, E01-E02, F01-F04 |
 | 対象なし | 4 | B05, D04, E03-E04 |
 
 - A01/A05は実行時のHTTPと主要終点がsimple経路に対応した。A05は目的の経路を出力したが、CLI終了コードは5。
+- A02/C03/D01/D02は停止していた主要経路を再照合した。CLIはexit 5。C03/D02の `projects.get_all_ex` は project 名が空なら実行しない条件を現在の simple に明記した。
 - D05/E05は表示変更を実行し、操作起点のHTTPがないことをソースとNetworkの両方で確認した。D05には独立した定期更新が並行する。
-- A03は候補検索とFormControl値確定まで。Clone確定は新規タスクを作るため未実施で、選択確定後の通信は未観測。
+- A03は入力検索、option選択、Clone確定、新規タスクへの遷移、Archive/Deleteをブラウザで確認した。simple は検索要求を表示するが、CloneButton 起点では `tasks.clone` を欠き、無関係な `users.set_preferences` を表示する。
 - F05はHTTP通信自体はあったが、動的な配列member選択と別起点の結果ロードAPIとの因果を結べなかったため未確定。
-- 残る20件は実行時通信または副作用を確認した一方、simple経路に誤接続・早期停止・必要な終点の欠落がある。個別根拠は各項目と履歴を参照。
+- 残る17件は実行時通信または副作用を確認した一方、simple経路に誤接続・早期停止・必要な終点の欠落がある。個別根拠は各項目と履歴を参照。
 
 ## 回帰候補
 
@@ -167,7 +176,7 @@
 | --- | --- | --- | --- |
 | `provideState` / route injectorを越えたreducer・effect登録解決 | A02, D01, D05 | route provider登録のStoreでdispatchし、class effectから生成APIへ進む例。reducer-only actionにはHTTP edgeを作らない負例も含める | Workersの期間変更（A02/D01）、Compare TasksのHide Identical Fields（D05） |
 | `createActionGroup` eventとfollow-up actionの対応付け | D02, D03 | 同一groupの複数eventを持つeffectと、成功actionから次effectへ進む二段チェーン | Data Catalogのfilter適用（D02）と詳細・lineage読込（D03） |
-| overlay callback / `afterClosed()` と親処理の接続 | A03, A04 | Material dialog/autocompleteのoverlay option、FormControl、`afterClosed()`を含む読み取り専用fixture | Compare Tasksの追加ダイアログ（A04）。A03はClone確定操作の許可後に追加 |
+| overlay callback / `afterClosed()` と親処理の接続 | A03, A04 | Material dialog/autocompleteのoverlay option、FormControl、`afterClosed()`を含む読み取り専用fixture | Clone TaskのProject選択・確定（A03）、Compare Tasksの追加ダイアログ（A04） |
 | PrimeNG template/output/callbackの所有元追跡 | B01-B04, C02 | `pTemplate`、projected `TemplateRef`、`MenuItem.command`をそれぞれ独立に小さく再現 | Tasks一覧の行double-click（B01）、context menu Export（B04）、nested project card（C02） |
 | directive / library eventから親handlerへの接続 | B02-B03, C05 | `p-table` sort/filter outputとIntersectionObserver経由のdirective outputを分けて用意 | Tasks一覧のsort/filter（B02）とlazy load（B03/C05） |
 | signal model/output・Reactive Formsからstore更新への接続 | C01, C03-C04 | output alias、valid `ngSubmit`、signal `model()`の3ケースを個別fixture化 | Projects card選択（C01）、Catalog Apply（C03）、ADD METRIC（C04） |
@@ -176,4 +185,4 @@
 | API wrapper endpointおよび正常応答後の副作用 | F01, A05 | `${basePath}`を使う生成wrapperとdownload/success通知までの正常系 | `projects.get_unique_metric_variants`（F01）、Task Export（A05） |
 | HTTPを作らないローカルstate更新の負例 | D05, E05 | reducer-only actionとcomputed/local signal更新。無関係なtimer通信を区別できるNetwork assertionを分離 | Compare Tasks toggle（D05）、Scalar検索（E05） |
 
-実装対象はこのレビューでは変更しない。A03はClone作成を許可された検証データで実行できるまで完了扱いにしない。
+このレビューで挙げた経路改善は別途実装する。A03の検証用Cloneは削除済み。

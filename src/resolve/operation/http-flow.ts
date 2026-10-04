@@ -481,35 +481,111 @@ function traceHttpFromRoot(context: AnalysisContext, catalog: HttpCatalog,
         parameterValues.set(parameter.name.text, argumentsAtCall[position]!);
       });
     const container = t.findAncestor(declaration, t.isClassDeclaration) ?? inheritedContainer;
-    for (const site of requestsIn(body)) {
-      const node = index.get(site.id) ?? declaration;
-      const urlArgument = t.isCallExpression(node) && node.arguments[0];
-      const boundUrl = urlArgument && t.isIdentifier(urlArgument) ? parameterValues.get(urlArgument.text) : undefined;
-      const effective = boundUrl ? { ...site, url: resolveUrl(context, boundUrl) } : site;
-      const flow = resolveHttpStart(context, effective, options, index, new Set(path));
-      const flowIndex = flows.length;
-      flows.push(flow);
-      const target = `${effective.method} ${effective.url.text ?? '(unresolved URL)'}`;
-      add('http-create', receiver, target, node, path,
-        [...conditions, ...effective.conditions, ...flow.consumption.conditions],
-        effective.url.status === 'static' ? null : effective.url.reason, flowIndex);
-      for (const type of site.types)
-        add('type-use', target, type.id, node, path, conditions,
-          `${type.role} type read from the ${type.origin.replaceAll('-', ' ')}`, flowIndex);
-      if (flow.start === 'confirmed')
-        add('http-consume', target, flow.consumption.kind, node, path,
-          [...conditions, ...flow.consumption.conditions, ...flow.consumption.registration],
-          flow.consumption.branches.map(item => item.effect).join('; ') || 'no branch operator was found on this pipeline', flowIndex);
-      else add('boundary', target, 'request candidate', node, path,
-        [...conditions, ...flow.consumption.conditions], flow.reason, flowIndex);
-      diagnostics.push(...effective.gaps, ...flow.consumption.gaps);
-    }
+    const requestSites = new Map(requestsIn(body).map(site => [site.id, site]));
+    const literal = (expression: ts.Expression, seen = new Set<string>()): { known: boolean; value?: unknown } => {
+      if (expression.kind === t.SyntaxKind.TrueKeyword) return { known: true, value: true };
+      if (expression.kind === t.SyntaxKind.FalseKeyword) return { known: true, value: false };
+      if (expression.kind === t.SyntaxKind.NullKeyword) return { known: true, value: null };
+      if (t.isStringLiteralLike(expression)) return { known: true, value: expression.text };
+      if (t.isNumericLiteral(expression)) return { known: true, value: Number(expression.text) };
+      if (t.isParenthesizedExpression(expression)) return literal(expression.expression, seen);
+      if (t.isIdentifier(expression)) {
+        if (expression.text === 'undefined') return { known: true, value: undefined };
+        if (seen.has(expression.text)) return { known: false };
+        const bound = parameterValues.get(expression.text);
+        return bound ? literal(bound, new Set([...seen, expression.text])) : { known: false };
+      }
+      return { known: false };
+    };
+    const truth = (expression: ts.Expression, seen = new Set<string>()): boolean | null => {
+      const known = literal(expression, seen);
+      if (known.known) return Boolean(known.value);
+      if (t.isParenthesizedExpression(expression)) return truth(expression.expression, seen);
+      if (t.isBinaryExpression(expression) &&
+        [t.SyntaxKind.EqualsEqualsEqualsToken, t.SyntaxKind.ExclamationEqualsEqualsToken].includes(
+          expression.operatorToken.kind)) {
+        const left = literal(expression.left, seen);
+        const right = literal(expression.right, seen);
+        if (left.known && right.known)
+          return expression.operatorToken.kind === t.SyntaxKind.EqualsEqualsEqualsToken
+            ? left.value === right.value : left.value !== right.value;
+      }
+      if (t.isPrefixUnaryExpression(expression) && expression.operator === t.SyntaxKind.ExclamationToken) {
+        const value = truth(expression.operand, seen);
+        return value === null ? null : !value;
+      }
+      if (t.isIdentifier(expression)) {
+        if (expression.text === 'undefined') return false;
+        if (seen.has(expression.text)) return null;
+        const bound = parameterValues.get(expression.text);
+        return bound ? truth(bound, new Set([...seen, expression.text])) : null;
+      }
+      return null;
+    };
+    const alwaysReturns = (node: ts.Node): boolean => {
+      if (t.isReturnStatement(node) || t.isThrowStatement(node)) return true;
+      if (t.isBlock(node)) return !!node.statements.length && alwaysReturns(node.statements.at(-1)!);
+      if (t.isIfStatement(node))
+        return !!node.elseStatement && alwaysReturns(node.thenStatement) && alwaysReturns(node.elseStatement);
+      return false;
+    };
     const visit = (node: ts.Node, localConditions: string[], currentPath: string[] = path): void => {
       if (expanded > LIMIT) return;
+      if (t.isBlock(node)) {
+        let followingConditions = localConditions;
+        for (const statement of node.statements) {
+          visit(statement, followingConditions, currentPath);
+          if (alwaysReturns(statement)) break;
+          if (!t.isIfStatement(statement)) continue;
+          const thenReturns = alwaysReturns(statement.thenStatement);
+          const elseReturns = !!statement.elseStatement && alwaysReturns(statement.elseStatement);
+          const value = truth(statement.expression);
+          if (thenReturns && value === true || elseReturns && value === false) break;
+          if (thenReturns && value === null)
+            followingConditions = [...followingConditions, `else of ${statement.expression.getText()}`];
+          if (elseReturns && value === null)
+            followingConditions = [...followingConditions, `if ${statement.expression.getText()}`];
+        }
+        return;
+      }
+      if (t.isCallExpression(node) && requestSites.has(location(context, node))) {
+        const site = requestSites.get(location(context, node))!;
+        const urlArgument = node.arguments[0];
+        const boundUrl = urlArgument && t.isIdentifier(urlArgument) ? parameterValues.get(urlArgument.text) : undefined;
+        const effective = boundUrl ? { ...site, url: resolveUrl(context, boundUrl) } : site;
+        const flow = resolveHttpStart(context, effective, options, index, new Set(currentPath));
+        const flowIndex = flows.length;
+        flows.push(flow);
+        const target = `${effective.method} ${effective.url.text ?? '(unresolved URL)'}`;
+        add('http-create', receiver, target, node, currentPath,
+          [...localConditions, ...effective.conditions, ...flow.consumption.conditions],
+          effective.url.status === 'static' ? null : effective.url.reason, flowIndex);
+        for (const type of site.types)
+          add('type-use', target, type.id, node, currentPath, localConditions,
+            `${type.role} type read from the ${type.origin.replaceAll('-', ' ')}`, flowIndex);
+        if (flow.start === 'confirmed')
+          add('http-consume', target, flow.consumption.kind, node, currentPath,
+            [...localConditions, ...flow.consumption.conditions, ...flow.consumption.registration],
+            flow.consumption.branches.map(item => item.effect).join('; ') ||
+              'no branch operator was found on this pipeline', flowIndex);
+        else add('boundary', target, 'request candidate', node, currentPath,
+          [...localConditions, ...flow.consumption.conditions], flow.reason, flowIndex);
+        diagnostics.push(...effective.gaps, ...flow.consumption.gaps);
+      }
       if (t.isIfStatement(node)) {
-        visit(node.thenStatement, [...localConditions, `if ${node.expression.getText()}`], currentPath);
-        if (node.elseStatement)
+        const value = truth(node.expression);
+        if (value !== false)
+          visit(node.thenStatement, [...localConditions, `if ${node.expression.getText()}`], currentPath);
+        if (value !== true && node.elseStatement)
           visit(node.elseStatement, [...localConditions, `else of ${node.expression.getText()}`], currentPath);
+        return;
+      }
+      if (t.isConditionalExpression(node)) {
+        const value = truth(node.condition);
+        if (value !== false)
+          visit(node.whenTrue, [...localConditions, `if ${node.condition.getText()}`], currentPath);
+        if (value !== true)
+          visit(node.whenFalse, [...localConditions, `else of ${node.condition.getText()}`], currentPath);
         return;
       }
       if (t.isTryStatement(node)) {

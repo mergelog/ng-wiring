@@ -5,6 +5,7 @@ import { getProperty, idForClass, unwrap } from '../../index/catalog.js';
 import { location } from './reactive.js';
 import { tokenId } from './di.js';
 import { importedApi } from './reactive.js';
+import { rxjsExport } from './http.js';
 import { ScopeResolver } from '../scope/index.js';
 import { lazyTarget, type BootstrapOccurrence, type RouteGraph, type RouteOccurrence } from '../view/routes.js';
 
@@ -12,17 +13,20 @@ export interface StoreRegistration { kind: 'root' | 'feature' | 'effects'; scope
   key: string | null; target: string | null; source: string; conditions: string[]; status: 'resolved' | 'boundary' }
 export interface StoreAction { id: string; type: string | null; source: string }
 export interface StoreReducer { id: string; feature: string | null; actions: string[]; source: string;
-  registered: boolean; conditions: string[] }
+  registered: boolean; conditions: string[]; writesByAction: Record<string, string[] | null> }
 export interface StoreEffect { id: string; owner: string | null; listens: string[]; emits: string[];
   explicitDispatches: string[]; emissionConditions: Record<string,string[]>;
   dispatch: boolean; functional: boolean; registered: boolean; source: string; conditions: string[]; gaps: string[] }
-export interface StoreSelector { id: string; dependencies: string[]; source: string }
+export interface StoreSelector { id: string; dependencies: string[]; source: string; projectedKeys: string[] | null }
 export interface StoreConsumer { id: string; selector: string; owner: string; kind: 'select' | 'selectSignal' | 'template';
   source: string; active: boolean; conditions: string[] }
 export interface StoreComputed { id: string; owner: string; from: string; source: string; active: boolean;
   conditions: string[] }
+export interface StoreSubscription { id: string; owner: string; selectors: string[];
+  dispatches: { action: string; source: string }[]; conditions: string[] }
 export interface StoreGraph { registrations: StoreRegistration[]; actions: StoreAction[]; reducers: StoreReducer[];
   effects: StoreEffect[]; selectors: StoreSelector[]; consumers: StoreConsumer[]; computeds: StoreComputed[];
+  subscriptions: StoreSubscription[];
   diagnostics: string[] }
 export interface StoreInputs { rootProviders: ts.Expression[]; routeProviders?: ts.Expression[];
   modules?: ts.ClassDeclaration[]; routeModules?: ts.ClassDeclaration[] }
@@ -166,7 +170,9 @@ function featureReducerLeaves(context: AnalysisContext, expression: ts.Expressio
   for (const property of node.properties) {
     if (t.isPropertyAssignment(property)) leaves.push(...featureReducerLeaves(context, property.initializer, active));
     else if (t.isShorthandPropertyAssignment(property)) {
-      const value = context.checker.getShorthandAssignmentValueSymbol(property)?.valueDeclaration;
+      let resolved = context.checker.getShorthandAssignmentValueSymbol(property);
+      if (resolved && resolved.flags & t.SymbolFlags.Alias) resolved = context.checker.getAliasedSymbol(resolved);
+      const value = resolved?.valueDeclaration ?? resolved?.declarations?.[0];
       const initializer = value && t.isVariableDeclaration(value) ? value.initializer : undefined;
       if (initializer && t.isObjectLiteralExpression(definition(context, initializer)))
         leaves.push(...featureReducerLeaves(context, initializer, active));
@@ -198,8 +204,13 @@ function actionId(context: AnalysisContext, expression: ts.Expression): string {
   if (t.isPropertyAccessExpression(node) && t.isIdentifier(node.expression)) {
     const group = symbol(context, node.expression)?.valueDeclaration;
     if (group && t.isVariableDeclaration(group) && group.initializer &&
-      t.isCallExpression(group.initializer) && callName(context, group.initializer, 'createActionGroup', 'store'))
-      return `${tokenId(context, group.name)}:${node.name.text}`;
+      t.isCallExpression(group.initializer)) {
+      if (callName(context, group.initializer, 'createActionGroup', 'store'))
+        return `${tokenId(context, group.name)}:${node.name.text}`;
+      if (callName(context, group.initializer, 'createFeature', 'store') &&
+        /^select[A-Z]/.test(node.name.text))
+        return `${tokenId(context, group.name)}.${node.name.text}`;
+    }
   }
   return tokenId(context, node);
 }
@@ -212,6 +223,58 @@ function expressions(context: AnalysisContext, node: ts.Node, predicate: (call: 
   };
   visit(node);
   return result;
+}
+function projectedKey(context: AnalysisContext, expression: ts.Expression | undefined): string | null {
+  if (!expression) return null;
+  const t = context.toolchain.typescript;
+  const callback = unwrap(t,expression);
+  if (!t.isArrowFunction(callback) && !t.isFunctionExpression(callback)) return null;
+  const parameter = callback.parameters[0]?.name;
+  if (!parameter || !t.isIdentifier(parameter) || t.isBlock(callback.body)) return null;
+  const body = unwrap(t,callback.body);
+  if (t.isPropertyAccessExpression(body) && t.isIdentifier(body.expression) &&
+    body.expression.text === parameter.text) return body.name.text;
+  if (t.isElementAccessExpression(body) && t.isIdentifier(body.expression) &&
+    body.expression.text === parameter.text && t.isStringLiteralLike(body.argumentExpression))
+    return body.argumentExpression.text;
+  return null;
+}
+function reducerWrites(context: AnalysisContext, call: ts.CallExpression): Record<string, string[] | null> {
+  const t = context.toolchain.typescript;
+  const result: Record<string, string[] | null> = {};
+  for (const argument of call.arguments.slice(1)) {
+    const on = definition(context,argument);
+    if (!t.isCallExpression(on) || !callName(context,on,'on','store')) continue;
+    const callback = on.arguments.at(-1);
+    const body = callback && (t.isArrowFunction(callback) || t.isFunctionExpression(callback)) ? callback.body : null;
+    const returned = body && t.isBlock(body)
+      ? body.statements.length === 1 && t.isReturnStatement(body.statements[0]) ? body.statements[0].expression : null
+      : body;
+    const value = returned ? unwrap(t,returned) : null;
+    const stateParameter = callback && (t.isArrowFunction(callback) || t.isFunctionExpression(callback)) &&
+      callback.parameters[0] && t.isIdentifier(callback.parameters[0].name)
+      ? callback.parameters[0].name.text : null;
+    const knownProperties = value && t.isObjectLiteralExpression(value) && value.properties.every(property =>
+      t.isPropertyAssignment(property) && (t.isIdentifier(property.name) || t.isStringLiteralLike(property.name)) ||
+      t.isShorthandPropertyAssignment(property) ||
+      t.isSpreadAssignment(property) && t.isIdentifier(property.expression) &&
+        property.expression.text === stateParameter);
+    const keys = knownProperties && value && t.isObjectLiteralExpression(value) ? value.properties.flatMap(property =>
+      t.isPropertyAssignment(property) && (t.isIdentifier(property.name) || t.isStringLiteralLike(property.name))
+        ? [property.name.text] : t.isShorthandPropertyAssignment(property) ? [property.name.text] : []) : null;
+    for (const action of on.arguments.slice(0,-1)) {
+      const id = actionId(context,action);
+      const previous = result[id];
+      result[id] = keys === null || previous === null ? null : [...new Set([...(previous ?? []), ...keys])];
+    }
+  }
+  return result;
+}
+function storeReceiver(context: AnalysisContext, expression: ts.Expression): boolean {
+  const type = context.checker.getTypeAtLocation(expression);
+  const receiver = type.getSymbol();
+  return receiver?.getName() === 'Store' && !!receiver.declarations?.some(declaration =>
+    slash(declaration.getSourceFile().fileName).includes('/node_modules/@ngrx/store/'));
 }
 function register(context: AnalysisContext, input: ts.Expression, scope: StoreRegistration['scope'],
   output: StoreRegistration[], diagnostics: string[]): void {
@@ -306,6 +369,7 @@ export function analyzeStore(context: AnalysisContext, catalog: Catalog, inputs:
   const effects: StoreEffect[] = [];
   const consumers: StoreConsumer[] = [];
   const computeds: StoreComputed[] = [];
+  const subscriptions: StoreSubscription[] = [];
   const rootActive = registrations.some(reg => reg.kind === 'root' && reg.status === 'resolved');
   const readCache = new Map<string,{reads:Set<string>; asyncReads:Set<string>}>();
   const templateReads = (owner: Declaration): {reads:Set<string>; asyncReads:Set<string>} => {
@@ -369,17 +433,19 @@ export function analyzeStore(context: AnalysisContext, catalog: Catalog, inputs:
               type: `[${sourceName}] ${event.name.text}`, source: location(context, event) });
           }
         }
-        if (callName(context, call, 'createSelector', 'store'))
+        if (callName(context, call, 'createSelector', 'store')) {
+          const key = projectedKey(context,call.arguments.at(-1));
           selectors.push({ id: tokenId(context, node.name), dependencies: call.arguments.slice(0,-1).flatMap(arg => {
             const value = [actionId(context,arg)];
             const body = t.isArrowFunction(arg) || t.isFunctionExpression(arg) ? arg.body : arg;
             if (t.isPropertyAccessExpression(body)) value.push(body.name.text);
             return value;
           }),
-            source: location(context,node) });
+            source: location(context,node), projectedKeys:key ? [key] : null });
+        }
         if (callName(context, call, 'createFeatureSelector', 'store'))
           selectors.push({ id:tokenId(context,node.name), dependencies:stringValue(context,call.arguments[0]) ?
-            [stringValue(context,call.arguments[0])!] : [], source:location(context,node) });
+            [stringValue(context,call.arguments[0])!] : [], source:location(context,node), projectedKeys:null });
         if (callName(context, call, 'createReducer', 'store')) {
           const handled = call.arguments.slice(1).flatMap(arg => {
             const on = definition(context, arg);
@@ -390,6 +456,7 @@ export function analyzeStore(context: AnalysisContext, catalog: Catalog, inputs:
           const matches = registrations.filter(reg => reg.kind !== 'effects' && reg.target === id);
           reducers.push({ id, feature: matches.find(reg => reg.kind === 'feature')?.key ?? null,
             actions: handled, source: location(context,node), registered: rootActive && matches.length > 0,
+            writesByAction:reducerWrites(context,call),
             conditions: [...matches.flatMap(reg => reg.conditions),
               ...(rootActive ? [] : ['root Store is not registered'])] });
         }
@@ -410,22 +477,37 @@ export function analyzeStore(context: AnalysisContext, catalog: Catalog, inputs:
             const matches = registrations.filter(reg => reg.kind === 'feature' && reg.target === id);
             reducers.push({ id, feature: feature ?? matches.find(reg => reg.kind === 'feature')?.key ?? null,
               actions: handled, source: location(context,reducerCall), registered: rootActive && matches.length > 0,
+              writesByAction:reducerWrites(context,reducerCall),
               conditions: [...matches.flatMap(reg => reg.conditions),
                 ...(rootActive ? [] : ['root Store is not registered'])] });
             if (feature) {
               selectors.push({ id:`${id}.select${feature[0]?.toUpperCase() ?? ''}${feature.slice(1)}`,
-                dependencies:[feature], source:location(context,call) });
+                dependencies:[feature], source:location(context,call), projectedKeys:null });
               const initial = reducerCall.arguments[0] && definition(context,reducerCall.arguments[0]);
               if (initial && t.isObjectLiteralExpression(initial)) for (const property of initial.properties) {
                 const key = t.isPropertyAssignment(property) &&
                   (t.isIdentifier(property.name) || t.isStringLiteralLike(property.name)) ? property.name.text : null;
                 if (!key) continue;
                 selectors.push({ id:`${id}.select${key[0]?.toUpperCase() ?? ''}${key.slice(1)}`,
-                  dependencies:[key], source:location(context,property) });
+                  dependencies:[feature], source:location(context,property), projectedKeys:[key] });
               }
             }
           }
         }
+      }
+      // A plain selector such as `state => state['workersAndQueues']` can be the
+      // first dependency of createSelector without using createFeatureSelector.
+      if (t.isVariableDeclaration(node) && node.initializer && t.isArrowFunction(node.initializer) &&
+        node.initializer.parameters.length === 1 && t.isIdentifier(node.initializer.parameters[0]!.name)) {
+        const body = t.isBlock(node.initializer.body) ? null : unwrap(t,node.initializer.body);
+        const parameter = node.initializer.parameters[0]!.name.text;
+        const feature = body && t.isPropertyAccessExpression(body) && t.isIdentifier(body.expression) &&
+          body.expression.text === parameter ? body.name.text :
+          body && t.isElementAccessExpression(body) && t.isIdentifier(body.expression) &&
+          body.expression.text === parameter && t.isStringLiteralLike(body.argumentExpression)
+            ? body.argumentExpression.text : null;
+        if (feature) selectors.push({ id:tokenId(context,node.name), dependencies:[feature],
+          source:location(context,node), projectedKeys:[feature] });
       }
       if (t.isCallExpression(node) && t.isPropertyAccessExpression(node.expression) &&
         ['select','selectSignal'].includes(node.expression.name.text)) {
@@ -484,6 +566,66 @@ export function analyzeStore(context: AnalysisContext, catalog: Catalog, inputs:
             'tracked selector signal read must change its projected value',
             ...(active ? [] : ['computed result has no confirmed template consumer'])] });
         if (active) consumer.active = true;
+      }
+    }
+  }
+  // Only an actual constructor/ngOnInit subscription in the selected component
+  // can turn a selector notification into another dispatch. A stored Observable
+  // is inert until one of these lifecycle sites subscribes to it.
+  for (const owner of catalog.declarations.values()) {
+    if (owner.kind !== 'component') continue;
+    for (const member of owner.node.members) {
+      const constructor = t.isConstructorDeclaration(member);
+      const onInit = t.isMethodDeclaration(member) && member.name.getText() === 'ngOnInit';
+      if ((!constructor && !onInit) || !member.body) continue;
+      const lifecycle = constructor ? 'constructor' : 'ngOnInit';
+      for (const subscribe of expressions(context,member.body,call =>
+        t.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'subscribe')) {
+        const receiver = (subscribe.expression as ts.PropertyAccessExpression).expression;
+        const source = t.isCallExpression(receiver) && t.isPropertyAccessExpression(receiver.expression) &&
+          receiver.expression.name.text === 'pipe' ? receiver.expression.expression : receiver;
+        const field = t.isPropertyAccessExpression(source) && source.expression.kind === t.SyntaxKind.ThisKeyword
+          ? owner.node.members.find(item => t.isPropertyDeclaration(item) && item.name.getText() === source.name.text)
+          : null;
+        const selectionSource = field && t.isPropertyDeclaration(field) && field.initializer
+          ? field.initializer : source;
+        const selected = expressions(context,selectionSource,call =>
+          t.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'select' &&
+          storeReceiver(context,call.expression.expression));
+        const selectors = [...new Set(selected.flatMap(call => call.arguments[0]
+          ? [actionId(context,call.arguments[0])] : []))];
+        if (!selectors.length) continue;
+        const dispatches = expressions(context,receiver,call =>
+          t.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'dispatch' &&
+          storeReceiver(context,call.expression.expression))
+          .concat(subscribe.arguments.flatMap(argument => expressions(context,argument,call =>
+            t.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'dispatch' &&
+            storeReceiver(context,call.expression.expression))))
+          .flatMap(call => call.arguments[0] ? [{ action:actionId(context,call.arguments[0]),
+            source:location(context,call) }] : [])
+          .filter(dispatch => actions.some(action => action.id === dispatch.action));
+        if (!dispatches.length) continue;
+        const pipeline = [receiver, selectionSource];
+        const filters = pipeline.flatMap(part => expressions(context,part,call => {
+          const callee = t.isPropertyAccessExpression(call.expression) ? call.expression.name : call.expression;
+          return importedApi(context,callee)?.name === 'filter';
+        })).filter(call => !!call.arguments[0]).map(call => `filter requires ${call.arguments[0]!.getText()}`);
+        const hasOperator = (name: string): boolean => pipeline.some(part => expressions(context,part,call => {
+          const callee = t.isPropertyAccessExpression(call.expression) ? call.expression.name : call.expression;
+          return (importedApi(context,callee)?.name ?? rxjsExport(context,callee)) === name;
+        }).length > 0);
+        const combined = hasOperator('combineLatest') || t.isCallExpression(selectionSource) &&
+          rxjsExport(context, t.isPropertyAccessExpression(selectionSource.expression)
+            ? selectionSource.expression.name : selectionSource.expression) === 'combineLatest';
+        const distinct = hasOperator('distinctUntilChanged');
+        const takeUntil = hasOperator('takeUntil') || hasOperator('takeUntilDestroyed');
+        subscriptions.push({ id:location(context,subscribe), owner:owner.id, selectors, dispatches,
+          conditions:[`component ${lifecycle} subscription must be active`,
+            ...(combined ? ['all combineLatest sources must emit at least once'] : []),
+            ...(selectors.length > 1 ? ['each selector is one input; other inputs may change independently'] : []),
+            ...(distinct ? ['distinctUntilChanged requires compared values to differ'] : []),
+            ...(takeUntil ? ['subscription ends when the takeUntil condition emits'] :
+              ['subscription may end on unsubscribe or component destruction']), ...filters] });
       }
     }
   }
@@ -570,5 +712,5 @@ export function analyzeStore(context: AnalysisContext, catalog: Catalog, inputs:
         ...(registrations.filter(reg => reg.kind === 'effects' && reg.target === owner).flatMap(reg => reg.conditions)),
         ...(dispatch ? ['returned action is automatically dispatched after emission'] : ['dispatch:false suppresses automatic dispatch'])], gaps });
   }
-  return { registrations, actions, reducers, effects, selectors, consumers, computeds, diagnostics };
+  return { registrations, actions, reducers, effects, selectors, consumers, computeds, subscriptions, diagnostics };
 }

@@ -123,6 +123,35 @@ function operationBranches(chain, edges, evidence, sources, predicates) {
     const consumes = all.filter(edge => edge.kind === 'action-consume');
     const requests = all.filter(edge => edge.kind === 'http-create');
     const calls = all.filter(edge => edge.kind === 'call');
+    const transitionKinds = new Set(['action-consume', 'state-write', 'state-read',
+        'reactive-link', 'action-dispatch']);
+    const outgoing = new Map();
+    for (const edge of all.filter(edge => transitionKinds.has(edge.kind)))
+        outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge]);
+    const reachableDispatches = (start) => {
+        const reached = [{ dispatch: start, bridge: [] }];
+        const queue = [{ node: start.to, bridge: [] }];
+        const seen = new Set([start.to]);
+        while (queue.length && seen.size < 256) {
+            const current = queue.shift();
+            if (current.bridge.length >= 12)
+                continue;
+            for (const edge of outgoing.get(current.node) ?? []) {
+                const bridge = [...current.bridge, edge];
+                // Stop at the first follow-up dispatch. Its effect is matched below by
+                // the consumed action and request provenance, not by another graph walk.
+                if (edge.kind === 'action-dispatch') {
+                    reached.push({ dispatch: edge, bridge });
+                    continue;
+                }
+                if (seen.has(edge.to))
+                    continue;
+                seen.add(edge.to);
+                queue.push({ node: edge.to, bridge });
+            }
+        }
+        return reached;
+    };
     const effectMemberAt = (file, line) => {
         const lines = sources.text(file)?.split(/\r?\n/).slice(0, line) ?? [];
         const declaration = [...lines].reverse().find(text => /\b[\w$]+\s*=\s*createEffect\s*\(/.test(text));
@@ -132,61 +161,66 @@ function operationBranches(chain, edges, evidence, sources, predicates) {
         const branch = predicates(dispatch.conditionId);
         const compatible = (edge) => branch.every(item => predicates(edge.conditionId).includes(item));
         const matching = requests.filter(compatible);
-        const consumers = consumes.filter(edge => edge.from === dispatch.to && compatible(edge));
         const linked = [];
-        for (const request of matching) {
-            const endpoint = /\/([\w.]+)$/.exec(value(request, 'urlExpression'))?.[1] ?? '';
-            const method = endpoint.replace(/\.([a-z])/g, (_, char) => char.toUpperCase());
-            const matchingConsumers = consumers.filter(item => {
-                const file = value(item, 'consumer').split('#')[0];
-                const member = value(item, 'consumer').split('#').at(-1);
-                const root = value(request, 'tracePath').split('\n')[0] ?? '';
-                const rootMatch = /^(.*):(\d+):(\d+)$/.exec(root);
-                if (rootMatch?.[1] === file && effectMemberAt(file, Number(rootMatch[2])) === member)
-                    return true;
-                const inEffect = evidence.get(request.evidenceIds[0] ?? '');
-                if (inEffect?.file === file && effectMemberAt(file, inEffect.startLine) === member)
-                    return true;
-                return !!method && calls.some(call => {
-                    const at = evidence.get(call.evidenceIds[0] ?? '');
-                    if (at?.file !== file || !value(call, 'callee').toLowerCase().endsWith(method.toLowerCase()))
-                        return false;
-                    const effect = effectMemberAt(file, at.startLine);
-                    return !effect || effect === member;
+        for (const reachable of reachableDispatches(dispatch))
+            for (const request of matching) {
+                const consumers = consumes.filter(edge => edge.from === reachable.dispatch.to && compatible(edge));
+                const endpoint = /\/([\w.]+)$/.exec(value(request, 'urlExpression'))?.[1] ?? '';
+                const method = endpoint.replace(/\.([a-z])/g, (_, char) => char.toUpperCase());
+                const matchingConsumers = consumers.filter(item => {
+                    const file = value(item, 'consumer').split('#')[0];
+                    const member = value(item, 'consumer').split('#').at(-1);
+                    const root = value(request, 'tracePath').split('\n')[0] ?? '';
+                    const rootMatch = /^(.*):(\d+):(\d+)$/.exec(root);
+                    if (rootMatch?.[1] === file && effectMemberAt(file, Number(rootMatch[2])) === member)
+                        return true;
+                    const inEffect = evidence.get(request.evidenceIds[0] ?? '');
+                    if (inEffect?.file === file && effectMemberAt(file, inEffect.startLine) === member)
+                        return true;
+                    return !!method && calls.some(call => {
+                        const at = evidence.get(call.evidenceIds[0] ?? '');
+                        if (at?.file !== file || !value(call, 'callee').toLowerCase().endsWith(method.toLowerCase()))
+                            return false;
+                        const effect = effectMemberAt(file, at.startLine);
+                        return !effect || effect === member;
+                    });
                 });
-            });
-            if (matchingConsumers.length === 1) {
-                const consume = matchingConsumers[0];
-                const effectFile = value(consume, 'consumer').split('#')[0];
-                const requestPath = value(request, 'tracePath');
-                const serviceCalls = calls.filter(call => {
-                    const at = evidence.get(call.evidenceIds[0] ?? '');
-                    const callPath = value(call, 'tracePath');
-                    return at?.file === effectFile && !!callPath &&
-                        (requestPath === callPath || requestPath.startsWith(`${callPath}\n`));
-                }).sort((a, b) => value(b, 'tracePath').length - value(a, 'tracePath').length);
-                const servicePath = value(serviceCalls[0] ?? request, 'tracePath');
-                const followups = calls.filter(call => {
-                    const at = evidence.get(call.evidenceIds[0] ?? '');
-                    if (at?.file !== effectFile || !predicates(call.conditionId).includes('successful source notification'))
-                        return false;
-                    const callPath = value(call, 'tracePath');
-                    if (servicePath && !(callPath === servicePath || callPath.startsWith(`${servicePath}\n`)))
-                        return false;
-                    const line = sources.line(at.file, at.startLine);
-                    return /\bdownloadObjectAsJson\s*\(/.test(line) || /\baddMessage\s*\(\s*['"]success['"]/.test(line);
-                }).sort((a, b) => (evidence.get(a.evidenceIds[0] ?? '')?.startLine ?? 0) -
-                    (evidence.get(b.evidenceIds[0] ?? '')?.startLine ?? 0));
-                linked.push({ dispatch, consume, request, serviceCall: serviceCalls[0], followups });
+                if (matchingConsumers.length === 1) {
+                    const consume = matchingConsumers[0];
+                    const effectFile = value(consume, 'consumer').split('#')[0];
+                    const requestPath = value(request, 'tracePath');
+                    const serviceCalls = calls.filter(call => {
+                        const at = evidence.get(call.evidenceIds[0] ?? '');
+                        const callPath = value(call, 'tracePath');
+                        return at?.file === effectFile && !!callPath &&
+                            (requestPath === callPath || requestPath.startsWith(`${callPath}\n`));
+                    }).sort((a, b) => value(b, 'tracePath').length - value(a, 'tracePath').length);
+                    const servicePath = value(serviceCalls[0] ?? request, 'tracePath');
+                    const followups = calls.filter(call => {
+                        const at = evidence.get(call.evidenceIds[0] ?? '');
+                        if (at?.file !== effectFile || !predicates(call.conditionId).includes('successful source notification'))
+                            return false;
+                        const callPath = value(call, 'tracePath');
+                        if (servicePath && !(callPath === servicePath || callPath.startsWith(`${servicePath}\n`)))
+                            return false;
+                        const line = sources.line(at.file, at.startLine);
+                        return /\bdownloadObjectAsJson\s*\(/.test(line) || /\baddMessage\s*\(\s*['"]success['"]/.test(line);
+                    }).sort((a, b) => (evidence.get(a.evidenceIds[0] ?? '')?.startLine ?? 0) -
+                        (evidence.get(b.evidenceIds[0] ?? '')?.startLine ?? 0));
+                    linked.push({ dispatch, consume, request, serviceCall: serviceCalls[0], followups,
+                        bridge: reachable.bridge });
+                }
             }
-        }
         if (linked.length)
             return linked;
         const boundary = all.find(edge => edge.kind === 'boundary' && compatible(edge) &&
             (value(edge, 'reason').includes('provideEffects') || value(edge, 'reason').includes('injector')));
         const notificationOnly = value(dispatch, 'action').endsWith('#addMessage');
-        return [{ dispatch, reason: notificationOnly ? 'メッセージ表示で終了（通信なし）' :
-                    value(boundary ?? dispatch, 'reason') || '通信への接続を確認できない' }];
+        const reducer = consumes.find(edge => edge.from === dispatch.to &&
+            !value(edge, 'consumer').split('#')[0].endsWith('.effects.ts'));
+        return [{ dispatch, ...(reducer ? { bridge: [reducer] } : {}),
+                reason: notificationOnly ? 'メッセージ表示で終了（通信なし）' :
+                    value(boundary ?? dispatch, 'reason') || 'この探索範囲では通信経路を検出せず' }];
     });
 }
 function viewRows(report, nodes, evidence, sources) {
@@ -332,6 +366,37 @@ function dataRows(chain, edges, nodes, evidence, sources, branch, branchConditio
         const ev = evidenceOf(dispatch);
         const code = ev ? sources.line(ev.file, ev.startLine).replace(/;$/, '') : '';
         push(dispatch, 'D', 'D', code || value(dispatch, 'action'));
+    }
+    if (branch?.bridge?.length) {
+        const reducer = branch.bridge.find(edge => edge.kind === 'action-consume');
+        if (reducer) {
+            const consumer = value(reducer, 'consumer').split('#').at(-1) ?? '';
+            const action = value(reducer, 'action').split(':').at(-1) ?? '';
+            const effect = value(reducer, 'consumer').split('#')[0].endsWith('.effects.ts');
+            push(reducer, effect ? 'E' : 'N', 'D', `${consumer} が ${action} を処理`);
+        }
+        const navigation = branch.bridge.find(edge => edge.kind === 'reactive-link' &&
+            value(edge, 'operator').includes('Router.navigate with queryParams'));
+        if (navigation)
+            push(navigation, 'R', 'D', 'Router.navigate で現在の route の queryParams を更新');
+        const querySignal = branch.bridge.find(edge => edge.kind === 'reactive-link' &&
+            value(edge, 'operator').includes('ActivatedRoute.queryParams feeds toSignal'));
+        if (querySignal)
+            push(querySignal, 'C', 'D', 'ActivatedRoute.queryParams → toSignal');
+        const queryEffect = branch.bridge.find(edge => edge.kind === 'reactive-link' &&
+            value(edge, 'operator').includes('constructor effect reads the queryParams signal'));
+        if (queryEffect)
+            push(queryEffect, 'C', 'D', 'queryParams を読む constructor effect');
+        const subscription = branch.bridge.find(edge => edge.kind === 'reactive-link');
+        const selector = branch.bridge.find(edge => edge.kind === 'state-read' && edge.to === subscription?.from);
+        if (selector)
+            push(selector, 'N', 'D', `${value(selector, 'reader').split('#').at(-1)} を購読`);
+        const nextDispatch = branch.bridge.filter(edge => edge.kind === 'action-dispatch').at(-1);
+        if (nextDispatch) {
+            const ev = evidenceOf(nextDispatch);
+            push(nextDispatch, 'D', 'D', ev ? sources.line(ev.file, ev.startLine).replace(/;$/, '') :
+                value(nextDispatch, 'action'));
+        }
     }
     const consume = branch ? branch.consume : dispatch && edgeOf(last, edge => edge.kind === 'action-consume' && edge.from === dispatch.to);
     if (consume) {
@@ -485,7 +550,9 @@ export function renderSimple(input) {
     const view = input.belowData ? [] : viewRows(report, nodes, evidence, sources);
     const branches = primary ? operationBranches(primary, edges, evidence, sources, predicates) : [];
     const data = primary ? branches.length ? branches.flatMap((branch, index) => {
-        const branchTerms = predicates(branch.dispatch.conditionId).filter(term => /^(?:if |else |switch |case |route )/.test(term));
+        const branchTerms = predicates(branch.request?.conditionId ?? branch.dispatch.conditionId).filter(term => /^(?:if |else |switch |case |route )/.test(term) ||
+            term === 'selected projection must change for a new emitted value' ||
+            term === 'queryParams must change and the constructor effect must run');
         return dataRows(primary, edges, nodes, evidence, sources, branch, branchTerms, index === 0);
     }) : dataRows(primary, edges, nodes, evidence, sources) : [];
     if (data.length && siblings.length > 1) {
@@ -518,10 +585,15 @@ export function renderSimple(input) {
     if ((report.diagnostics ?? []).some(item => item.code === 'event-propagation' &&
         item.message.includes('this is a separate operation from the selected input')))
         out.push('- 操作: 入力と送信ボタンの click は別操作。output は送信メソッドが emit した場合に届く');
-    if (!primary?.request && !branches.some(branch => branch.request))
-        out.push('- 通信: この探索範囲では未検出');
+    if (!primary?.request && !branches.some(branch => branch.request)) {
+        const selectedEdges = primary?.operations.flatMap(operation => operation.edgeIds
+            .map(id => edges.get(id)).filter((edge) => !!edge)) ?? [];
+        const boundary = selectedEdges.find(edge => edge.kind === 'boundary');
+        out.push(boundary ? '- 通信: 通信有無は未確定（解析境界で停止）' :
+            '- 通信: この探索範囲では未検出');
+    }
     out.push('', '## 凡例', '');
-    const kinds = { h: 'html', C: 'コンポーネントクラスts', D: 'ディスパッチ', E: 'エフェクト',
+    const kinds = { h: 'html', C: 'コンポーネントクラスts', D: 'ディスパッチ', N: 'NgRx状態', E: 'エフェクト',
         S: 'サービス', R: 'ルート定義', O: 'router-outlet（配置先）', '@': '制御フロー', L: '外部ライブラリ部品', B: 'bootstrap' };
     out.push('1個目（種別）', '');
     for (const kind of [...new Set(rows.map(row => row.kind))])

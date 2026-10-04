@@ -18,6 +18,8 @@ export interface StoreTrace { steps: StoreStep[]; diagnostics: string[]; backgro
 export interface StoreTraceOptions { outputElement?: IndexedElement; catalog?: Catalog;
   outputUses?: ReadonlyMap<string, IndexedElement>;
   parentLayers?: InjectorLayer[]; changedInput?: string; rootArguments?: readonly ts.Expression[];
+  /** The selected component's route, needed to match a Router navigation to its queryParams consumer. */
+  selectedRoutePath?: string;
   /** A verified MatDialogRef instance delivers its close value to this afterClosed call. */
   afterClosedLocation?: string;
   /** The selection reaches no route, so a route provided registration can be neither confirmed nor denied. */
@@ -103,9 +105,9 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
   };
   const add = (kind: StoreStepKind, source: string, target: string, node: ts.Node, path: string[],
     conditions: string[] = [], detail: string | null = null,
-    dispatchMode?: StoreStep['dispatchMode']): void => {
+    dispatchMode?: StoreStep['dispatchMode'], sourceLocation?: string): void => {
     if (expanded > LIMIT) return;
-    steps.push({ kind, source, target, location: location(context,node), path: [...path],
+    steps.push({ kind, source, target, location: sourceLocation ?? location(context,node), path: [...path],
       conditions: [...conditions], detail, ...(dispatchMode ? { dispatchMode } : {}) });
   };
   const actionFor = (expression: ts.Expression): StoreAction | undefined => {
@@ -144,8 +146,98 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
     return !!selector && selector.dependencies.some(dependency => dependency === feature ||
       dependency.endsWith(`.${feature}`) || selectorDependsOn(dependency,feature,seen));
   };
+  const declaredString = (expression: ts.Expression | undefined): string | null => {
+    if (!expression) return null;
+    const value = unwrap(t,expression);
+    if (t.isStringLiteralLike(value)) return value.text;
+    if (!t.isIdentifier(value)) return null;
+    let found = context.checker.getSymbolAtLocation(value);
+    if (found && found.flags & t.SymbolFlags.Alias) found = context.checker.getAliasedSymbol(found);
+    const declaration = found?.valueDeclaration;
+    return declaration && t.isVariableDeclaration(declaration) && declaration.initializer &&
+      t.isStringLiteralLike(declaration.initializer) ? declaration.initializer.text : null;
+  };
+  const callsIn = (part: ts.Node, predicate: (call: ts.CallExpression) => boolean): ts.CallExpression[] => {
+    const calls: ts.CallExpression[] = [];
+    const visit = (child: ts.Node): void => {
+      if (t.isCallExpression(child) && predicate(child)) calls.push(child);
+      t.forEachChild(child,visit);
+    };
+    visit(part);
+    return calls;
+  };
+  const packageMember = (expression: ts.Expression, member: string, packagePath: string): boolean => {
+    const type = context.checker.getTypeAtLocation(expression);
+    return type.getSymbol()?.getName() === member && !!type.getSymbol()?.declarations?.some(part =>
+      slash(part.getSourceFile().fileName).includes(`/node_modules/${packagePath}/`));
+  };
+  const packageFunction = (expression: ts.Expression, name: string, packagePath: string): boolean => {
+    let found = context.checker.getSymbolAtLocation(expression);
+    if (found && found.flags & t.SymbolFlags.Alias) found = context.checker.getAliasedSymbol(found);
+    return found?.getName() === name && !!found.declarations?.some(part =>
+      slash(part.getSourceFile().fileName).includes(`/node_modules/${packagePath}/`));
+  };
+  const routeQueryDispatches = (): { signal: ts.PropertyDeclaration; callback: ts.CallExpression;
+    dispatch: ts.CallExpression; action: StoreAction; guards: string[] }[] => {
+    const fields = owner.node.members.filter((member): member is ts.PropertyDeclaration =>
+      t.isPropertyDeclaration(member) && !!member.initializer && t.isCallExpression(member.initializer) &&
+      t.isIdentifier(member.name));
+    const signals = fields.filter(field => {
+      const initializer = field.initializer as ts.CallExpression;
+      if (!packageFunction(initializer.expression,'toSignal','@angular/core')) return false;
+      const source = initializer.arguments[0];
+      return source && t.isPropertyAccessExpression(source) && source.name.text === 'queryParams' &&
+        t.isPropertyAccessExpression(source.expression) && source.expression.expression.kind === t.SyntaxKind.ThisKeyword &&
+        packageMember(source.expression,'ActivatedRoute','@angular/router');
+    });
+    const constructor = owner.node.members.find(t.isConstructorDeclaration);
+    if (!constructor?.body) return [];
+    const result: { signal: ts.PropertyDeclaration; callback: ts.CallExpression;
+      dispatch: ts.CallExpression; action: StoreAction; guards: string[] }[] = [];
+    for (const callback of callsIn(constructor.body,call =>
+      t.isIdentifier(call.expression) && importedApi(context,call.expression)?.name === 'effect')) {
+      const body = callback.arguments[0];
+      if (!body || (!t.isArrowFunction(body) && !t.isFunctionExpression(body))) continue;
+      for (const signal of signals) {
+        const name = signal.name.getText();
+        if (!callsIn(body,call => t.isPropertyAccessExpression(call.expression) &&
+          call.expression.expression.kind === t.SyntaxKind.ThisKeyword && call.expression.name.text === name).length) continue;
+        for (const dispatch of callsIn(body,call => t.isPropertyAccessExpression(call.expression) &&
+          call.expression.name.text === 'dispatch' && storeReceiver(context,call.expression.expression))) {
+          const action = dispatch.arguments[0] && actionFor(dispatch.arguments[0]);
+          if (!action) continue;
+          const guards: string[] = [];
+          let reachable = true;
+          let child: ts.Node = dispatch;
+          for (let parent = child.parent; parent && parent !== body; child = parent, parent = parent.parent) {
+            // A timer or Promise callback has its own trigger, not a tracked signal notification.
+            if (t.isArrowFunction(parent) || t.isFunctionExpression(parent) || t.isFunctionDeclaration(parent)) {
+              reachable = false;
+              break;
+            }
+            if (!t.isIfStatement(parent)) continue;
+            const positive = child === parent.thenStatement;
+            const negative = child === parent.elseStatement;
+            if (!positive && !negative) continue;
+            const expression = unwrap(t,parent.expression);
+            if (expression.kind === t.SyntaxKind.TrueKeyword && negative ||
+              expression.kind === t.SyntaxKind.FalseKeyword && positive) {
+              reachable = false;
+              break;
+            }
+            if (expression.kind !== t.SyntaxKind.TrueKeyword && expression.kind !== t.SyntaxKind.FalseKeyword)
+              guards.push(`${positive ? 'if' : 'else of'} ${parent.expression.getText()}`);
+          }
+          if (reachable) result.push({ signal, callback, dispatch, action, guards });
+        }
+      }
+    }
+    return result;
+  };
+  const sameRoute = (left: string, right: string): boolean =>
+    left.replace(/\/+$/, '') === right.replace(/\/+$/, '');
   const stateFromAction = (action: StoreAction, source: string, node: ts.Node, path: string[],
-    conditions: string[], depth: number): void => {
+    conditions: string[], depth: number, followSubscriptions = false): void => {
     if (!enter(node,path)) return;
     if (depth >= DEPTH) { add('boundary',source,'call stack depth limit',node,path,conditions); return; }
     const key = `action:${action.type ?? action.id}|${context.id}|${owner.id}|${methodName}`;
@@ -154,24 +246,52 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
     const peers = graph.actions.filter(peer => matchesAction(action,peer));
     if (peers.length > 1) diagnostics.push(`Action type collision ${JSON.stringify(action.type)} has ${peers.length} creator candidates`);
     const ids = new Set(peers.length ? peers.map(peer => peer.id) : [action.id]);
+    const reachedSubscriptions = new Set<string>();
     for (const reducer of graph.reducers.filter(item => item.registered && item.actions.some(id => ids.has(id)))) {
       const nextConditions = [...conditions,...reducer.conditions];
-      add('action-consume',action.id,reducer.id,node,path,nextConditions,'registered reducer handles the action type');
+      const changed = reducer.actions.filter(id => ids.has(id)).map(id => reducer.writesByAction[id]);
+      const writtenKeys = changed.some(keys => keys === null || keys === undefined) ? null :
+        new Set(changed.flatMap(keys => keys ?? []));
+      add('action-consume',action.id,reducer.id,node,path,nextConditions,
+        'registered reducer handles the action type',undefined,reducer.source);
       add('state-write',reducer.id,reducer.feature ?? reducer.id,node,path,nextConditions,
-        'reducer result may update its state slice');
+        'reducer result may update its state slice',undefined,reducer.source);
       for (const selector of graph.selectors) {
         const feature = reducer.feature;
         const dependent = !!feature && selectorDependsOn(selector.id,feature);
+        const canChange = writtenKeys === null || selector.projectedKeys === null ||
+          selector.projectedKeys.some(key => writtenKeys.has(key));
         if (!dependent) continue;
         add('state-read',feature,selector.id,node,path,
           [...nextConditions,'selector projection is evaluated only when consumed'],
-          'a changed state slice does not guarantee a changed selector value');
+          'a changed state slice does not guarantee a changed selector value',undefined,selector.source);
         for (const consumer of graph.consumers.filter(item => item.selector === selector.id && item.active)) {
           add('reactive-link',selector.id,consumer.id,node,path,
             [...nextConditions,...consumer.conditions],`${consumer.kind} consumer in ${consumer.owner}`);
           for (const computed of graph.computeds.filter(item => item.from === consumer.id && item.active))
             add('reactive-link',consumer.id,computed.id,node,path,
               [...nextConditions,...computed.conditions],`computed template consumer in ${computed.owner}`);
+        }
+        // A later action may write the same feature without changing this selector's
+        // projected value. Follow the subscription once from the selected UI dispatch;
+        // recursive effect outputs cannot prove another notification.
+        for (const subscription of graph.subscriptions.filter(item => followSubscriptions && item.owner === owner.id &&
+          canChange && item.selectors.includes(selector.id) && !reachedSubscriptions.has(item.id))) {
+          reachedSubscriptions.add(subscription.id);
+          const subscriptionConditions = [...nextConditions,...subscription.conditions,
+            'selected projection must change for a new emitted value'];
+          add('reactive-link',selector.id,subscription.id,node,path,subscriptionConditions,
+            'subscribed Store.select pipeline',undefined,subscription.id);
+          const dispatched = new Set<string>();
+          for (const dispatch of subscription.dispatches) {
+            if (dispatched.has(dispatch.action)) continue;
+            dispatched.add(dispatch.action);
+            const next = graph.actions.find(item => item.id === dispatch.action);
+            if (!next) continue;
+            add('action-dispatch',subscription.id,next.id,node,[...path,dispatch.source],
+              subscriptionConditions,'Store.dispatch in subscribed callback',undefined,dispatch.source);
+            stateFromAction(next,subscription.id,node,[...path,dispatch.source],subscriptionConditions,depth+1);
+          }
         }
       }
     }
@@ -199,7 +319,8 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       ids.has(id) || id === `type:${action.type}`))) {
       const effectConditions = [...conditions,...effect.conditions,
         'ofType matches the runtime action type', 'effect source must be subscribed and alive'];
-      add('action-consume',action.id,effect.id,node,path,effectConditions,'registered effect receives this action');
+      add('action-consume',action.id,effect.id,node,path,effectConditions,
+        'registered effect receives this action',undefined,effect.source);
       const effectNode = context.sourceFiles.map(file => context.program.getSourceFile(file))
         .filter((file): file is ts.SourceFile => !!file).flatMap(file => {
           const calls: ts.CallExpression[] = [];
@@ -236,6 +357,42 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
           t.forEachChild(part,visitReads);
         };
         visitReads(effectNode);
+        // A dispatch:false effect can update this component's URL. Follow only
+        // a verified same-route queryParams signal and its constructor effect;
+        // an unrelated navigation cannot cause this component to dispatch.
+        if (!effect.dispatch && options.selectedRoutePath) {
+          for (const navigate of callsIn(effectNode,call =>
+            t.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'navigate' &&
+            packageMember(call.expression.expression,'Router','@angular/router'))) {
+            const commands = navigate.arguments[0];
+            const target = commands && t.isArrayLiteralExpression(commands) && commands.elements.length === 1
+              ? declaredString(commands.elements[0] as ts.Expression) : null;
+            const navigation = navigate.arguments[1];
+            const hasQueryParams = navigation && t.isObjectLiteralExpression(navigation) &&
+              navigation.properties.some(property => t.isPropertyAssignment(property) &&
+                property.name.getText() === 'queryParams');
+            if (!target || !sameRoute(target,options.selectedRoutePath) || !hasQueryParams) continue;
+            for (const consumer of routeQueryDispatches()) {
+              const nextConditions = [...effectConditions,
+                'Router navigation to the selected route must succeed',
+                'queryParams must change and the constructor effect must run'];
+              const navigationId = location(context,navigate);
+              const signalId = location(context,consumer.signal);
+              const callbackId = location(context,consumer.callback);
+              add('reactive-link',effect.id,navigationId,node,path,nextConditions,
+                'dispatch:false effect calls Router.navigate with queryParams',undefined,navigationId);
+              add('reactive-link',navigationId,signalId,node,path,nextConditions,
+                'ActivatedRoute.queryParams feeds toSignal',undefined,location(context,consumer.signal));
+              add('reactive-link',signalId,callbackId,node,path,nextConditions,
+                'constructor effect reads the queryParams signal',undefined,callbackId);
+              add('action-dispatch',callbackId,consumer.action.id,node,[...path,location(context,consumer.dispatch)],
+                [...nextConditions,...consumer.guards,'callback guards must allow the dispatch'],
+                'Store.dispatch in the route queryParams effect',undefined,location(context,consumer.dispatch));
+              stateFromAction(consumer.action,callbackId,node,
+                [...path,location(context,consumer.dispatch)],nextConditions,depth+1);
+            }
+          }
+        }
       }
       if (effect.dispatch) for (const emitted of effect.emits) {
         const next = graph.actions.find(item => item.id === emitted);
@@ -493,7 +650,7 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
           else {
             add('action-dispatch',receiver,action.id,node,nextPath,dispatchConditions,
               `action type ${JSON.stringify(action.type)}`, mode);
-            if (action.type) stateFromAction(action,receiver,node,nextPath,dispatchConditions,level+1);
+            if (action.type) stateFromAction(action,receiver,node,nextPath,dispatchConditions,level+1,true);
             else add('boundary',action.id,'dynamic action type',node,nextPath,localConditions,
               'action type is not a static string');
           }
@@ -685,7 +842,7 @@ export function traceStoreDispatch(context: AnalysisContext, graph: StoreGraph, 
       }
       add('action-dispatch',owner.id,action.id,call,step.path,step.conditions,
         'dispatch reached through a confirmed live subscription');
-      if (action.type) stateFromAction(action,owner.id,call,step.path,step.conditions,0);
+      if (action.type) stateFromAction(action,owner.id,call,step.path,step.conditions,0,true);
     }
     if (options.outputElement && options.catalog) {
       const ng = context.toolchain.angularCompiler;

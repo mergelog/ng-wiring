@@ -1,5 +1,7 @@
 機能改善中
 
+./x-local　確認してください
+
 ## git
 
 作業ごとに commit, push すること

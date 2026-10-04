@@ -96,5 +96,15 @@ test('the short map follows output subscriptions before a propagated HTTP reques
     assert(!localOnly.includes('api/items/update'));
     assert(!localOnly.includes('downloadObjectAsJson'));
     assert(localOnly.includes('通信: この探索範囲では未検出'));
+
+    const stopped = structuredClone(withoutHttp);
+    const boundary = add('boundary', 'third', 'unknown', 'parent.ts', 1,
+      { reason: 'a verified callback cannot be connected to its HTTP request' });
+    stopped.edges.push(edges.at(-1));
+    stopped.evidence.push(evidence.at(-1));
+    stopped.operations.at(-1).edgeIds.push(boundary);
+    const uncertain = renderSimple({ report: stopped, outputDir: root, fileNameSource: '', heading: '' }).text;
+    assert(uncertain.includes('通信: 通信有無は未確定（解析境界で停止）'));
+    assert(!uncertain.includes('通信: この探索範囲では未検出'));
   } finally { await rm(root, { recursive: true, force: true }); }
 });

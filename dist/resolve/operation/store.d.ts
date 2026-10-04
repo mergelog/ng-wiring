@@ -23,6 +23,7 @@ export interface StoreReducer {
     source: string;
     registered: boolean;
     conditions: string[];
+    writesByAction: Record<string, string[] | null>;
 }
 export interface StoreEffect {
     id: string;
@@ -42,6 +43,7 @@ export interface StoreSelector {
     id: string;
     dependencies: string[];
     source: string;
+    projectedKeys: string[] | null;
 }
 export interface StoreConsumer {
     id: string;
@@ -60,6 +62,16 @@ export interface StoreComputed {
     active: boolean;
     conditions: string[];
 }
+export interface StoreSubscription {
+    id: string;
+    owner: string;
+    selectors: string[];
+    dispatches: {
+        action: string;
+        source: string;
+    }[];
+    conditions: string[];
+}
 export interface StoreGraph {
     registrations: StoreRegistration[];
     actions: StoreAction[];
@@ -68,6 +80,7 @@ export interface StoreGraph {
     selectors: StoreSelector[];
     consumers: StoreConsumer[];
     computeds: StoreComputed[];
+    subscriptions: StoreSubscription[];
     diagnostics: string[];
 }
 export interface StoreInputs {

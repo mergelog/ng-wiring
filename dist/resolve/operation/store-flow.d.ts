@@ -28,6 +28,8 @@ export interface StoreTraceOptions {
     parentLayers?: InjectorLayer[];
     changedInput?: string;
     rootArguments?: readonly ts.Expression[];
+    /** The selected component's route, needed to match a Router navigation to its queryParams consumer. */
+    selectedRoutePath?: string;
     /** A verified MatDialogRef instance delivers its close value to this afterClosed call. */
     afterClosedLocation?: string;
     /** The selection reaches no route, so a route provided registration can be neither confirmed nor denied. */

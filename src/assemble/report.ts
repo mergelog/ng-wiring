@@ -979,7 +979,8 @@ function addOperations(input: OperationInput): void {
         ? action.expression.arguments : [];
       const storeTrace = traceStoreDispatch(context, storeGraph, owner, method, layers,
         { outputElement: selectedUse ?? targetElement, outputUses, catalog, parentLayers: layers, rootArguments,
-          routeInjectorUnknown: !routeOccurrence && !commonRouteContext });
+          routeInjectorUnknown: !routeOccurrence && !commonRouteContext,
+          selectedRoutePath: routeOccurrence?.pattern });
       const outputTypes = new Map<string, string>();
       for (const member of owner.node.members) {
         if (!t.isPropertyDeclaration(member) || !member.initializer || !t.isCallExpression(member.initializer) ||

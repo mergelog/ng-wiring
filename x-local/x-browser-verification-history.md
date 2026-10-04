@@ -4,6 +4,14 @@
 
 過去の記録は [_old/x-his-success.md](_old/x-his-success.md) と [_old/x-his-fail.md](_old/x-his-fail.md) に保存した。
 
+## 2026-10-05 — 代表3経路のローカル解析回帰（ブラウザ再操作なし）
+
+- 完全なコマンド: `cd /home/mtrysd/work_2026/ng-wiring && npm run check:clearml`。終了コード0。`.env` の `NGWI_TEST_PROJECT_PATH` / `NGWI_TEST_PROJECT` を使用し、単一の `NGWI_TEST_TARGET` には依存しない。
+- A02/D01: route `/workers-and-queues/workers` の `name=time-frame` を選択。simple は `workers.get_activity_report` と selector 投影値変化の条件を表示し、tasks/models/projects の別 endpoint を混ぜない。[生成レポート](tmp/clearml-regression/A02-D01.md)。実ブラウザの期間変更、200 応答、表示更新は下記 2026-10-04 A02/D01 を参照。
+- C03/D02: route `/data-catalog` の `data-id=catalogApply` を選択。simple は `tasks.get_all_ex` / `models.get_all_ex` と、空 project では実行しない `projects.get_all_ex` の条件 `else of name === ''` を表示。[生成レポート](tmp/clearml-regression/C03-D02.md)。実ブラウザの Apply 後の URL、tasks/models の200応答は下記 2026-10-04 C03/D02 を参照。
+- D05: route `/projects/:projectId/compare-tasks` の source 行87の `mat-slide-toggle` を選択。simple は `setHideIdenticalFields` → 登録済み `compareHeader` reducer を表示し、HTTP は探索範囲で未検出。[生成レポート](tmp/clearml-regression/D05.md)。実ブラウザの表示切替と独立した約10秒周期の `tasks.get_all_ex` は下記 2026-10-04 D05 を参照。
+- この回帰はソース解析結果と保存済みの実ブラウザ観測を照合した。ブラウザで新たな操作・Network 採取はしていない。全体の partial と30パターン全体の完了条件は別に残る。
+
 ## 成功
 
 ### 2026-09-26 — A02 / `mat-select` の overlay option → 一覧再取得
@@ -47,6 +55,102 @@
 - 生成ファイル: `x-local/tmp/ngwi-22-ExperimentMenuExtendedComponent.data-id=exportTaskButton-260926.184429.md`（git管理外）
 
 ## 失敗・部分資料
+
+### 2026-10-04 — A03 追加検証: Clone 確定から新規タスク遷移、後片付け
+
+- 画面・UI: `p20260927` の既存 `task_2` から Clone ダイアログを開いた。Project に `p2026` を入力し、overlay の既存 `p20260927` option を選択。Name を `ngwi-a03-verify-20261004` とし、CLONE を押した。確定前に Project/Name とボタン有効状態を確認し、候補選択時点では `tasks.clone` が発生しないことも確認した。
+- URL: `http://192.168.0.4:4200/projects/189fffaf1f514928a021021f7de81717/tasks/8bd85783fdfe480286c34c679c650bdc/execution` → `http://192.168.0.4:4200/projects/189fffaf1f514928a021021f7de81717/tasks/d57986079ec9484f91246b271064dfc4/execution`。
+- 実行時結果: `POST tasks.clone` 200。request の `task` は元 ID `8bd85783fdfe480286c34c679c650bdc`、`new_task_name` は検証名、`new_task_project` は `189fffaf1f514928a021021f7de81717`。response の `result_code` は200、`id` は新 ID `d57986079ec9484f91246b271064dfc4`。新タスクはDraftとして一覧に表示され、詳細routeへ遷移。Clone 時点のコンソールエラーなし。
+- 後片付け: 新 ID だけを選択して Archive。Archive一覧の画面更新前は Delete が無効だったため reload して状態を再取得し、同じ1件の Delete ダイアログを確認。既定でONだった「Remove all related artifacts and debug samples from ClearML file server」をOFFにして DELETE。`POST tasks.delete_many` は200で、request `ids` は新 ID のみ、`delete_external_artifacts:false`、`delete_output_models:false`。response は新 ID `deleted:true`、`failed:[]`。Archiveは空になり、通常一覧に元の `task_2` と他の既存タスクが残ることを確認した。
+- Delete完了直後のClearML UI例外: `experiment-menu.component.ts:453` の `this.selectedExperiments().map(...)` で `Cannot read properties of undefined (reading 'map')` が1件発生。削除APIは成功し、一覧も正常に更新された。単一行のcontext menuから開いた場合に `selectedExperiments()` が未定義になる既存コード経路と一致する。ng-wiring の通信判定とは別のUI課題として記録する。
+- simple結果: `data-id=CloneButton` の route指定では exit 5 / `Target detection incomplete`、出力なし。routeなしでは exit 5（partial）でレポートを出したが、`closeDialog()` → `cloneExperiment` dispatch の後に無関係な `users.set_preferences` を結合し、実際の `tasks.clone` と成功後 route 遷移を欠いた。従来のProject入力起点レポートは `projects.get_all_ex` を表示する。A03は通信経路の結合失敗に分類する。
+- 完全なコマンド（route指定、生成ファイルなし）:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=CloneButton' --project stackup --route '/projects/:projectId/tasks/:experimentId' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 完全なコマンド（レポートあり）:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=CloneButton' --project stackup --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 生成ファイル: `x-local/tmp/ngwi-23-CloneDialogComponent.data-id=CloneButton-261004.204204.md`（git管理外）。
+
+### 2026-10-04 — D05 回帰確認: 通信なし操作と独立した定期更新
+
+- 画面・UI: 現存する `p20260927` の3タスク比較で `Hide Identical Fields` を ON → OFF に戻した。switch は1件、最終状態は OFF。URLは下記 A04 の3件比較 URL と同じ。
+- 実行時結果: 表示切替を確認。操作付近の `POST tasks.get_all_ex` は `only_fields: ["last_change"]` の定期更新で200。toggle による追加要求は観測せず、操作起点の通信なしという既存判定を維持。コンソールエラーなし。
+- simple結果: 終了コード5（partial）。`setHideIdenticalFields` の後、`compareHeader` の `provideState` 登録未検出で停止。今回の分類表示修正により、simple 単体では「通信有無は未確定（解析境界で停止）」と表示する。実行時の通信なし判定とは独立に扱う。
+- 完全なコマンド:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js --source src/app/webapp-common/experiments-compare/dumbs/experiment-compare-header/experiment-compare-header.component.html:87 --event change --project stackup --route '/projects/:projectId/compare-tasks' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 生成ファイル: `x-local/tmp/ngwi-21-ExperimentCompareHeaderComponent.mat-slide-toggle-L87-d343e53c5be5-261004.201227.md`（git管理外）。
+
+
+### 2026-10-04 — A04 再検証: dialog の確定結果から比較 URL と一覧再取得
+
+- 画面・UI: `p20260927` の `task_2` と `task1_random-forest-quality-classifier` の比較画面で「Add/Remove tasks to comparison」を開き、既存 `error_test` を追加して APPLY。`[data-id="addExperimentButton"]` は1件。
+- URL: `http://192.168.0.4:4200/projects/189fffaf1f514928a021021f7de81717/compare-tasks;ids=8bd85783fdfe480286c34c679c650bdc,dbb24a5a586241b287f9bde261f53f68/details` → 同じ URL の `ids` に `0ddc8aeee16c40a1aa7ab452e7134831` を追加。
+- 実行時結果: 画面に3タスクを表示。`POST tasks.get_all_ex` が200。コンソールエラーなし。比較URLだけの更新でタスク実体は変更していない。
+- simple結果: 修正前後とも終了コード5（partial）。`(click) openAddExperimentSearch()` 以降の dialog / `afterClosed()` / URL / HTTP は主経路として未結合。選択操作の内部には `updateUrl` の call edge や境界があるため、修正後は「通信有無は未確定（解析境界で停止）」と分類する。実行時の通信を否定しない表示になったが経路結合は残る。
+- 完全なコマンド:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=addExperimentButton' --project stackup --route '/projects/:projectId/compare-tasks' --selector 'body > sm-root > sm-app-shell > div.root-container > div.app-container > sm-experiments-compare > div.experiment-compare-container.light-theme > sm-experiment-compare-header > div.header-container > div.actions-container > span.d-flex > button.mdc-button.mat-mdc-button-base.mat-mdc-tooltip-trigger.add-experiment.plus.icon-only.mdc-button--unelevated.mat-mdc-unelevated-button.mat-unthemed._mat-animation-noopable.cdk-focused.cdk-mouse-focused > mat-icon.mat-icon.notranslate.al-ico-add.al-icon.mat-icon-no-color' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 生成ファイル: 修正前 `x-local/tmp/ngwi-19-ExperimentCompareHeaderComponent.data-id=addExperimentButton-261004.200419.md`、修正後 `x-local/tmp/ngwi-20-ExperimentCompareHeaderComponent.data-id=addExperimentButton-261004.200913.md`（git管理外）。
+- 追加の停止点: ダイアログ側 APPLY は `[mat-dialog-close]="{ids: selectedExperimentsIds(), ...}"` によって閉じる。テンプレート索引は `MatDialogClose` directive と入力式を確認しているが、明示的な `(click)` がないため `data-id=ApplyButton` の simple は表示要素で停止する。route指定ありの試行は exit 5 / `Target detection incomplete`、routeなしの候補列挙は exit 2、popup 側候補1の simple は exit 5。後者のレポートは `x-local/tmp/ngwi-22-SelectExperimentsForCompareComponent.data-id=ApplyButton-261004.201445.md`（git管理外）。ブラウザで APPLY の一致は1件と確認した。
+- 追加試行の完全なコマンド:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=ApplyButton' --project stackup --route '/projects/:projectId/compare-tasks' --selector 'body > div.cdk-overlay-container > div.cdk-global-overlay-wrapper > div.cdk-overlay-pane > mat-dialog-container > div > div > sm-select-experiments-for-compare > mat-dialog-actions > button[data-id="ApplyButton"]' --out-dir ../ng-wiring/x-local/tmp
+  ```
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=ApplyButton' --project stackup --route '/projects/:projectId/compare-tasks' --out-dir ../ng-wiring/x-local/tmp
+  ```
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=ApplyButton' --project stackup --out-dir ../ng-wiring/x-local/tmp
+  ```
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=ApplyButton' --project stackup --candidate 1 --out-dir ../ng-wiring/x-local/tmp
+  ```
+
+### 2026-10-04 — A03 再検証: autocomplete 入力と既存 option の選択
+
+- 画面・UI: `p20260927` の既存 `task_2` の Clone ダイアログを開いた。Project 入力に `p2026`、overlay の既存 option `p20260927` を選択して Cancel。`sm-clone-dialog sm-paginated-entity-selector[formcontrolname="project"]` は1件。
+- URL: `http://192.168.0.4:4200/projects/189fffaf1f514928a021021f7de81717/tasks/8bd85783fdfe480286c34c679c650bdc/execution`（一覧列の queryParams は省略）。
+- 実行時結果: 入力候補の `POST projects.get_all_ex` は200。overlay の既存 `mat-option` 選択後は Project の FormControl 値が `p20260927` になり、`tasks.clone` は発生しない。Clone 確定なら `tasks.clone` と成功後 route 遷移が発生するソース経路で、実操作は未実施。コンソールエラーなし。
+- simple結果: 終了コード5（partial）。`getEntities` → `getTablesFilterProjectsOptions` → `projects.get_all_ex` は表示。option 選択と Clone 確定を別操作として扱う必要がある。最初の簡略 selector 試行は exit 5 / `Target detection incomplete`、生成ファイルなし。
+- 完全なコマンド（レポートあり）:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'formcontrolname=project' --project stackup --selector 'body > div.cdk-overlay-container > div.cdk-global-overlay-wrapper > div.cdk-overlay-pane.dialog-md > mat-dialog-container.mat-mdc-dialog-container.mdc-dialog > div.mat-mdc-dialog-inner-container.mdc-dialog__container > div.mat-mdc-dialog-surface.mdc-dialog__surface > sm-clone-dialog.mat-mdc-dialog-component-host > sm-dialog-template > div.dialog-template-container > div.generic-container > form > div.form-container > sm-paginated-entity-selector' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 完全なコマンド（生成ファイルなし）:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'formcontrolname=project' --project stackup --route '/projects/:projectId/tasks/:experimentId' --selector 'body > div.cdk-overlay-container > div.cdk-global-overlay-wrapper > div.cdk-overlay-pane > mat-dialog-container > div > div > sm-clone-dialog > sm-dialog-template > div > div > form > div > sm-paginated-entity-selector' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 生成ファイル: `x-local/tmp/ngwi-18-CloneDialogComponent.formcontrolname=project-261004.200241.md`（git管理外）。
+
+### 2026-10-04 — C03 / D02 再検証: Data Catalog Apply から URL を経由して一覧取得
+
+- 画面・UI: Data Catalog の Name contains に `semiconductor` を入力して Apply。`[data-id="catalogApply"]` と下記 DOM selector は各1件。
+- URL: `http://192.168.0.4:4200/data-catalog` → `http://192.168.0.4:4200/data-catalog?q=semiconductor`。
+- 実行時結果: 一覧に semiconductor 関連資産を表示。Apply 後の Network で `POST tasks.get_all_ex` 2件、`POST models.get_all_ex` 1件が200。コンソールエラーなし。初期ロードの `projects.get_all_ex` は今回の Apply 後には発生しなかった。
+- simple結果: 終了コード5（partial）。`filterChanged` → 登録済み `syncUrl`（`dispatch:false`）→ 同じ route の `Router.navigate` → `ActivatedRoute.queryParams` / `toSignal` → constructor `effect` → `openList` → `loadList` → 一覧 API を表示。`projects.get_all_ex` も可能な要求として表示するが、`filter.project === ''` では呼ばれない分岐条件をまだ表現できていない。対象の action 停止点は解消したが、この条件とレポート全体の partial は残る。
+- 完全なコマンド:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'data-id=catalogApply' --project stackup --route '/data-catalog' --selector 'body > sm-root > sm-app-shell > div > div > sm-data-catalog-page > section > section > sm-catalog-filters > form > div > button[data-id="catalogApply"]' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 生成ファイル: `x-local/tmp/ngwi-17-CatalogFiltersComponent.data-id=catalogApply-261004.195045.md`（git管理外）。
+
+### 2026-10-04 — A02 / D01 再検証: Workers 期間変更から NgRx と通信
+
+- 画面・UI: Workers & Queues → Workers utilization。`mat-select[name="time-frame"]` と下記 DOM selector は各1件。3 Hours から6 Hoursへ変更。
+- URL: `http://192.168.0.4:4200/workers-and-queues/workers`
+- 実行時結果: 表示値が6 Hoursに変化し、`POST /service/1/api/v999.0/workers.get_activity_report` が200。`workers.get_all` も200だが、`WorkersComponent` に独立した30秒間隔の再取得があるため、この操作の因果には含めない。コンソールエラーなし。
+- simple結果: 終了コード5（partial）。`setStatsParams` → `workersReducer` → `selectStatsParams` の購読 → `getWorkerStats` → `WorkersEffects.getStats$` → `POST workers.get_activity_report` を表示。active worker の有無による `workers.get_stats` / `workers.get_activity_report` の条件分岐も表示した。今回観測したHTTPは後者。対象経路の旧停止点は解消したが、レポート全体の partial は残る。
+- 完全なコマンド:
+  ```bash
+  node ../ng-wiring/dist/cli/index.js 'name=time-frame' --project stackup --route '/workers-and-queues/workers' --selector 'body > sm-root > sm-app-shell > div.root-container > div.app-container > sm-orchestration > div.content > sm-workers > sm-workers-graph > div.header > mat-form-field > div > div > div > mat-select' --out-dir ../ng-wiring/x-local/tmp
+  ```
+- 生成ファイル: `x-local/tmp/ngwi-10-WorkersStatsComponent.name=time-frame-261004.181308.md`（git管理外）。
 
 ### 2026-09-26 — C01〜C05 / Angular template・form・component boundaries
 
