@@ -393,6 +393,82 @@ function execCommand(report, belowData) {
         args.push('--belowData');
     return args.map((arg, index) => index < 2 || arg.startsWith('--') ? arg : shellQuote(arg)).join(' ');
 }
+/** Show only display reads reachable from a state write in the selected operation. */
+function stateDisplayPaths(report, nodes) {
+    const root = report.context.workspaceRoot.replace(/\\/g, '/').replace(/\/$/, '');
+    const identity = (id) => id.replace(/^def:(?:state|symbol):/, '')
+        .replace(/\\/g, '/').replace(`${root}/`, '');
+    const writes = report.edges.filter(edge => edge.kind === 'state-write');
+    const reads = report.edges.filter(edge => edge.kind === 'state-read' &&
+        ['element', 'component'].includes(nodes.get(edge.to)?.kind ?? ''));
+    const links = report.edges.filter(edge => edge.kind === 'reactive-link' &&
+        ['state', 'symbol'].includes(nodes.get(edge.to)?.kind ?? ''));
+    const paths = [];
+    let truncated = false;
+    const walk = (current, path, seen) => {
+        if (paths.length >= 40) {
+            truncated = true;
+            return;
+        }
+        for (const read of reads.filter(edge => identity(edge.from) === current)) {
+            if (paths.length >= 40) {
+                truncated = true;
+                return;
+            }
+            paths.push([...path, read]);
+        }
+        const following = links.filter(edge => identity(edge.from) === current);
+        if (path.length >= 8) {
+            if (following.length)
+                truncated = true;
+            return;
+        }
+        for (const link of following) {
+            const next = identity(link.to);
+            if (seen.has(next))
+                continue;
+            walk(next, [...path, link], new Set([...seen, next]));
+        }
+    };
+    for (const write of writes) {
+        const start = identity(write.to);
+        walk(start, [write], new Set([start]));
+    }
+    return { paths, truncated };
+}
+function stateDisplayLines(paths, report, evidence, input, problems) {
+    const predicates = predicateReader(report);
+    const linked = (edge, label) => {
+        const ev = evidence.get(edge.evidenceIds[0] ?? '');
+        const safe = escapeInline(label);
+        if (!ev)
+            return safe;
+        const absolute = path.resolve(report.context.workspaceRoot, ev.file);
+        const target = relativeLinkTarget(input.outputDir, absolute, input.platform ?? path);
+        if (!target) {
+            problems.push(`No relative source link to ${absolute}`);
+            return safe;
+        }
+        return `[${safe}](${target}#L${ev.startLine})`;
+    };
+    return paths.map(edges => {
+        const labels = edges.map(edge => {
+            if (edge.kind === 'state-write') {
+                return linked(edge, `${value(edge, 'state')} を明示更新`);
+            }
+            if (edge.kind === 'state-read')
+                return linked(edge, `${value(edge, 'state')} を表示`);
+            const operator = value(edge, 'operator').split('/').at(-1) ?? '派生';
+            const terms = predicates(edge.conditionId);
+            const timing = terms.some(term => term.includes('recomputed lazily')) ? '読取時に再計算' :
+                terms.some(term => term.includes('recomputed when its source changes')) ? '元の値の変化で再計算' : '';
+            const equal = terms.some(term => term.includes('equal function') || term.includes('compared value'))
+                ? '比較条件に従う' : '';
+            return linked(edge, `${value(edge, 'consumer')}（${[operator, timing, equal].filter(Boolean).join('・')}）`);
+        });
+        return `- ${labels.join(' → ')}`;
+    });
+}
 export function renderSimple(input) {
     const { report } = input;
     const sources = new Sources(report.context.workspaceRoot);
@@ -434,6 +510,11 @@ export function renderSimple(input) {
         const lines = [row.line, ...(row.extraLines ?? [])].sort((a, b) => a - b);
         out.push(`- ${String(rows.length - index).padStart(2, '0')}. ${link} ${escapeLabel(row.label)}:${[...new Set(lines)].join(',')}`);
     });
+    const { paths: displayPaths, truncated: displayTruncated } = stateDisplayPaths(report, nodes);
+    if (displayPaths.length)
+        out.push('', '## 状態から表示', '', ...stateDisplayLines(displayPaths, report, evidence, input, problems));
+    if (displayTruncated)
+        out.push('- 状態から表示: 経路数または深さの上限で表示を打ち切り');
     if ((report.diagnostics ?? []).some(item => item.code === 'event-propagation' &&
         item.message.includes('this is a separate operation from the selected input')))
         out.push('- 操作: 入力と送信ボタンの click は別操作。output は送信メソッドが emit した場合に届く');
@@ -455,5 +536,8 @@ export function renderSimple(input) {
             out.push(`- ${escapeInline(part)}`);
     }
     out.push('', '## exec command', '', execCommand(report, !!input.belowData), '');
-    return { text: out.join('\n'), edgeIds: rows.flatMap(row => row.edgeId ? [row.edgeId] : []), problems };
+    return { text: out.join('\n'), edgeIds: [...new Set([
+                ...rows.flatMap(row => row.edgeId ? [row.edgeId] : []),
+                ...displayPaths.flatMap(edges => edges.map(edge => edge.id)),
+            ])], problems };
 }

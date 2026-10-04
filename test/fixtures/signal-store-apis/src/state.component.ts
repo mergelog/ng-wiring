@@ -10,6 +10,7 @@ interface Filters { page: { index: number; size: number }; query: string }
     <button data-id="snapshotButton" (click)="snapshot()">snapshot</button>
     <button data-id="mutateButton" (click)="mutate()">mutate</button>
     <span class="index">{{ filters.page.index() }}</span>
+    <span class="deep">{{ deep().index }}</span>
     <span class="seen">{{ seen() }}</span>
   `,
 })

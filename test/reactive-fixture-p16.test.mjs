@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { analyzeFixture, edgeKeys, fixtureRoot } from './fixtures/harness.mjs';
+import { renderSimple } from '../dist/render/simple.js';
 
 /**
  * §10 the four cases where no effect and no API stands between the UI operation and the display. Each
@@ -513,4 +514,37 @@ test('signal-store-apis: providers of one Store declaration keep state reads and
     'the same declaration and key must have different provider state nodes');
   assert.equal(stateRead(primary.report).from, primaryWrite.to);
   assert.equal(stateRead(peer.report).from, peerWrite.to);
+});
+
+test('simple output follows only the selected state writes into displayed derived values', async () => {
+  const linesFor = (fixture, target) => analyzeFixture(fixture, { target, then: ({ report, root }) => {
+    assert(report);
+    const rendered = renderSimple({ report, outputDir: root, fileNameSource: '', heading: '' });
+    const lines = rendered.text.split('\n').filter(line => line.startsWith('- ['))
+      .map(line => line.replace(/\]\([^)]*\)/g, ']'));
+    return { lines, rendered, report };
+  } });
+  const catalog = await linesFor('signal-store-apis', 'data-id=setTermButton');
+  assert.equal(catalog.lines.length, 4, catalog.lines.join('\n'));
+  assert(catalog.lines.some(line => line.includes('term を明示更新] → [label（withComputed・読取時に再計算')));
+  assert(catalog.lines.some(line => line.includes('term を明示更新] → [draft（withLinkedState・元の値の変化で再計算')));
+  assert(catalog.lines.some(line => line.includes('draft を明示更新] → [draft を表示')));
+  assert(!catalog.lines.some(line => line.includes('pageSize')));
+  for (const edge of catalog.report.edges.filter(edge => ['state-write', 'reactive-link', 'state-read'].includes(edge.kind))) {
+    assert(catalog.rendered.edgeIds.includes(edge.id), `missing displayed edge ${edge.id}`);
+  }
+
+  const page = await linesFor('signal-store-apis', 'data-id=pageButton');
+  assert(page.lines.some(line => line.includes('filters を明示更新] → [deep（deepComputed・読取時に再計算')));
+  assert(!page.lines.some(line => line.includes('label') || line.includes('seen')),
+    'an undisplayed derived value or watcher was shown as a display');
+
+  const angular = await linesFor('signal-apis', 'data-id=termField');
+  assert(angular.lines.some(line => line.includes('upper（computed・読取時に再計算・比較条件に従う）')));
+  assert(angular.lines.some(line => line.includes('draft（linkedSignal・元の値の変化で再計算）')));
+  assert(angular.lines.some(line => line.includes('currentTerm（signal.asReadonly）')));
+  const direct = await linesFor('signal-apis', 'data-id=draftButton');
+  assert.deepEqual(direct.lines, ['- [draft を明示更新] → [draft を表示]']);
+  const mutation = await linesFor('signal-store-apis', 'data-id=mutateButton');
+  assert.deepEqual(mutation.lines, [], 'a deep mutation was displayed as a state write');
 });
