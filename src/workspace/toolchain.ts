@@ -16,6 +16,22 @@ export interface Toolchain {
   unsupportedReactive: string[];
 }
 
+/** Angular 20.0/20.1 use TS 5.8; 20.2/20.3 also allow TS 5.9. Angular 22 uses TS 6.0. */
+export function supportedTypeScript(angularVersion: string, typescriptVersion: string): boolean {
+  const [major, minor] = angularVersion.split('.').map(Number);
+  return major === 20
+    ? /^5\.8\./.test(typescriptVersion) || (minor! >= 2 && /^5\.9\./.test(typescriptVersion))
+    : major === 22 && /^6\.0\./.test(typescriptVersion);
+}
+
+export const TESTED_REACTIVE_VERSIONS: Readonly<Record<string, readonly string[]>> = {
+  '@ngrx/store': ['20.0.0', '20.1.0', '22.0.0'],
+  '@ngrx/effects': ['20.0.0', '20.1.0', '22.0.0'],
+  '@ngrx/signals': ['20.0.0', '20.1.0', '22.0.0'],
+  '@ngrx/operators': ['20.0.0', '20.1.0', '22.0.0'],
+  rxjs: ['7.8.2'],
+};
+
 function inside(root: string, file: string): boolean {
   const part = relative(root, file);
   return part === '' || (!part.startsWith('..' + sep) && part !== '..' && !part.startsWith(sep));
@@ -77,9 +93,12 @@ export async function resolveToolchain(root: string): Promise<Toolchain> {
   const tsPackage = (await packageFromWorkspace(root, 'typescript', true))!;
   const compilerPackage = (await packageFromWorkspace(root, '@angular/compiler', true))!;
   const corePackage = (await packageFromWorkspace(root, '@angular/core', true))!;
-  if (!/^6\.0\./.test(tsPackage.version)) throw new UsageError(`Unsupported TypeScript ${tsPackage.version}; expected 6.0.x`);
-  if (!/^22\./.test(compilerPackage.version) || compilerPackage.version !== corePackage.version) {
+  if (!/^(20|22)\./.test(compilerPackage.version) || compilerPackage.version !== corePackage.version) {
     throw new UsageError(`Unsupported Angular core/compiler versions: ${corePackage.version}/${compilerPackage.version}`);
+  }
+  if (!supportedTypeScript(compilerPackage.version, tsPackage.version)) {
+    throw new UsageError(`Unsupported TypeScript ${tsPackage.version} for Angular ${compilerPackage.version}; ` +
+      'expected 5.8.x for Angular 20.0/20.1, 5.8.x or 5.9.x for Angular 20.2/20.3, or 6.0.x for Angular 22');
   }
   const requireFromTarget = createRequire(join(root, 'package.json'));
   let typescript: typeof ts, angularCompiler: typeof import('@angular/compiler');
@@ -92,12 +111,12 @@ export async function resolveToolchain(root: string): Promise<Toolchain> {
   }
   const reactive: PackageVersion[] = [];
   const unsupportedReactive: string[] = [];
-  for (const [name, expected] of [['@ngrx/store', '22.0.0'], ['@ngrx/effects', '22.0.0'],
-    ['@ngrx/signals', '22.0.0'], ['rxjs', '7.8.2']] as const) {
+  for (const name of ['@ngrx/store', '@ngrx/effects', '@ngrx/signals', 'rxjs']) {
     const pkg = await packageFromWorkspace(root, name, false);
     if (pkg) {
       reactive.push(pkg);
-      if (pkg.version !== expected) unsupportedReactive.push(`${name}@${pkg.version} (tested ${expected})`);
+      const expected = TESTED_REACTIVE_VERSIONS[name]!;
+      if (!expected.includes(pkg.version)) unsupportedReactive.push(`${name}@${pkg.version} (tested ${expected.join(', ')})`);
     }
   }
   return { typescript, angularCompiler, ts: tsPackage, compiler: compilerPackage,

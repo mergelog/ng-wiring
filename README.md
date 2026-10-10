@@ -1,6 +1,6 @@
 # ng-wiring
 
-Angular 22 source wiring analyzer. The implementation covers the library layers
+Angular 20 and 22 source wiring analyzer. The implementation covers the library layers
 through P15: project contexts, the pinned ngmaze JSON
 adapter, Angular scope and element indexing, projection, TemplateRef display
 paths, route/bootstrap reconstruction with outlet placement, control-flow
@@ -32,7 +32,15 @@ scenario is accepted.
 ng-wiring is a single Node.js CLI. It needs no global installation and no
 browser extension: one `bin`, no install-time hook, and nothing outside the Node
 builtins and `ajv` in the built code. The supported Node versions are
-`^22.22.3 || ^24.15.0 || >=26.0.0` on Linux/WSL, macOS and Windows.
+`^22.22.0 || ^24.15.0 || >=26.0.0` on Linux/WSL, macOS and Windows.
+Angular 20.0/20.1 workspaces use TypeScript 5.8; 20.2/20.3 use 5.8 or 5.9.
+Angular 22 workspaces use TypeScript 6.0 and require Node 22.22.3 or later in the 22 line.
+The development dependencies and existing contract fixtures remain on Angular 22,
+so building and running the full suite requires its Node version. To verify Angular 20
+on Node 22.22.0, install runtime dependencies with `npm ci --omit=dev --engine-strict`, then run
+`npm run check:angular20` and `npm run check:install -- --angular20` against the shipped build.
+These checks install isolated Angular 20.0/20.3 toolchains and verify clean installation,
+control flow, Signal updates, NgRx 20 selector subscriptions and HTTP paths.
 
 ```sh
 npm ci

@@ -49,7 +49,7 @@ test('the package declares one bin and needs no install-time step (P17-01, P17-0
   }
   assert.equal(manifest.os, undefined);
   assert.equal(manifest.cpu, undefined);
-  assert.equal(manifest.engines.node, '^22.22.3 || ^24.15.0 || >=26.0.0');
+  assert.equal(manifest.engines.node, '^22.22.0 || ^24.15.0 || >=26.0.0');
   for (const shipped of ['dist', 'docs', 'README.md', 'LICENSE']) assert(manifest.files.includes(shipped));
 });
 

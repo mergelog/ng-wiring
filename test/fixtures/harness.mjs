@@ -15,11 +15,11 @@ export const fixtureRoot = here;
  * and links `node_modules` to this repository, so the run resolves the pinned TypeScript and Angular
  * the analysis requires and no output lands next to the committed sources.
  */
-export async function withFixture(name, run) {
+export async function withFixture(name, run, toolchain = {}) {
   const root = await mkdtemp(path.join(tmpdir(), `ngwi-fx-${name}-`));
   try {
     await cp(path.join(fixtureRoot, name), root, { recursive: true });
-    await linkTargetWorkspace(root);
+    await linkTargetWorkspace(root, toolchain);
     return await run(root);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -54,7 +54,7 @@ export async function analyzeFixture(name, input) {
       toolVersion: '0.1.0', startedAt: new Date(), enumerationComplete: !analysis.truncated,
     }) : null;
     return await (input.then ?? (value => value))({ root, analysis, options, selected, report });
-  });
+  }, { toolchainRoot: input.toolchainRoot, dependencies: input.dependencies });
 }
 
 const labelOf = (report, id) => {

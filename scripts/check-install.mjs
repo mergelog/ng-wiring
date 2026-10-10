@@ -15,6 +15,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const angular20 = process.argv.includes('--angular20');
+const angularVersion = angular20 ? '20.3.33' : '22.1.5';
+const typescriptVersion = angular20 ? '5.9.3' : '6.0.3';
 const windows = process.platform === 'win32';
 const npm = windows ? 'npm.cmd' : 'npm';
 const exists = (file) => stat(file).then(() => true, () => false);
@@ -45,11 +48,11 @@ try {
 
   // The target declares the toolchain it is analysed with (§4.2) and ng-wiring as the packed file.
   const packedNgWiring = `file:${path.join(root, tarball)}`.replaceAll('\\', '/');
-  await manifest({ '@angular/common': '22.1.5', '@angular/compiler': '22.1.5', '@angular/core': '22.1.5',
-    '@angular/platform-browser': '22.1.5', '@angular/router': '22.1.5', rxjs: '7.8.2', typescript: '6.0.3',
+  await manifest({ '@angular/common': angularVersion, '@angular/compiler': angularVersion, '@angular/core': angularVersion,
+    '@angular/platform-browser': angularVersion, '@angular/router': angularVersion, rxjs: '7.8.2', typescript: typescriptVersion,
     'ng-wiring': packedNgWiring });
   const install = step('npm install (empty cache, empty directory)', npm,
-    ['install', '--cache', cache, '--no-audit', '--no-fund'], { cwd: target, stdio: 'inherit' });
+    ['install', '--engine-strict', '--cache', cache, '--no-audit', '--no-fund'], { cwd: target, stdio: 'inherit' });
   check(install.status === 0, 'npm install failed');
 
   check(await exists(path.join(target, 'node_modules/ngmaze/dist/cli/index.js')),
@@ -63,7 +66,7 @@ try {
   // §10 A18 also asks for a clean npx: a directory with no installation, and a cache of its own.
   const npxRoot = path.join(root, 'npx');
   await mkdir(npxRoot, { recursive: true });
-  const npx = step('npx from an empty cache', npm, ['exec', '--yes', '--cache', path.join(root, 'npx-cache'),
+  const npx = step('npx from an empty cache', npm, ['exec', '--engine-strict', '--yes', '--cache', path.join(root, 'npx-cache'),
     '--package', path.join(root, tarball), '--', 'ng-wiring', '--version'], { cwd: npxRoot });
   check(npx.status === 0, `npx exited ${npx.status}: ${npx.stderr}`);
   check(npx.stdout.includes('0.1.0'), `unexpected npx output: ${npx.stdout.trim()}`);
@@ -75,7 +78,7 @@ try {
   check(written.length === 1 && written[0].endsWith('.md'), `no report was written: ${written.join(', ')}`);
 
   // §4.2 the same installed tree, with the toolchain no longer declared, is the hoisting case.
-  await manifest({ '@angular/core': '22.1.5', 'ng-wiring': packedNgWiring });
+  await manifest({ '@angular/core': angularVersion, 'ng-wiring': packedNgWiring });
   const refused = step('ng-wiring with an undeclared toolchain', bin,
     ['data-id="targetInput"', '--project', 'app', '--candidate', '2', '--out-dir', 'out'], { cwd: target });
   check(refused.status === 3, `an undeclared toolchain exited ${refused.status}, expected 3`);

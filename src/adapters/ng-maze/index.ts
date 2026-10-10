@@ -10,9 +10,9 @@ import { discoverProjects, verifyContextSnapshot, type AnalysisContext } from '.
 import { verifyCodeEdge } from './verify.js';
 
 /** The pinned ngmaze revision (§9); reports name it as the graph source. */
-export const NGMAZE_REVISION = '6da35347018531df30659d34e66a11d1bfcc3f22';
+export const NGMAZE_REVISION = 'cba76b92bafd62eaf02f6af85885a0bb1994a80a';
 const REVISION = NGMAZE_REVISION;
-const SCHEMA_HASH = 'b6b9484cf3ba22d35e43c37660f181f15a31e022789c97d6e66233d56a227075';
+const SCHEMA_HASH = '9a335b0703d140a49881e6a1020ae44387feb4776df40f5573eb9db70276be49';
 const MAX_OUTPUT = 64 * 1024 * 1024;
 const TIMEOUT_MS = 120_000;
 const requireHere = createRequire(import.meta.url);

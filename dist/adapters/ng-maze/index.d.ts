@@ -1,6 +1,6 @@
 import { type AnalysisContext } from '../../workspace/context.js';
 /** The pinned ngmaze revision (§9); reports name it as the graph source. */
-export declare const NGMAZE_REVISION = "6da35347018531df30659d34e66a11d1bfcc3f22";
+export declare const NGMAZE_REVISION = "cba76b92bafd62eaf02f6af85885a0bb1994a80a";
 export interface MazeLocation {
     file: string;
     line: number;

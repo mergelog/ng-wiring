@@ -27,7 +27,13 @@ ng-wiringは、Angularの画面要素から、その要素を起点にしたイ�
 
 ## インストールとビルド
 
-Node.js `^22.22.3`、`^24.15.0`、または `>=26.0.0` が必要です。Linux/WSL、macOS、Windowsで動作します。
+Node.js `^22.22.0`、`^24.15.0`、または `>=26.0.0` が必要です。Linux/WSL、macOS、Windowsで動作します。
+解析対象はAngular 20・22です。Angular 20.0/20.1はTypeScript 5.8、20.2/20.3は5.8または5.9、Angular 22は6.0を使います。
+Angular 22を解析する場合、22系のNodeは22.22.3以上が必要です。
+開発用依存と既存の契約テストはAngular 22のままなので、ビルドと全テストにはAngular 22対応のNodeを使います。
+Node 22.22.0でAngular 20を検証する場合は、`npm ci --omit=dev --engine-strict`で実行用依存を導入してから、配布済みの`dist`を使い
+`npm run check:angular20`と`npm run check:install -- --angular20`を実行します。
+Angular 20.0/20.3の実コンパイラーで制御フロー、Signal更新、NgRx 20のselector購読、HTTPへの経路、クリーンインストールを確認します。
 
 このリポジトリを取得して使う場合は、次のコマンドを実行します。
 

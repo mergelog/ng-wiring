@@ -391,9 +391,14 @@ export async function indexTemplates(context: AnalysisContext, catalog: Catalog,
       }
       if (node instanceof ng.TmplAstSwitchBlock) {
         const subject = expressionText(node.expression) ?? '(switch expression unresolved)';
-        const declared = node.groups.flatMap(group => group.cases.map(item => expressionText(item.expression)))
+        // Angular 20 has individual cases; Angular 22 groups cases sharing one body.
+        const legacy = node as unknown as { cases?: { expression: AST | null; children: TmplAstNode[];
+          sourceSpan: typeof node.sourceSpan }[] };
+        const groups = node.groups ?? legacy.cases?.map(item => ({ cases: [item], children: item.children,
+          sourceSpan: item.sourceSpan })) ?? [];
+        const declared = groups.flatMap(group => group.cases.map(item => expressionText(item.expression)))
           .filter((item): item is string => item !== null);
-        for (const [order, group] of node.groups.entries()) {
+        for (const [order, group] of groups.entries()) {
           const values = group.cases.map(item => expressionText(item.expression));
           const fallback = values.some(item => item === null);
           const matched = values.filter((item): item is string => item !== null);

@@ -14,7 +14,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+    "node": "^22.22.0 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -25,11 +25,12 @@
     "check:install": "node scripts/check-install.mjs",
     "check:smoke": "node scripts/smoke-dist.mjs",
     "check:clearml": "node scripts/check-clearml-regression.mjs",
+    "check:angular20": "node scripts/check-angular20.mjs",
     "measure": "node scripts/measure-performance.mjs"
   },
   "dependencies": {
     "ajv": "8.17.1",
-    "ngmaze": "github:mergelog/ng-maze#6da35347018531df30659d34e66a11d1bfcc3f22"
+    "ngmaze": "github:mergelog/ng-maze#cba76b92bafd62eaf02f6af85885a0bb1994a80a"
   },
   "devDependencies": {
     "@angular/common": "22.1.5",

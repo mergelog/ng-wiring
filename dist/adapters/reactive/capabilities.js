@@ -1,3 +1,4 @@
+import { TESTED_REACTIVE_VERSIONS } from '../../workspace/toolchain.js';
 /** Versions the semantic models were read against; other versions are an R16 diagnostic, not a silent pass. */
 export const SUPPORTED_PACKAGE_VERSIONS = {
     '@angular/core': '22.1.5', '@ngrx/store': '22.0.0', '@ngrx/effects': '22.0.0',
@@ -361,9 +362,9 @@ export function auditCapabilities(context) {
             problems.push({ matcherId: capability.matcherId, problem: `${capability.module} now exports ${capability.export}; the unsupported note is stale` });
     }
     for (const item of context.toolchain.reactive) {
-        const expected = SUPPORTED_PACKAGE_VERSIONS[item.name];
-        if (expected && item.version !== expected)
-            problems.push({ matcherId: `version/${item.name}`, problem: `${item.name}@${item.version} is outside the tested ${expected}` });
+        const expected = TESTED_REACTIVE_VERSIONS[item.name];
+        if (expected && !expected.includes(item.version))
+            problems.push({ matcherId: `version/${item.name}`, problem: `${item.name}@${item.version} is outside the tested ${expected.join(', ')}` });
     }
     return problems;
 }

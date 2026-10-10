@@ -5,11 +5,22 @@ import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveToolchain } from '../dist/workspace/toolchain.js';
+import { resolveToolchain, supportedTypeScript } from '../dist/workspace/toolchain.js';
 import { createContext, discoverProjects, selectProjects, verifyContextSnapshot, iterateContexts, collectContextCandidates } from '../dist/workspace/context.js';
 import { StaticEvaluator } from '../dist/workspace/evaluate.js';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+test('TypeScript compatibility follows the Angular major and minor release', () => {
+  for (const [angular, typescript, expected] of [
+    ['20.0.7', '5.8.3', true], ['20.1.7', '5.8.3', true],
+    ['20.1.7', '5.9.3', false], ['20.2.4', '5.9.3', true],
+    ['20.3.33', '5.8.3', true], ['20.3.33', '5.9.3', true],
+    ['20.3.33', '5.7.3', false], ['20.3.33', '6.0.3', false],
+    ['22.1.5', '6.0.3', true], ['22.1.5', '5.9.3', false],
+    ['21.0.0', '5.9.3', false],
+  ]) assert.equal(supportedTypeScript(angular, typescript), expected, `${angular} / ${typescript}`);
+});
 
 async function fixture(fn) {
   const root = await mkdtemp(path.join(tmpdir(), 'ngwi-workspace-'));
